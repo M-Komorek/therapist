@@ -1,0 +1,53 @@
+[package]
+name = "therapist"
+version = "0.1.0"
+edition = "2024"
+description = "Therapist is a TUI tool designed for efficient browsing and analysis of logs."
+authors = ["M-Komorek <marcin.komorek@protonmail.com>"]
+build = "build.rs"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+better-panic = "0.3.0"
+clap = { version = "4.5.20", features = [
+    "derive",
+    "cargo",
+    "wrap_help",
+    "unicode",
+    "string",
+    "unstable-styles",
+] }
+color-eyre = "0.6.3"
+config = "0.14.0"
+crossterm = { version = "0.28.1", features = ["serde", "event-stream"] }
+directories = "5.0.1"
+futures = "0.3.31"
+human-panic = "2.0.2"
+json5 = "0.4.1"
+lazy_static = "1.5.0"
+libc = "0.2.161"
+pretty_assertions = "1.4.1"
+ratatui = { version = "0.30.0", features = ["serde", "macros"] }
+serde = { version = "1.0.211", features = ["derive"] }
+serde_json = "1.0.132"
+signal-hook = "0.3.17"
+strip-ansi-escapes = "0.2.0"
+strum = { version = "0.26.3", features = ["derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-util = "0.7.12"
+tracing = "0.1.40"
+tracing-error = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
+
+[build-dependencies]
+anyhow = "1.0.90"
+vergen-gix = { version = "9.1.0", features = ["build", "cargo"] }
+
+# Read the optimization guideline for more details: https://ratatui.rs/recipes/apps/release-your-app/#optimizations
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
