@@ -8,6 +8,7 @@ mod app;
 mod cli;
 mod components;
 mod config;
+mod domain;
 mod errors;
 mod logging;
 mod tui;
