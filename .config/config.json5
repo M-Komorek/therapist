@@ -1,10 +1,21 @@
 {
   "keybindings": {
     "Home": {
-      "<q>": "Quit", // Quit the application
-      "<Ctrl-d>": "Quit", // Another way to quit
-      "<Ctrl-c>": "Quit", // Yet another way to quit
-      "<Ctrl-z>": "Suspend" // Suspend the application
+      "<q>": "Quit",
+      "<Ctrl-c>": "Quit",
+      "<Ctrl-z>": "Suspend",
+
+      "<k>": { "ScrollUp": 1 },
+      "<j>": { "ScrollDown": 1 },
+      "<l>": { "ScrollRight": 1 },
+      "<h>": { "ScrollLeft": 1 },
+
+      "<Ctrl-u>": "HalfPageUp",
+      "<Ctrl-d>": "HalfPageDown",
+      "<shift-g>": "GoBottom",
+      "<g><g>": "GoTop",
+      "<shift-l>": { "ScrollRight": 10 },
+      "<shift-h>": { "ScrollLeft": 10 },
     },
   }
 }

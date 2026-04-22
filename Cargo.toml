@@ -28,6 +28,7 @@ human-panic = "2.0.2"
 json5 = "0.4.1"
 lazy_static = "1.5.0"
 libc = "0.2.161"
+memmap2 = "0.9"
 pretty_assertions = "1.4.1"
 ratatui = { version = "0.30.0", features = ["serde", "macros"] }
 serde = { version = "1.0.211", features = ["derive"] }
@@ -40,6 +41,9 @@ tokio-util = "0.7.12"
 tracing = "0.1.40"
 tracing-error = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"
 
 [build-dependencies]
 anyhow = "1.0.90"

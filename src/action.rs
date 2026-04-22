@@ -3,6 +3,7 @@ use strum::Display;
 
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
+    // Platform
     Tick,
     Render,
     Resize(u16, u16),
@@ -12,4 +13,14 @@ pub enum Action {
     ClearScreen,
     Error(String),
     Help,
+
+    // LogView
+    ScrollUp(usize),
+    ScrollDown(usize),
+    ScrollRight(usize),
+    ScrollLeft(usize),
+    HalfPageUp,
+    HalfPageDown,
+    GoTop,
+    GoBottom,
 }

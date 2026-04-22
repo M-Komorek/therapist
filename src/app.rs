@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::Arc};
+
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
@@ -6,8 +8,9 @@ use tracing::{debug, info};
 
 use crate::{
     action::Action,
-    components::{Component, fps::FpsCounter, home::Home},
+    components::{Component, fps::FpsCounter, logview::LogView},
     config::Config,
+    domain::file::RawLogs,
     tui::{Event, Tui},
 };
 
@@ -31,12 +34,16 @@ pub enum Mode {
 }
 
 impl App {
-    pub fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
+    pub fn new(tick_rate: f64, frame_rate: f64, file_path: PathBuf) -> color_eyre::Result<Self> {
+        let source = Arc::new(RawLogs::open(&file_path)?);
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         Ok(Self {
             tick_rate,
             frame_rate,
-            components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
+            components: vec![
+                Box::new(LogView::new(source)),
+                Box::new(FpsCounter::default()),
+            ],
             should_quit: false,
             should_suspend: false,
             config: Config::new()?,
@@ -113,16 +120,19 @@ impl App {
             Some(action) => {
                 info!("Got action: {action:?}");
                 action_tx.send(action.clone())?;
+                // Single-key match breaks any in-progress multi-key sequence.
+                self.last_tick_key_events.clear();
             }
             _ => {
-                // If the key was not handled as a single key action,
-                // then consider it for multi-key combinations.
+                // Key is not a single-key binding — accumulate for multi-key sequence.
                 self.last_tick_key_events.push(key);
 
-                // Check for multi-key combinations
+                // Check for multi-key combinations.
                 if let Some(action) = keymap.get(&self.last_tick_key_events) {
                     info!("Got action: {action:?}");
                     action_tx.send(action.clone())?;
+                    // Sequence completed — clear so next sequence starts fresh.
+                    self.last_tick_key_events.clear();
                 }
             }
         }
@@ -136,7 +146,10 @@ impl App {
             }
             match action {
                 Action::Tick => {
-                    self.last_tick_key_events.drain(..);
+                    // Suppot max 2 key combination
+                    if self.last_tick_key_events.len() > 1 {
+                        self.last_tick_key_events.clear();
+                    }
                 }
                 Action::Quit => self.should_quit = true,
                 Action::Suspend => self.should_suspend = true,

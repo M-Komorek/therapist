@@ -1,5 +1,6 @@
+mod indexer;
+
 pub mod file;
-pub mod indexer;
 
 pub trait LogSource: Send + Sync {
     fn line_count(&self) -> usize;
