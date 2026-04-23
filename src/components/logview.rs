@@ -21,6 +21,8 @@ pub struct LogView {
 }
 
 impl LogView {
+    const LINE_NUMBER_SUFIX: &str = ": ";
+
     pub fn new(source: Arc<dyn LogSource>) -> Self {
         Self {
             source,
@@ -93,6 +95,11 @@ impl LogView {
     fn scroll_left(&mut self, cols: usize) {
         self.horizontal_scroll = self.horizontal_scroll.saturating_sub(cols);
     }
+
+    fn gutter_width(&self) -> usize {
+        let digit_count = self.total_lines().max(1).ilog10() as usize + 1;
+        digit_count + Self::LINE_NUMBER_SUFIX.chars().count()
+    }
 }
 
 impl Component for LogView {
@@ -128,6 +135,9 @@ impl Component for LogView {
         self.viewport_height = area.height as usize;
         self.viewport_width = area.width as usize;
 
+        let gutter_width = self.gutter_width();
+        let log_width = self.viewport_width.saturating_sub(gutter_width);
+
         let visible_count = self.viewport_height.min(self.total_lines());
         let batch = self
             .source
@@ -138,22 +148,37 @@ impl Component for LogView {
             .enumerate()
             .map(|(row, content)| {
                 let line_idx = self.viewport_top + row;
+                let digit_count = gutter_width - Self::LINE_NUMBER_SUFIX.chars().count();
 
-                let display: String = content
+                let gutter = format!(
+                    "{:>width$}{}",
+                    line_idx + 1,
+                    Self::LINE_NUMBER_SUFIX,
+                    width = digit_count
+                );
+
+                let content_display: String = content
                     .chars()
                     .skip(self.horizontal_scroll)
-                    .take(self.viewport_width)
+                    .take(log_width)
                     .collect();
 
-                let style = if line_idx == self.selected_line {
-                    Style::default()
+                if line_idx == self.selected_line {
+                    let highlight = Style::default()
                         .bg(Color::DarkGray)
-                        .add_modifier(Modifier::BOLD)
+                        .add_modifier(Modifier::BOLD);
+                    let content_display = format!("{:<width$}", content_display, width = log_width);
+                    Line::from(vec![
+                        Span::styled(gutter, highlight),
+                        Span::styled(content_display, highlight),
+                    ])
                 } else {
-                    Style::default()
-                };
-
-                Line::from(Span::styled(display, style))
+                    let gutter_style = Style::default().fg(Color::DarkGray);
+                    Line::from(vec![
+                        Span::styled(gutter, gutter_style),
+                        Span::styled(content_display, Style::default()),
+                    ])
+                }
             })
             .collect();
 
@@ -410,6 +435,43 @@ mod tests {
         let top = log_view.viewport_top();
         assert!(log_view.selected_line() >= top);
         assert!(log_view.selected_line() < top + 3);
+    }
+
+    // --- Gutter width ---
+
+    #[test]
+    fn given_zero_lines_when_gutter_width_then_returns_digit_count_for_one_plus_suffix() {
+        // 0 lines → max(1) = 1 → 1 digit + 2 suffix chars = 3
+        let log_view = make_logview(0, 5);
+        assert_eq!(log_view.gutter_width(), 3);
+    }
+
+    #[test]
+    fn given_nine_lines_when_gutter_width_then_returns_three() {
+        // 9 lines → 1 digit + 2 = 3
+        let log_view = make_logview(9, 5);
+        assert_eq!(log_view.gutter_width(), 3);
+    }
+
+    #[test]
+    fn given_ten_lines_when_gutter_width_then_returns_four() {
+        // 10 lines → 2 digits + 2 = 4
+        let log_view = make_logview(10, 5);
+        assert_eq!(log_view.gutter_width(), 4);
+    }
+
+    #[test]
+    fn given_nine_hundred_ninety_nine_lines_when_gutter_width_then_returns_five() {
+        // 999 lines → 3 digits + 2 = 5
+        let log_view = make_logview(999, 5);
+        assert_eq!(log_view.gutter_width(), 5);
+    }
+
+    #[test]
+    fn given_one_thousand_lines_when_gutter_width_then_returns_six() {
+        // 1000 lines → 4 digits + 2 = 6
+        let log_view = make_logview(1000, 5);
+        assert_eq!(log_view.gutter_width(), 6);
     }
 
     // --- Edge cases ---
