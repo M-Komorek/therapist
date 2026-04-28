@@ -6,10 +6,12 @@ use crate::app::App;
 mod action;
 mod app;
 mod cli;
+mod component;
 mod components;
 mod config;
 mod domain;
 mod errors;
+mod layout;
 mod logging;
 mod tui;
 
