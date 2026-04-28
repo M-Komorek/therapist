@@ -141,11 +141,8 @@ impl App {
             }
 
             match action {
-                Action::Tick => {
-                    // Support max 2 keys combination
-                    if self.last_tick_key_events.len() > 1 {
-                        self.last_tick_key_events.clear();
-                    }
+                Action::Tick if self.last_tick_key_events.len() > 1 => {
+                    self.last_tick_key_events.clear();
                 }
                 Action::Quit => self.should_quit = true,
                 Action::Suspend => self.should_suspend = true,
