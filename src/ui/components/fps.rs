@@ -8,7 +8,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use super::Component;
+use super::contract::Component;
 
 use crate::action::Action;
 

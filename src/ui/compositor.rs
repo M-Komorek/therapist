@@ -3,21 +3,21 @@ use tokio::sync::mpsc;
 
 use crate::{
     action::Action,
-    components::Component,
     config::Config,
-    layout::{LayoutManager, LayoutSlot},
     tui::{Event, Tui},
+    ui::components::contract::Component,
+    ui::layout::{LayoutManager, LayoutSlot},
 };
 
-pub struct ComponentMenager {
+pub struct Compositor {
     components: Vec<(LayoutSlot, Box<dyn Component>)>,
     layout_manager: LayoutManager,
     action_tx: mpsc::UnboundedSender<Action>,
 }
 
-impl ComponentMenager {
+impl Compositor {
     pub fn new(action_tx: mpsc::UnboundedSender<Action>, layout_manager: LayoutManager) -> Self {
-        ComponentMenager {
+        Compositor {
             components: Vec::new(),
             layout_manager,
             action_tx,

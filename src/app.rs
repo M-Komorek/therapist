@@ -8,18 +8,18 @@ use tracing::debug;
 
 use crate::{
     action::Action,
-    component::ComponentMenager,
-    components::{fps::FpsCounter, logview::LogView},
     config::Config,
     domain::file::RawLogs,
-    layout::{LayoutManager, LayoutSlot},
     tui::{Event, Tui},
+    ui::components::{fps::FpsCounter, logview::LogView},
+    ui::compositor::Compositor,
+    ui::layout::{LayoutManager, LayoutSlot},
 };
 
 pub struct App {
     tui: Tui,
     config: Config,
-    component_menager: ComponentMenager,
+    component_menager: Compositor,
     should_quit: bool,
     should_suspend: bool,
     mode: Mode,
@@ -42,7 +42,7 @@ impl App {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
 
         let layout = LayoutManager::new(tui.size()?);
-        let mut component_menager = ComponentMenager::new(action_tx.clone(), layout);
+        let mut component_menager = Compositor::new(action_tx.clone(), layout);
 
         let source = Arc::new(RawLogs::open(&file_path)?);
         component_menager.register_component(LogView::new(source), LayoutSlot::Main, &config)?;

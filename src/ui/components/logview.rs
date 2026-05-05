@@ -8,8 +8,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use super::Component;
-use crate::{action::Action, domain::LogSource};
+use super::contract::Component;
+
+use crate::{action::Action, domain::source::LogSource};
 
 pub struct LogView {
     source: Arc<dyn LogSource>,
@@ -196,8 +197,8 @@ mod tests {
 
     use ratatui::layout::Size;
 
-    use super::LogView;
-    use crate::{action::Action, components::Component, domain::LogSource};
+    use super::{Component, LogView};
+    use crate::{action::Action, domain::source::LogSource};
 
     impl LogView {
         fn selected_line(&self) -> usize {

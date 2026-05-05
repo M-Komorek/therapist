@@ -2,7 +2,7 @@ use std::path::Path;
 
 use memmap2::Mmap;
 
-use super::{LogSource, indexer::SparseLineIndexer};
+use super::{indexer::SparseLineIndexer, source::LogSource};
 
 pub struct RawLogs {
     mmap: Mmap,
