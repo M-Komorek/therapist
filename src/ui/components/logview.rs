@@ -7,12 +7,14 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 use super::contract::Component;
 
 use crate::{action::Action, domain::source::LogSource};
 
 pub struct LogView {
+    action_tx: Option<UnboundedSender<Action>>,
     source: Arc<dyn LogSource>,
     viewport_top: usize,
     viewport_height: usize,
@@ -26,6 +28,7 @@ impl LogView {
 
     pub fn new(source: Arc<dyn LogSource>) -> Self {
         Self {
+            action_tx: None,
             source,
             viewport_top: 0,
             viewport_height: 0,
@@ -101,12 +104,32 @@ impl LogView {
         let digit_count = self.total_lines().max(1).ilog10() as usize + 1;
         digit_count + Self::LINE_NUMBER_SUFIX.chars().count()
     }
+
+    fn send_status_update(&self) {
+        if let Some(tx) = &self.action_tx {
+            let status_update = Action::StatusUpdate {
+                current_line: self.selected_line,
+                total_lines: self.source.line_count(),
+                memory_consumption: self.source.memory_usage(),
+            };
+            let _ = tx.send(status_update);
+        }
+    }
 }
 
 impl Component for LogView {
+    fn register_action_handler(
+        &mut self,
+        tx: tokio::sync::mpsc::UnboundedSender<Action>,
+    ) -> color_eyre::Result<()> {
+        self.action_tx = Some(tx);
+        Ok(())
+    }
+
     fn init(&mut self, area: Size) -> color_eyre::Result<()> {
         self.viewport_height = area.height as usize;
         self.viewport_width = area.width as usize;
+        self.send_status_update();
         Ok(())
     }
 
@@ -127,6 +150,20 @@ impl Component for LogView {
             self.viewport_width = width as usize;
             self.viewport_height = height as usize;
             self.clamp_and_scroll_viewport();
+        }
+
+        let navigation_occurred = matches!(
+            action,
+            Action::ScrollUp(_)
+                | Action::ScrollDown(_)
+                | Action::HalfPageUp
+                | Action::HalfPageDown
+                | Action::GoTop
+                | Action::GoBottom
+        );
+
+        if navigation_occurred {
+            self.send_status_update();
         }
 
         Ok(None)
@@ -196,6 +233,7 @@ mod tests {
     use std::sync::Arc;
 
     use ratatui::layout::Size;
+    use tokio::sync::mpsc;
 
     use super::{Component, LogView};
     use crate::{action::Action, domain::source::LogSource};
@@ -245,6 +283,10 @@ mod tests {
             let end = end.min(self.lines.len());
             self.lines[start.min(end)..end].to_vec()
         }
+
+        fn memory_usage(&self) -> usize {
+            0
+        }
     }
 
     fn make_logview(line_count: usize, viewport_height: usize) -> LogView {
@@ -257,6 +299,33 @@ mod tests {
             })
             .unwrap();
         log_view
+    }
+
+    fn make_logview_with_channel(
+        line_count: usize,
+        viewport_height: usize,
+    ) -> (LogView, mpsc::UnboundedReceiver<Action>) {
+        let source = Arc::new(LogSourceMock::with_line_count(line_count));
+        let mut log_view = LogView::new(source);
+        let (tx, rx) = mpsc::unbounded_channel();
+        log_view.register_action_handler(tx).unwrap();
+        log_view
+            .init(Size {
+                width: 80,
+                height: viewport_height as u16,
+            })
+            .unwrap();
+        (log_view, rx)
+    }
+
+    fn drain_status_updates(rx: &mut mpsc::UnboundedReceiver<Action>) -> Vec<Action> {
+        let mut updates = Vec::new();
+        while let Ok(action) = rx.try_recv() {
+            if matches!(action, Action::StatusUpdate { .. }) {
+                updates.push(action);
+            }
+        }
+        updates
     }
 
     fn scroll_down(log_view: &mut LogView, n: usize) {
@@ -496,5 +565,118 @@ mod tests {
         let mut log_view = make_logview(1, 5);
         scroll_down(&mut log_view, 5);
         assert_eq!(log_view.selected_line(), 0);
+    }
+
+    // --- StatusUpdate emission ---
+
+    #[test]
+    fn given_logview_with_channel_when_init_then_status_update_sent() {
+        let (_log_view, mut rx) = make_logview_with_channel(10, 5);
+        let updates = drain_status_updates(&mut rx);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(
+            updates[0],
+            Action::StatusUpdate {
+                current_line: 0,
+                total_lines: 10,
+                memory_consumption: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn given_logview_when_scroll_down_then_status_update_sent_with_new_line() {
+        let (mut log_view, mut rx) = make_logview_with_channel(10, 5);
+        drain_status_updates(&mut rx); // discard init update
+
+        log_view.update(Action::ScrollDown(3)).unwrap();
+
+        let updates = drain_status_updates(&mut rx);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(
+            updates[0],
+            Action::StatusUpdate {
+                current_line: 3,
+                total_lines: 10,
+                memory_consumption: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn given_logview_when_scroll_up_then_status_update_sent() {
+        let (mut log_view, mut rx) = make_logview_with_channel(10, 5);
+        log_view.update(Action::ScrollDown(5)).unwrap();
+        drain_status_updates(&mut rx); // discard init + scroll_down updates
+
+        log_view.update(Action::ScrollUp(2)).unwrap();
+
+        let updates = drain_status_updates(&mut rx);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(
+            updates[0],
+            Action::StatusUpdate {
+                current_line: 3,
+                total_lines: 10,
+                memory_consumption: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn given_logview_when_go_bottom_then_status_update_sent_with_last_line() {
+        let (mut log_view, mut rx) = make_logview_with_channel(10, 5);
+        drain_status_updates(&mut rx);
+
+        log_view.update(Action::GoBottom).unwrap();
+
+        let updates = drain_status_updates(&mut rx);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(
+            updates[0],
+            Action::StatusUpdate {
+                current_line: 9,
+                total_lines: 10,
+                memory_consumption: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn given_logview_when_go_top_then_status_update_sent_with_line_zero() {
+        let (mut log_view, mut rx) = make_logview_with_channel(10, 5);
+        log_view.update(Action::ScrollDown(7)).unwrap();
+        drain_status_updates(&mut rx);
+
+        log_view.update(Action::GoTop).unwrap();
+
+        let updates = drain_status_updates(&mut rx);
+        assert_eq!(updates.len(), 1);
+        assert_eq!(
+            updates[0],
+            Action::StatusUpdate {
+                current_line: 0,
+                total_lines: 10,
+                memory_consumption: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn given_logview_when_scroll_right_then_no_status_update_sent() {
+        let (mut log_view, mut rx) = make_logview_with_channel(10, 5);
+        drain_status_updates(&mut rx);
+
+        log_view.update(Action::ScrollRight(3)).unwrap();
+
+        let updates = drain_status_updates(&mut rx);
+        assert!(updates.is_empty());
+    }
+
+    #[test]
+    fn given_logview_without_channel_when_navigation_then_no_panic() {
+        let mut log_view = make_logview(10, 5);
+        // No channel registered — send_status_update must not panic.
+        log_view.update(Action::ScrollDown(1)).unwrap();
     }
 }

@@ -26,10 +26,6 @@ impl RawLogs {
 }
 
 impl LogSource for RawLogs {
-    fn line_count(&self) -> usize {
-        self.indexer.total_lines()
-    }
-
     fn get_line(&self, line_idx: usize) -> color_eyre::Result<String> {
         self.indexer
             .get_line(&self.mmap, line_idx)
@@ -49,6 +45,14 @@ impl LogSource for RawLogs {
             .into_iter()
             .map(|s| s.trim_end_matches('\n').trim_end_matches('\r').to_owned())
             .collect()
+    }
+
+    fn line_count(&self) -> usize {
+        self.indexer.total_lines()
+    }
+
+    fn memory_usage(&self) -> usize {
+        self.indexer.memory_usage()
     }
 }
 
@@ -180,6 +184,38 @@ mod tests {
         for (i, line) in batch.iter().enumerate() {
             assert_eq!(line, &source.get_line(i).unwrap());
         }
+    }
+
+    #[test]
+    fn given_empty_file_when_memory_usage_then_returns_nonzero_struct_overhead() {
+        let file = write_temp_file(b"");
+        let source = RawLogs::open(file.path()).unwrap();
+
+        // Even with no lines the struct itself occupies memory.
+        assert!(source.memory_usage() > 0);
+    }
+
+    #[test]
+    fn given_file_with_lines_when_memory_usage_then_returns_nonzero() {
+        let file = write_temp_file(b"alpha\nbeta\ngamma\n");
+        let source = RawLogs::open(file.path()).unwrap();
+
+        assert!(source.memory_usage() > 0);
+    }
+
+    #[test]
+    fn given_larger_file_when_memory_usage_then_exceeds_smaller_file() {
+        let small_file = write_temp_file(b"line\n");
+        let small_source = RawLogs::open(small_file.path()).unwrap();
+
+        // Build a file large enough to produce more sparse index entries.
+        let many_lines: Vec<u8> = (0..10_000)
+            .flat_map(|i| format!("log line {i}\n").into_bytes())
+            .collect();
+        let large_file = write_temp_file(&many_lines);
+        let large_source = RawLogs::open(large_file.path()).unwrap();
+
+        assert!(large_source.memory_usage() > small_source.memory_usage());
     }
 
     #[test]

@@ -94,7 +94,6 @@ impl SparseLineIndexer {
         self.find_line_start(data, line_num)
     }
 
-    #[allow(dead_code)]
     pub fn memory_usage(&self) -> usize {
         self.sparse_offsets.len() * std::mem::size_of::<usize>() + std::mem::size_of::<Self>()
     }

@@ -23,4 +23,11 @@ pub enum Action {
     HalfPageDown,
     GoTop,
     GoBottom,
+
+    // StatusBar
+    StatusUpdate {
+        current_line: usize,
+        total_lines: usize,
+        memory_consumption: usize,
+    },
 }

@@ -11,7 +11,7 @@ use crate::{
     config::Config,
     domain::file::RawLogs,
     tui::{Event, Tui},
-    ui::components::{fps::FpsCounter, logview::LogView},
+    ui::components::{fps::FpsCounter, logview::LogView, statusbar::StatusBar},
     ui::compositor::Compositor,
     ui::layout::{LayoutManager, LayoutSlot},
 };
@@ -49,6 +49,11 @@ impl App {
         component_menager.register_component(
             FpsCounter::default(),
             LayoutSlot::Unassigned,
+            &config,
+        )?;
+        component_menager.register_component(
+            StatusBar::new(file_path.to_string_lossy().into_owned()),
+            LayoutSlot::Footer,
             &config,
         )?;
 
