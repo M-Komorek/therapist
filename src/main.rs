@@ -5,6 +5,7 @@ mod action;
 mod app;
 mod cli;
 mod config;
+mod data;
 mod domain;
 mod infra;
 mod tui;

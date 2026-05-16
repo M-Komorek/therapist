@@ -3274,6 +3274,7 @@ dependencies = [
  "json5",
  "lazy_static",
  "libc",
+ "memchr",
  "memmap2",
  "pretty_assertions",
  "ratatui",

@@ -11,7 +11,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::contract::Component;
 
-use crate::{action::Action, domain::source::LogSource};
+use crate::{action::Action, data::contract::LogSource, domain::SearchResult};
 
 pub struct LogView {
     action_tx: Option<UnboundedSender<Action>>,
@@ -21,6 +21,8 @@ pub struct LogView {
     viewport_width: usize,
     horizontal_scroll: usize,
     selected_line: usize,
+    search_result: Option<SearchResult>,
+    match_cursor: usize,
 }
 
 impl LogView {
@@ -35,6 +37,8 @@ impl LogView {
             viewport_width: 0,
             horizontal_scroll: 0,
             selected_line: 0,
+            search_result: None,
+            match_cursor: 0,
         }
     }
 
@@ -115,6 +119,67 @@ impl LogView {
             let _ = tx.send(status_update);
         }
     }
+
+    fn send_search_bar_update(&self) {
+        if let (Some(tx), Some(result)) = (&self.action_tx, &self.search_result) {
+            let _ = tx.send(Action::SearchBarUpdate {
+                current_match: self.match_cursor + 1,
+                total_matches: result.match_count(),
+            });
+        }
+    }
+
+    fn jump_to_match(&mut self) {
+        if let Some(result) = &self.search_result {
+            if let Some(&line) = result.matching_lines.get(self.match_cursor) {
+                self.selected_line = line;
+                self.clamp_and_scroll_viewport();
+            }
+        }
+    }
+
+    fn next_match(&mut self) {
+        if let Some(result) = &self.search_result {
+            let len = result.match_count();
+            if len == 0 {
+                return;
+            }
+            self.match_cursor = (self.match_cursor + 1) % len;
+        }
+        self.jump_to_match();
+        self.send_search_bar_update();
+    }
+
+    fn prev_match(&mut self) {
+        if let Some(result) = &self.search_result {
+            let len = result.match_count();
+            if len == 0 {
+                return;
+            }
+            self.match_cursor = (self.match_cursor + len - 1) % len;
+        }
+        self.jump_to_match();
+        self.send_search_bar_update();
+    }
+
+    fn apply_search_result(&mut self, result: SearchResult) {
+        self.match_cursor = 0;
+        self.search_result = Some(result);
+        self.jump_to_match();
+        self.send_search_bar_update();
+    }
+
+    fn clear_search(&mut self) {
+        self.search_result = None;
+        self.match_cursor = 0;
+    }
+
+    fn is_match_line(&self, line_idx: usize) -> bool {
+        self.search_result
+            .as_ref()
+            .map(|r| r.matching_lines.binary_search(&line_idx).is_ok())
+            .unwrap_or(false)
+    }
 }
 
 impl Component for LogView {
@@ -134,24 +199,6 @@ impl Component for LogView {
     }
 
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
-        match action {
-            Action::ScrollUp(n) => self.move_up(n),
-            Action::ScrollDown(n) => self.move_down(n),
-            Action::ScrollRight(n) => self.scroll_right(n),
-            Action::ScrollLeft(n) => self.scroll_left(n),
-            Action::HalfPageUp => self.half_page_up(),
-            Action::HalfPageDown => self.half_page_down(),
-            Action::GoTop => self.go_top(),
-            Action::GoBottom => self.go_bottom(),
-            _ => {}
-        }
-
-        if let Action::Resize(width, height) = action {
-            self.viewport_width = width as usize;
-            self.viewport_height = height as usize;
-            self.clamp_and_scroll_viewport();
-        }
-
         let navigation_occurred = matches!(
             action,
             Action::ScrollUp(_)
@@ -161,6 +208,27 @@ impl Component for LogView {
                 | Action::GoTop
                 | Action::GoBottom
         );
+
+        match action {
+            Action::ScrollUp(n) => self.move_up(n),
+            Action::ScrollDown(n) => self.move_down(n),
+            Action::ScrollRight(n) => self.scroll_right(n),
+            Action::ScrollLeft(n) => self.scroll_left(n),
+            Action::HalfPageUp => self.half_page_up(),
+            Action::HalfPageDown => self.half_page_down(),
+            Action::GoTop => self.go_top(),
+            Action::GoBottom => self.go_bottom(),
+            Action::Resize(width, height) => {
+                self.viewport_width = width as usize;
+                self.viewport_height = height as usize;
+                self.clamp_and_scroll_viewport();
+            }
+            Action::SearchResponse(result) => self.apply_search_result(result),
+            Action::NextMatch => self.next_match(),
+            Action::PrevMatch => self.prev_match(),
+            Action::ExitSearch => self.clear_search(),
+            _ => {}
+        }
 
         if navigation_occurred {
             self.send_status_update();
@@ -201,7 +269,10 @@ impl Component for LogView {
                     .take(log_width)
                     .collect();
 
-                if line_idx == self.selected_line {
+                let is_selected = line_idx == self.selected_line;
+                let is_match = self.is_match_line(line_idx);
+
+                if is_selected {
                     let highlight = Style::default()
                         .bg(Color::DarkGray)
                         .add_modifier(Modifier::BOLD);
@@ -209,6 +280,13 @@ impl Component for LogView {
                     Line::from(vec![
                         Span::styled(gutter, highlight),
                         Span::styled(content_display, highlight),
+                    ])
+                } else if is_match {
+                    let match_style = Style::default().bg(Color::Yellow).fg(Color::Black);
+                    let gutter_style = Style::default().fg(Color::DarkGray);
+                    Line::from(vec![
+                        Span::styled(gutter, gutter_style),
+                        Span::styled(content_display, match_style),
                     ])
                 } else {
                     let gutter_style = Style::default().fg(Color::DarkGray);
@@ -236,7 +314,8 @@ mod tests {
     use tokio::sync::mpsc;
 
     use super::{Component, LogView};
-    use crate::{action::Action, domain::source::LogSource};
+    use crate::action::Action;
+    use crate::data::contract::LogSource;
 
     impl LogView {
         fn selected_line(&self) -> usize {
@@ -258,12 +337,14 @@ mod tests {
 
     struct LogSourceMock {
         lines: Vec<String>,
+        raw: Vec<u8>,
     }
 
     impl LogSourceMock {
         fn with_line_count(count: usize) -> Self {
             let lines = (0..count).map(|i| format!("line {i}")).collect();
-            Self { lines }
+            let raw = Vec::new();
+            Self { lines, raw }
         }
     }
 
@@ -286,6 +367,10 @@ mod tests {
 
         fn memory_usage(&self) -> usize {
             0
+        }
+
+        fn data(&self) -> &[u8] {
+            &self.raw
         }
     }
 

@@ -1,4 +1,3 @@
-mod indexer;
+pub mod search;
 
-pub mod file;
-pub mod source;
+pub use search::SearchResult;

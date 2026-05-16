@@ -2,7 +2,7 @@ use std::path::Path;
 
 use memmap2::Mmap;
 
-use super::{indexer::SparseLineIndexer, source::LogSource};
+use super::{contract::LogSource, indexer::SparseLineIndexer};
 
 pub struct RawLogs {
     mmap: Mmap,
@@ -45,6 +45,10 @@ impl LogSource for RawLogs {
             .into_iter()
             .map(|s| s.trim_end_matches('\n').trim_end_matches('\r').to_owned())
             .collect()
+    }
+
+    fn data(&self) -> &[u8] {
+        &self.mmap
     }
 
     fn line_count(&self) -> usize {

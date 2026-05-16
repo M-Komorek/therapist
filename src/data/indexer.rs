@@ -1,3 +1,5 @@
+use tracing::debug;
+
 #[derive(Debug)]
 pub struct SparseLineIndexer {
     sparse_offsets: Vec<usize>,
@@ -13,6 +15,7 @@ impl SparseLineIndexer {
     }
 
     pub fn build_with_factor(data: &[u8], sparse_factor: usize) -> Self {
+        debug!("Indexing started");
         let sparse_factor = sparse_factor.max(1);
         let mut sparse_offsets = vec![0];
         let mut line_count = 0;
@@ -34,6 +37,7 @@ impl SparseLineIndexer {
             line_count += 1;
         }
 
+        debug!("Indexing ended");
         Self {
             sparse_offsets,
             sparse_factor,

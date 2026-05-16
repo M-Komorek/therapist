@@ -14,6 +14,7 @@ pub struct StatusBar {
     current_line: usize,
     total_lines: usize,
     indexer_bytes: usize,
+    visible: bool,
 }
 
 impl StatusBar {
@@ -23,6 +24,7 @@ impl StatusBar {
             current_line: 0,
             total_lines: 0,
             indexer_bytes: 0,
+            visible: true,
         }
     }
 
@@ -52,20 +54,27 @@ impl StatusBar {
 
 impl Component for StatusBar {
     fn update(&mut self, action: Action) -> color_eyre::Result<Option<Action>> {
-        if let Action::StatusUpdate {
-            current_line,
-            total_lines,
-            memory_consumption: indexer_bytes,
-        } = action
-        {
-            self.current_line = current_line;
-            self.total_lines = total_lines;
-            self.indexer_bytes = indexer_bytes;
+        match action {
+            Action::StatusUpdate {
+                current_line,
+                total_lines,
+                memory_consumption: indexer_bytes,
+            } => {
+                self.current_line = current_line;
+                self.total_lines = total_lines;
+                self.indexer_bytes = indexer_bytes;
+            }
+            Action::EnterSearch => self.visible = false,
+            Action::ExitSearch => self.visible = true,
+            _ => {}
         }
         Ok(None)
     }
 
     fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
+        if !self.visible {
+            return Ok(());
+        }
         let left = self.left_segment();
         let right = self.right_segment();
 

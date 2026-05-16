@@ -1,21 +1,26 @@
 {
-  "keybindings": {
-    "Home": {
-      "<q>": "Quit",
-      "<Ctrl-c>": "Quit",
-      "<Ctrl-z>": "Suspend",
+	"keybindings": {
+		"Normal": {
+			"<q>": "Quit",
+			"<Ctrl-c>": "Quit",
+			"<Ctrl-z>": "Suspend",
 
-      "<k>": { "ScrollUp": 1 },
-      "<j>": { "ScrollDown": 1 },
-      "<l>": { "ScrollRight": 1 },
-      "<h>": { "ScrollLeft": 1 },
+			"<k>": { "ScrollUp": 1 },
+			"<j>": { "ScrollDown": 1 },
+			"<l>": { "ScrollRight": 1 },
+			"<h>": { "ScrollLeft": 1 },
 
-      "<Ctrl-u>": "HalfPageUp",
-      "<Ctrl-d>": "HalfPageDown",
-      "<shift-g>": "GoBottom",
-      "<g><g>": "GoTop",
-      "<shift-l>": { "ScrollRight": 10 },
-      "<shift-h>": { "ScrollLeft": 10 },
-    },
-  }
+			"<Ctrl-u>": "HalfPageUp",
+			"<Ctrl-d>": "HalfPageDown",
+			"<shift-g>": "GoBottom",
+			"<g><g>": "GoTop",
+			"<shift-l>": { "ScrollRight": 10 },
+			"<shift-h>": { "ScrollLeft": 10 },
+
+			"</>": "EnterSearch",
+			"<n>": "NextMatch",
+			"<shift-n>": "PrevMatch",
+			"Esc": "ExitSearch",
+		},
+	}
 }

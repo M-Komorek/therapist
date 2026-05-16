@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
+use crate::domain::SearchResult;
+
 #[derive(Debug, Clone, PartialEq, Eq, Display, Serialize, Deserialize)]
 pub enum Action {
     // Platform
@@ -29,5 +31,17 @@ pub enum Action {
         current_line: usize,
         total_lines: usize,
         memory_consumption: usize,
+    },
+
+    // Search
+    EnterSearch,
+    ExitSearch,
+    SearchRequest(String),
+    SearchResponse(SearchResult),
+    NextMatch,
+    PrevMatch,
+    SearchBarUpdate {
+        current_match: usize,
+        total_matches: usize,
     },
 }

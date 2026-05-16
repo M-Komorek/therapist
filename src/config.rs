@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(
             c.keybindings
                 .0
-                .get(&Mode::Home)
+                .get(&Mode::Normal)
                 .unwrap()
                 .get(&parse_key_sequence("<q>").unwrap_or_default())
                 .unwrap(),
