@@ -1,13 +1,15 @@
+mod action;
 mod cli;
+mod keymap;
 mod logging;
 mod terminal;
 
 use std::{io, process::ExitCode};
 
 use clap::Parser;
-use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::{
+    action::{Action, AppAction},
     cli::Cli,
     terminal::{Event, Terminal},
 };
@@ -45,17 +47,16 @@ fn run(cli: &Cli) -> Result<(), AppError> {
 // Temporary, until more complex logic came it.
 fn run_loop(terminal: &mut Terminal) -> io::Result<()> {
     loop {
-        terminal.draw(|frame| {
-            frame.render_widget("Ctrl-z suspends, any other key quits", frame.area())
-        })?;
-        match terminal.next_event()? {
-            Some(Event::Key(key))
-                if key.code == KeyCode::Char('z') && key.modifiers == KeyModifiers::CONTROL =>
-            {
-                terminal.suspend()?
-            }
-            Some(Event::Key(_)) => return Ok(()),
-            Some(Event::Resize) | None => {}
+        terminal.draw(|frame| frame.render_widget("q to quit, Ctrl-z to suspend", frame.area()))?;
+        let Some(Event::Key(key)) = terminal.next_event()? else {
+            continue;
+        };
+        match keymap::action_for(key) {
+            Some(Action::App(AppAction::Quit)) => return Ok(()),
+            Some(Action::App(AppAction::Suspend)) => terminal.suspend()?,
+            #[cfg(debug_assertions)]
+            Some(Action::App(AppAction::DebugPanic)) => panic!("debug panic key pressed"),
+            None => {}
         }
     }
 }
