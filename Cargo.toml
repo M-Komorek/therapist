@@ -1,0 +1,12 @@
+[package]
+name = "therapist_v2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+ratatui = "0.30"
+rustix = { version = "1", features = ["process"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
