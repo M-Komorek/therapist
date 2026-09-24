@@ -1,17 +1,19 @@
 mod action;
+mod app;
 mod cli;
 mod keymap;
 mod logging;
 mod terminal;
+mod ui;
 
 use std::{io, process::ExitCode};
 
 use clap::Parser;
 
 use crate::{
-    action::{Action, AppAction},
+    app::{App, EventEffect},
     cli::Cli,
-    terminal::{Event, Terminal},
+    terminal::Terminal,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -23,8 +25,7 @@ enum AppError {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match run(&cli) {
+    match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!("{error}");
@@ -34,29 +35,35 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: &Cli) -> Result<(), AppError> {
+fn run(cli: Cli) -> Result<(), AppError> {
     logging::init(&cli.log_file)?;
     tracing::info!(file = %cli.file.display(), "starting");
     terminal::install_panic_hook();
     let mut terminal = Terminal::enter()?;
-    run_loop(&mut terminal)?;
+    let mut app = App::new(cli.file);
+    run_loop(&mut terminal, &mut app)?;
     tracing::info!("exiting");
     Ok(())
 }
 
-// Temporary, until more complex logic came it.
-fn run_loop(terminal: &mut Terminal) -> io::Result<()> {
+fn run_loop(terminal: &mut Terminal, app: &mut App) -> io::Result<()> {
+    draw(terminal, app)?;
     loop {
-        terminal.draw(|frame| frame.render_widget("q to quit, Ctrl-z to suspend", frame.area()))?;
-        let Some(Event::Key(key)) = terminal.next_event()? else {
+        let Some(event) = terminal.next_event()? else {
             continue;
         };
-        match keymap::action_for(key) {
-            Some(Action::App(AppAction::Quit)) => return Ok(()),
-            Some(Action::App(AppAction::Suspend)) => terminal.suspend()?,
-            #[cfg(debug_assertions)]
-            Some(Action::App(AppAction::DebugPanic)) => panic!("debug panic key pressed"),
-            None => {}
+        match app.handle(event) {
+            EventEffect::Nothing => {}
+            EventEffect::Redraw => draw(terminal, app)?,
+            EventEffect::Suspend => {
+                terminal.suspend()?;
+                draw(terminal, app)?;
+            }
+            EventEffect::Quit => return Ok(()),
         }
     }
+}
+
+fn draw(terminal: &mut Terminal, app: &App) -> io::Result<()> {
+    terminal.draw(|frame| ui::render(frame, app))
 }
