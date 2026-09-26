@@ -5,6 +5,7 @@ mod keymap;
 #[cfg_attr(not(test), expect(dead_code))]
 mod log_file;
 mod logging;
+mod session;
 #[cfg_attr(not(test), expect(dead_code))]
 mod tabs;
 mod terminal;
@@ -17,6 +18,7 @@ use clap::Parser;
 use crate::{
     app::{App, EventEffect},
     cli::Cli,
+    session::Session,
     terminal::Terminal,
 };
 
@@ -24,6 +26,8 @@ use crate::{
 enum AppError {
     #[error(transparent)]
     Logging(#[from] logging::LoggingError),
+    #[error(transparent)]
+    LogFile(#[from] log_file::LogFileError),
     #[error("terminal error: {0}")]
     Terminal(#[from] io::Error),
 }
@@ -42,9 +46,11 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<(), AppError> {
     logging::init(&cli.log_file)?;
     tracing::info!(file = %cli.file.display(), "starting");
+    let session = Session::open(&cli.file)?;
+    tracing::info!(line_count = session.log_file.line_count(), "file indexed");
     terminal::install_panic_hook();
     let mut terminal = Terminal::enter()?;
-    let mut app = App::new(cli.file);
+    let mut app = App::new(session);
     run_loop(&mut terminal, &mut app)?;
     tracing::info!("exiting");
     Ok(())

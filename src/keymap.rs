@@ -1,8 +1,14 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, AppAction};
+use crate::action::{Action, AppAction, ViewAction};
 
 pub fn action_for(key: KeyEvent) -> Option<Action> {
+    app_action_for(key)
+        .map(Action::App)
+        .or_else(|| view_action_for(key).map(Action::View))
+}
+
+fn app_action_for(key: KeyEvent) -> Option<AppAction> {
     let app_action = match (key.modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Char('q')) => AppAction::Quit,
         (KeyModifiers::CONTROL, KeyCode::Char('c')) => AppAction::Quit,
@@ -11,7 +17,16 @@ pub fn action_for(key: KeyEvent) -> Option<Action> {
         (KeyModifiers::CONTROL, KeyCode::Char('p')) => AppAction::DebugPanic,
         _ => return None,
     };
-    Some(Action::App(app_action))
+    Some(app_action)
+}
+
+fn view_action_for(key: KeyEvent) -> Option<ViewAction> {
+    let view_action = match (key.modifiers, key.code) {
+        (KeyModifiers::NONE, KeyCode::Char('j') | KeyCode::Down) => ViewAction::MoveDown(1),
+        (KeyModifiers::NONE, KeyCode::Char('k') | KeyCode::Up) => ViewAction::MoveUp(1),
+        _ => return None,
+    };
+    Some(view_action)
 }
 
 #[cfg(test)]
@@ -48,6 +63,24 @@ mod tests {
             action_for(ctrl('p')),
             Some(Action::App(AppAction::DebugPanic))
         );
+    }
+
+    #[test]
+    fn given_j_or_down_arrow_when_mapping_then_cursor_moves_down_one_line() {
+        let down_arrow = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        let move_down = Some(Action::View(ViewAction::MoveDown(1)));
+
+        assert_eq!(action_for(key('j')), move_down);
+        assert_eq!(action_for(down_arrow), move_down);
+    }
+
+    #[test]
+    fn given_k_or_up_arrow_when_mapping_then_cursor_moves_up_one_line() {
+        let up_arrow = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        let move_up = Some(Action::View(ViewAction::MoveUp(1)));
+
+        assert_eq!(action_for(key('k')), move_up);
+        assert_eq!(action_for(up_arrow), move_up);
     }
 
     #[test]

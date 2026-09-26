@@ -3,27 +3,31 @@ use ratatui::{Frame, text::Text};
 use crate::app::App;
 
 pub fn render(frame: &mut Frame, app: &App) {
-    let placeholder = format!("{}\nq to quit", app.file().display());
+    let session = app.session();
+    let placeholder = format!(
+        "line {}/{}\nq to quit",
+        session.tab.cursor() + 1,
+        session.log_file.line_count()
+    );
     frame.render_widget(Text::raw(placeholder), frame.area());
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use ratatui::{Terminal, backend::TestBackend};
 
     use super::*;
+    use crate::session::Session;
 
     #[test]
-    fn given_app_when_rendering_then_file_path_and_quit_hint_are_shown() {
-        let app = App::new(PathBuf::from("/var/log/app.log"));
-        let mut terminal = Terminal::new(TestBackend::new(16, 2)).unwrap();
+    fn given_app_when_rendering_then_cursor_position_and_quit_hint_are_shown() {
+        let app = App::new(Session::from_text("first\nsecond\nthird\n"));
+        let mut terminal = Terminal::new(TestBackend::new(9, 2)).unwrap();
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
 
         terminal
             .backend()
-            .assert_buffer_lines(["/var/log/app.log", "q to quit"]);
+            .assert_buffer_lines(["line 1/3", "q to quit"]);
     }
 }

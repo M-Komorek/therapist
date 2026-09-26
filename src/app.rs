@@ -1,8 +1,7 @@
-use std::path::{Path, PathBuf};
-
 use crate::{
-    action::{Action, AppAction},
+    action::{Action, AppAction, ViewAction},
     keymap,
+    session::Session,
     terminal::Event,
 };
 
@@ -15,32 +14,52 @@ pub enum EventEffect {
 }
 
 pub struct App {
-    file: PathBuf,
+    session: Session,
 }
 
 impl App {
-    pub fn new(file: PathBuf) -> Self {
-        Self { file }
+    pub fn new(session: Session) -> Self {
+        Self { session }
     }
 
-    pub fn file(&self) -> &Path {
-        &self.file
+    pub fn session(&self) -> &Session {
+        &self.session
     }
 
     pub fn handle(&mut self, event: Event) -> EventEffect {
         match event {
-            Event::Key(key) => keymap::action_for(key).map_or(EventEffect::Nothing, dispatch),
+            Event::Key(key) => {
+                keymap::action_for(key).map_or(EventEffect::Nothing, |action| self.dispatch(action))
+            }
             Event::Resize => EventEffect::Redraw,
         }
     }
+
+    fn dispatch(&mut self, action: Action) -> EventEffect {
+        match action {
+            Action::App(app_action) => dispatch_app(app_action),
+            Action::View(view_action) => self.dispatch_view(view_action),
+        }
+    }
+
+    fn dispatch_view(&mut self, view_action: ViewAction) -> EventEffect {
+        match view_action {
+            ViewAction::MoveUp(lines_to_move) => self.session.tab.move_up(lines_to_move),
+            ViewAction::MoveDown(lines_to_move) => self
+                .session
+                .tab
+                .move_down(lines_to_move, self.session.log_file.line_count()),
+        }
+        EventEffect::Redraw
+    }
 }
 
-fn dispatch(action: Action) -> EventEffect {
-    match action {
-        Action::App(AppAction::Quit) => EventEffect::Quit,
-        Action::App(AppAction::Suspend) => EventEffect::Suspend,
+fn dispatch_app(app_action: AppAction) -> EventEffect {
+    match app_action {
+        AppAction::Quit => EventEffect::Quit,
+        AppAction::Suspend => EventEffect::Suspend,
         #[cfg(debug_assertions)]
-        Action::App(AppAction::DebugPanic) => panic!("Debug panic key pressed"),
+        AppAction::DebugPanic => panic!("Debug panic key pressed"),
     }
 }
 
@@ -51,7 +70,7 @@ mod tests {
     use super::*;
 
     fn make_app() -> App {
-        App::new(PathBuf::from("app.log"))
+        App::new(Session::from_text("first\nsecond\nthird\n"))
     }
 
     fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> EventEffect {
@@ -83,6 +102,38 @@ mod tests {
         let effect = press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
 
         assert_eq!(effect, EventEffect::Nothing);
+    }
+
+    #[test]
+    fn given_app_when_j_is_pressed_then_cursor_moves_down_and_screen_is_redrawn() {
+        let mut app = make_app();
+
+        let effect = press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(app.session.tab.cursor(), 1);
+    }
+
+    #[test]
+    fn given_cursor_on_second_line_when_k_is_pressed_then_cursor_moves_up() {
+        let mut app = make_app();
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+
+        assert_eq!(app.session.tab.cursor(), 0);
+    }
+
+    #[test]
+    fn given_cursor_on_last_line_when_j_is_pressed_then_cursor_stays_there() {
+        let mut app = make_app();
+        for _ in 0..2 {
+            press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        }
+
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+
+        assert_eq!(app.session.tab.cursor(), 2);
     }
 
     #[test]
