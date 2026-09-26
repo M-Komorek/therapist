@@ -62,23 +62,23 @@ mod tests {
     use super::*;
 
     fn index_of(text: &str, checkpoint_interval: usize) -> LineIndex {
-        let mut index = LineIndex::new(checkpoint_interval);
-        index.add_chunk(text.as_bytes());
-        index
+        let mut line_index = LineIndex::new(checkpoint_interval);
+        line_index.add_chunk(text.as_bytes());
+        line_index
     }
 
-    fn lookup(index: &LineIndex, line: usize) -> Option<(u64, usize)> {
-        index
+    fn lookup(line_index: &LineIndex, line: usize) -> Option<(u64, usize)> {
+        line_index
             .checkpoint_for(line)
             .map(|checkpoint| (checkpoint.byte_offset, checkpoint.lines_to_skip))
     }
 
     #[test]
     fn given_empty_file_when_indexed_then_it_has_no_lines() {
-        let index = index_of("", 1);
+        let line_index = index_of("", 1);
 
-        assert_eq!(index.line_count(), 0);
-        assert_eq!(lookup(&index, 0), None);
+        assert_eq!(line_index.line_count(), 0);
+        assert_eq!(lookup(&line_index, 0), None);
     }
 
     #[test]
@@ -93,58 +93,58 @@ mod tests {
 
     #[test]
     fn given_only_newlines_when_indexed_then_each_is_an_empty_line() {
-        let index = index_of("\n\n\n", 1);
+        let line_index = index_of("\n\n\n", 1);
 
-        assert_eq!(index.line_count(), 3);
-        assert_eq!(lookup(&index, 2), Some((2, 0)));
+        assert_eq!(line_index.line_count(), 3);
+        assert_eq!(lookup(&line_index, 2), Some((2, 0)));
     }
 
     #[test]
     fn given_crlf_endings_when_indexed_then_lines_start_after_the_newline() {
-        let index = index_of("a\r\nbb\r\nc", 1);
+        let line_index = index_of("a\r\nbb\r\nc", 1);
 
-        assert_eq!(index.line_count(), 3);
-        assert_eq!(lookup(&index, 1), Some((3, 0)));
-        assert_eq!(lookup(&index, 2), Some((7, 0)));
+        assert_eq!(line_index.line_count(), 3);
+        assert_eq!(lookup(&line_index, 1), Some((3, 0)));
+        assert_eq!(lookup(&line_index, 2), Some((7, 0)));
     }
 
     #[test]
     fn given_interval_of_one_when_looking_up_then_every_line_is_a_checkpoint() {
-        let index = index_of("a\nbb\nccc", 1);
+        let line_index = index_of("a\nbb\nccc", 1);
 
-        assert_eq!(lookup(&index, 0), Some((0, 0)));
-        assert_eq!(lookup(&index, 1), Some((2, 0)));
-        assert_eq!(lookup(&index, 2), Some((5, 0)));
+        assert_eq!(lookup(&line_index, 0), Some((0, 0)));
+        assert_eq!(lookup(&line_index, 1), Some((2, 0)));
+        assert_eq!(lookup(&line_index, 2), Some((5, 0)));
     }
 
     #[test]
     fn given_interval_of_two_when_looking_up_then_nearest_earlier_checkpoint_is_used() {
-        let index = index_of("a\nbb\nccc\ndddd\ne", 2);
+        let line_index = index_of("a\nbb\nccc\ndddd\ne", 2);
 
-        assert_eq!(lookup(&index, 1), Some((0, 1)));
-        assert_eq!(lookup(&index, 3), Some((5, 1)));
-        assert_eq!(lookup(&index, 4), Some((14, 0)));
+        assert_eq!(lookup(&line_index, 1), Some((0, 1)));
+        assert_eq!(lookup(&line_index, 3), Some((5, 1)));
+        assert_eq!(lookup(&line_index, 4), Some((14, 0)));
     }
 
     #[test]
     fn given_interval_larger_than_file_when_looking_up_then_lines_are_skipped_from_start() {
-        let index = index_of("a\nbb\nccc", 10);
+        let line_index = index_of("a\nbb\nccc", 10);
 
-        assert_eq!(lookup(&index, 2), Some((0, 2)));
+        assert_eq!(lookup(&line_index, 2), Some((0, 2)));
     }
 
     #[test]
     fn given_zero_interval_when_looking_up_then_it_works_like_interval_of_one() {
-        let index = index_of("a\nbb", 0);
+        let line_index = index_of("a\nbb", 0);
 
-        assert_eq!(lookup(&index, 1), Some((2, 0)));
+        assert_eq!(lookup(&line_index, 1), Some((2, 0)));
     }
 
     #[test]
     fn given_line_past_the_end_when_looking_up_then_there_is_no_checkpoint() {
-        let index = index_of("a\nb\n", 1);
+        let line_index = index_of("a\nb\n", 1);
 
-        assert_eq!(lookup(&index, 2), None);
+        assert_eq!(lookup(&line_index, 2), None);
     }
 
     #[test]
