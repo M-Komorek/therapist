@@ -1493,6 +1493,7 @@ name = "therapist_v2"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "memchr",
  "ratatui",
  "rustix",
  "thiserror 2.0.21",

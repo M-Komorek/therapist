@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
+memchr = "2"
 ratatui = "0.30"
 rustix = { version = "1", features = ["process"] }
 thiserror = "2"
