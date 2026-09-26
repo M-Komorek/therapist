@@ -5,6 +5,8 @@ mod keymap;
 #[cfg_attr(not(test), expect(dead_code))]
 mod log_file;
 mod logging;
+#[cfg_attr(not(test), expect(dead_code))]
+mod tabs;
 mod terminal;
 mod ui;
 
