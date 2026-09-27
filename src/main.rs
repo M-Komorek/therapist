@@ -2,7 +2,6 @@ mod action;
 mod app;
 mod cli;
 mod keymap;
-#[cfg_attr(not(test), expect(dead_code))]
 mod log_file;
 mod logging;
 mod session;

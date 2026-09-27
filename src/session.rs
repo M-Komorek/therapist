@@ -22,11 +22,10 @@ impl Session {
 #[cfg(test)]
 impl Session {
     pub fn from_text(text: &str) -> Self {
-        use std::io::Write;
-
-        let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-        temp_file.write_all(text.as_bytes()).unwrap();
-        // Dropping temp_file unlinks it, but the open handle in LogFile keeps it readable.
-        Self::open(temp_file.path()).unwrap()
+        let temp_directory = tempfile::tempdir().unwrap();
+        let path = temp_directory.path().join("app.log");
+        std::fs::write(&path, text).unwrap();
+        // Dropping temp_directory deletes the file, but the open handle in LogFile keeps it readable.
+        Self::open(&path).unwrap()
     }
 }

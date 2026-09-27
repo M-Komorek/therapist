@@ -1,6 +1,7 @@
 mod line_index;
 
 use std::{
+    borrow::Cow,
     fs::File,
     io,
     ops::{ControlFlow, Range},
@@ -51,6 +52,11 @@ impl LogFile {
             file,
             line_index,
         })
+    }
+
+    pub fn file_name(&self) -> Cow<'_, str> {
+        let file_name = self.path.file_name().unwrap_or(self.path.as_os_str());
+        file_name.to_string_lossy()
     }
 
     pub fn line_count(&self) -> usize {
