@@ -1,8 +1,11 @@
+use ratatui::layout::{Rect, Size};
+
 use crate::{
     action::{Action, AppAction, ViewAction},
     keymap,
     session::Session,
     terminal::Event,
+    ui::ScreenAreas,
 };
 
 #[derive(Debug, PartialEq)]
@@ -18,8 +21,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(session: Session) -> Self {
-        Self { session }
+    pub fn new(session: Session, screen_size: Size) -> Self {
+        let mut app = Self { session };
+        app.update_viewport_height(screen_size);
+        app
     }
 
     pub fn session(&self) -> &Session {
@@ -31,8 +36,18 @@ impl App {
             Event::Key(key) => {
                 keymap::action_for(key).map_or(EventEffect::Nothing, |action| self.dispatch(action))
             }
-            Event::Resize => EventEffect::Redraw,
+            Event::Resize(screen_size) => {
+                self.update_viewport_height(screen_size);
+                EventEffect::Redraw
+            }
         }
+    }
+
+    fn update_viewport_height(&mut self, screen_size: Size) {
+        let log_view_height = ScreenAreas::new(Rect::from(screen_size)).log_view.height;
+        self.session
+            .tab
+            .set_viewport_height(usize::from(log_view_height));
     }
 
     fn dispatch(&mut self, action: Action) -> EventEffect {
@@ -70,7 +85,10 @@ mod tests {
     use super::*;
 
     fn make_app() -> App {
-        App::new(Session::from_text("first\nsecond\nthird\n"))
+        App::new(
+            Session::from_text("first\nsecond\nthird\n"),
+            Size::new(20, 4),
+        )
     }
 
     fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> EventEffect {
@@ -137,12 +155,33 @@ mod tests {
     }
 
     #[test]
+    fn given_new_app_when_j_is_pressed_then_the_view_does_not_scroll() {
+        let mut app = make_app();
+
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+
+        assert_eq!(app.session.tab.viewport().top(), 0);
+    }
+
+    #[test]
     fn given_app_when_terminal_is_resized_then_screen_is_redrawn() {
         let mut app = make_app();
 
-        let effect = app.handle(Event::Resize);
+        let effect = app.handle(Event::Resize(Size::new(30, 10)));
 
         assert_eq!(effect, EventEffect::Redraw);
+    }
+
+    #[test]
+    fn given_cursor_on_last_line_when_window_shrinks_then_view_scrolls_to_keep_it_visible() {
+        let mut app = make_app();
+        for _ in 0..2 {
+            press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        }
+
+        app.handle(Event::Resize(Size::new(20, 2)));
+
+        assert_eq!(app.session.tab.viewport().top(), 2);
     }
 
     #[cfg(debug_assertions)]

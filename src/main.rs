@@ -5,7 +5,6 @@ mod keymap;
 mod log_file;
 mod logging;
 mod session;
-#[cfg_attr(not(test), expect(dead_code))]
 mod tabs;
 mod terminal;
 mod ui;
@@ -49,7 +48,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
     tracing::info!(line_count = session.log_file.line_count(), "file indexed");
     terminal::install_panic_hook();
     let mut terminal = Terminal::enter()?;
-    let mut app = App::new(session);
+    let mut app = App::new(session, terminal.size()?);
     run_loop(&mut terminal, &mut app)?;
     tracing::info!("exiting");
     Ok(())

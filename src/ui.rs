@@ -42,7 +42,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Size};
 
     use super::*;
     use crate::session::Session;
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn given_app_when_rendering_then_log_view_is_above_the_status_bar() {
-        let app = App::new(Session::from_text("first\nsecond\n"));
+        let app = App::new(Session::from_text("first\nsecond\n"), Size::new(20, 3));
         let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
 
         terminal.draw(|frame| render(frame, &app)).unwrap();

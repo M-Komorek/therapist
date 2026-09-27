@@ -15,13 +15,14 @@ use ratatui::{
             is_raw_mode_enabled,
         },
     },
+    layout::Size,
 };
 use rustix::process::{Signal, kill_current_process_group};
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
     Key(KeyEvent),
-    Resize,
+    Resize(Size),
 }
 
 /// The full-screen terminal. Creating it enters raw mode and the alternate screen. Dropping it
@@ -43,6 +44,10 @@ impl Terminal {
         tracing::debug!("draw");
         self.screen.draw(render)?;
         Ok(())
+    }
+
+    pub fn size(&self) -> io::Result<Size> {
+        self.screen.size()
     }
 
     pub fn next_event(&self) -> io::Result<Option<Event>> {
@@ -76,7 +81,7 @@ pub fn install_panic_hook() {
 fn to_event(event: TerminalEvent) -> Option<Event> {
     match event {
         TerminalEvent::Key(key) if key.kind == KeyEventKind::Press => Some(Event::Key(key)),
-        TerminalEvent::Resize(..) => Some(Event::Resize),
+        TerminalEvent::Resize(width, height) => Some(Event::Resize(Size::new(width, height))),
         _ => None,
     }
 }
@@ -119,8 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn given_resize_when_converting_then_it_is_a_resize_event() {
-        assert_eq!(to_event(TerminalEvent::Resize(80, 24)), Some(Event::Resize));
+    fn given_resize_when_converting_then_it_is_a_resize_event_with_the_new_size() {
+        assert_eq!(
+            to_event(TerminalEvent::Resize(80, 24)),
+            Some(Event::Resize(Size::new(80, 24)))
+        );
     }
 
     #[test]
