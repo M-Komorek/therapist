@@ -1,10 +1,10 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     App(AppAction),
     View(ViewAction),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AppAction {
     Quit,
     Suspend,
@@ -12,8 +12,19 @@ pub enum AppAction {
     DebugPanic,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ViewAction {
     MoveUp(usize),
     MoveDown(usize),
+    GoToLineNumber(usize),
+    GoToLastLine,
+    HalfPageUp,
+    HalfPageDown,
+    PageUp,
+    PageDown,
+    ScrollLeft(usize),
+    ScrollRight(usize),
+    ScrollLeftWide,
+    ScrollRightWide,
+    ScrollToFirstColumn,
 }

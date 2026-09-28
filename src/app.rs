@@ -2,7 +2,7 @@ use ratatui::layout::{Rect, Size};
 
 use crate::{
     action::{Action, AppAction, ViewAction},
-    keymap,
+    keymap::{KeyResolution, Keymap},
     session::Session,
     terminal::Event,
     ui::ScreenAreas,
@@ -18,11 +18,15 @@ pub enum EventEffect {
 
 pub struct App {
     session: Session,
+    keymap: Keymap,
 }
 
 impl App {
     pub fn new(session: Session, screen_size: Size) -> Self {
-        let mut app = Self { session };
+        let mut app = Self {
+            session,
+            keymap: Keymap::default(),
+        };
         app.update_viewport_height(screen_size);
         app
     }
@@ -33,9 +37,11 @@ impl App {
 
     pub fn handle(&mut self, event: Event) -> EventEffect {
         match event {
-            Event::Key(key) => {
-                keymap::action_for(key).map_or(EventEffect::Nothing, |action| self.dispatch(action))
-            }
+            Event::Key(key) => match self.keymap.resolve(key) {
+                KeyResolution::Action(action) => self.dispatch(action),
+                KeyResolution::PendingChanged => EventEffect::Redraw,
+                KeyResolution::Ignored => EventEffect::Nothing,
+            },
             Event::Resize(screen_size) => {
                 self.update_viewport_height(screen_size);
                 EventEffect::Redraw
@@ -64,6 +70,18 @@ impl App {
                 .session
                 .tab
                 .move_down(lines_to_move, self.session.log_file.line_count()),
+            // TODO: add tab motions for these actions and dispatch them here.
+            ViewAction::GoToLineNumber(_)
+            | ViewAction::GoToLastLine
+            | ViewAction::HalfPageUp
+            | ViewAction::HalfPageDown
+            | ViewAction::PageUp
+            | ViewAction::PageDown
+            | ViewAction::ScrollLeft(_)
+            | ViewAction::ScrollRight(_)
+            | ViewAction::ScrollLeftWide
+            | ViewAction::ScrollRightWide
+            | ViewAction::ScrollToFirstColumn => return EventEffect::Nothing,
         }
         EventEffect::Redraw
     }
@@ -140,6 +158,26 @@ mod tests {
         press(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
 
         assert_eq!(app.session.tab.cursor(), 0);
+    }
+
+    #[test]
+    fn given_app_when_count_digit_is_pressed_then_screen_is_redrawn_without_moving() {
+        let mut app = make_app();
+
+        let effect = press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(app.session.tab.cursor(), 0);
+    }
+
+    #[test]
+    fn given_pending_count_when_j_is_pressed_then_cursor_moves_that_many_lines() {
+        let mut app = make_app();
+        press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
+
+        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+
+        assert_eq!(app.session.tab.cursor(), 2);
     }
 
     #[test]
