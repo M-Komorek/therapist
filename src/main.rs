@@ -57,10 +57,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
 fn run_loop(terminal: &mut Terminal, app: &mut App) -> io::Result<()> {
     draw(terminal, app)?;
     loop {
-        let Some(event) = terminal.next_event()? else {
-            continue;
-        };
-        match app.handle(event) {
+        match handle_waiting_events(terminal, app)? {
             EventEffect::Nothing => {}
             EventEffect::Redraw => draw(terminal, app)?,
             EventEffect::Suspend => {
@@ -68,6 +65,25 @@ fn run_loop(terminal: &mut Terminal, app: &mut App) -> io::Result<()> {
                 draw(terminal, app)?;
             }
             EventEffect::Quit => return Ok(()),
+        }
+    }
+}
+
+/// Handles the next event and every event already waiting behind it, so keys that arrive faster
+/// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws.
+fn handle_waiting_events(terminal: &Terminal, app: &mut App) -> io::Result<EventEffect> {
+    let mut batch_effect = EventEffect::Nothing;
+    loop {
+        let effect = terminal
+            .next_event()?
+            .map_or(EventEffect::Nothing, |event| app.handle(event));
+        match effect {
+            EventEffect::Nothing => {}
+            EventEffect::Redraw => batch_effect = EventEffect::Redraw,
+            EventEffect::Suspend | EventEffect::Quit => return Ok(effect),
+        }
+        if !terminal.has_waiting_event()? {
+            return Ok(batch_effect);
         }
     }
 }

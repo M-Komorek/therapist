@@ -1,6 +1,7 @@
 use std::{
-    io::{self, Stdout, stdout},
+    io::{self, BufWriter, Stdout, stdout},
     panic,
+    time::{Duration, Instant},
 };
 
 use ratatui::{
@@ -9,15 +10,17 @@ use ratatui::{
     crossterm::{
         cursor::Show,
         event::{self, Event as TerminalEvent, KeyEvent, KeyEventKind},
-        execute,
+        execute, queue,
         terminal::{
-            EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-            is_raw_mode_enabled,
+            BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
+            LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, is_raw_mode_enabled,
         },
     },
     layout::Size,
 };
 use rustix::process::{Signal, kill_current_process_group};
+
+const OUTPUT_BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
@@ -28,22 +31,46 @@ pub enum Event {
 /// The full-screen terminal. Creating it enters raw mode and the alternate screen. Dropping it
 /// restores the terminal.
 pub struct Terminal {
-    screen: ratatui::Terminal<CrosstermBackend<Stdout>>,
+    screen: ratatui::Terminal<CrosstermBackend<BufWriter<Stdout>>>,
 }
 
 impl Terminal {
     pub fn enter() -> io::Result<Self> {
         let terminal = Self {
-            screen: ratatui::Terminal::new(CrosstermBackend::new(stdout()))?,
+            screen: ratatui::Terminal::new(CrosstermBackend::new(BufWriter::with_capacity(
+                OUTPUT_BUFFER_SIZE,
+                stdout(),
+            )))?,
         };
         enter_tui_mode()?;
         Ok(terminal)
     }
 
+    /// Draws a frame as one synchronized update, so the terminal never shows it half-drawn.
     pub fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()> {
-        tracing::debug!("draw");
-        self.screen.draw(render)?;
+        let draw_start = Instant::now();
+        queue!(self.screen.backend_mut(), BeginSynchronizedUpdate)?;
+        let render_time = self.draw_measuring_render_time(render)?;
+        execute!(self.screen.backend_mut(), EndSynchronizedUpdate)?;
+        tracing::trace!(
+            render_us = render_time.as_micros(),
+            total_us = draw_start.elapsed().as_micros(),
+            "draw"
+        );
         Ok(())
+    }
+
+    fn draw_measuring_render_time(
+        &mut self,
+        render: impl FnOnce(&mut Frame),
+    ) -> io::Result<Duration> {
+        let mut render_time = Duration::ZERO;
+        self.screen.draw(|frame| {
+            let render_start = Instant::now();
+            render(frame);
+            render_time = render_start.elapsed();
+        })?;
+        Ok(render_time)
     }
 
     pub fn size(&self) -> io::Result<Size> {
@@ -52,6 +79,10 @@ impl Terminal {
 
     pub fn next_event(&self) -> io::Result<Option<Event>> {
         Ok(to_event(event::read()?))
+    }
+
+    pub fn has_waiting_event(&self) -> io::Result<bool> {
+        event::poll(Duration::ZERO)
     }
 
     /// Suspends the app like Ctrl-z in a shell, and returns after `fg`.

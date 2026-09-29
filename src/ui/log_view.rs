@@ -45,7 +45,8 @@ fn gutter(line: usize, number_width: usize) -> String {
 /// Turns a log line into the spans shown inside the display `columns`. Tabs expand to spaces up to
 /// the next stop, and ASCII control characters show dimmed in caret notation.
 fn visible_spans(text: &str, columns: Range<usize>) -> Vec<Span<'static>> {
-    if is_printable_ascii(text) {
+    let bytes_up_to_window_end = &text.as_bytes()[..columns.end.min(text.len())];
+    if is_printable_ascii(bytes_up_to_window_end) {
         return vec![Span::raw(printable_ascii_window(text, columns))];
     }
     let mut row = VisibleRow::new(columns);
@@ -62,8 +63,8 @@ fn visible_spans(text: &str, columns: Range<usize>) -> Vec<Span<'static>> {
     row.spans
 }
 
-fn is_printable_ascii(text: &str) -> bool {
-    text.bytes().all(|byte| matches!(byte, b' '..=b'~'))
+fn is_printable_ascii(bytes: &[u8]) -> bool {
+    bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
 }
 
 /// Printable ASCII takes one column per byte, so the window is a plain slice.
@@ -242,6 +243,13 @@ mod tests {
     fn given_nul_and_del_when_converting_then_they_use_standard_caret_notation() {
         assert_eq!(caret_notation('\0'), "^@");
         assert_eq!(caret_notation('\x7f'), "^?");
+    }
+
+    #[test]
+    fn given_non_ascii_past_the_window_when_rendering_then_the_visible_part_is_unchanged() {
+        let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │ abc"]);
     }
 
     #[test]

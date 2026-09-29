@@ -123,16 +123,21 @@ impl LineCollector {
     fn add_chunk(&mut self, chunk: &[u8]) -> ControlFlow<()> {
         let mut line_start = 0;
         for newline_position in memchr::memchr_iter(b'\n', chunk) {
-            self.partial_line
-                .extend_from_slice(&chunk[line_start..newline_position]);
+            self.push_line_part(&chunk[line_start..newline_position]);
             self.finish_line();
             if self.lines.len() == self.lines_to_keep {
                 return ControlFlow::Break(());
             }
             line_start = newline_position + 1;
         }
-        self.partial_line.extend_from_slice(&chunk[line_start..]);
+        self.push_line_part(&chunk[line_start..]);
         ControlFlow::Continue(())
+    }
+
+    fn push_line_part(&mut self, line_part: &[u8]) {
+        if self.lines_to_skip == 0 {
+            self.partial_line.extend_from_slice(line_part);
+        }
     }
 
     fn finish_line(&mut self) {
@@ -221,6 +226,15 @@ mod tests {
         let (_temp_file, log_file) = open_with(format!("short\n{long_line}\nafter").as_bytes());
 
         assert_eq!(log_file.lines(1..3).unwrap(), [long_line.as_str(), "after"]);
+    }
+
+    #[test]
+    fn given_skipped_line_longer_than_read_buffer_when_reading_then_the_next_line_comes_back_whole()
+    {
+        let long_line = "x".repeat(READ_BUFFER_SIZE * 2 + 1);
+        let (_temp_file, log_file) = open_with(format!("{long_line}\nafter\nlast").as_bytes());
+
+        assert_eq!(log_file.lines(1..3).unwrap(), ["after", "last"]);
     }
 
     #[test]
