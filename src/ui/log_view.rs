@@ -1,8 +1,10 @@
+use std::ops::Range;
+
 use ratatui::{
     Frame,
     buffer::CellWidth,
     layout::Rect,
-    style::Stylize,
+    style::{Style, Stylize},
     text::{Line, Span},
 };
 
@@ -20,9 +22,11 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
         }
     };
     let number_width = number_width(log_file.line_count());
+    let left_column = tab.viewport().left_column();
+    let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
     for ((row, text), line) in area.rows().zip(&texts).zip(first_line..) {
         let mut display_line = Line::from(gutter(line, number_width));
-        display_line.extend(display_spans(text));
+        display_line.extend(visible_spans(text, visible_columns.clone()));
         if line == tab.cursor() {
             display_line = display_line.reversed();
         }
@@ -38,32 +42,99 @@ fn gutter(line: usize, number_width: usize) -> String {
     format!(" {:>number_width$} │ ", line + 1)
 }
 
-fn display_spans(text: &str) -> Vec<Span<'static>> {
-    let mut spans = Vec::new();
-    let mut plain_text = String::new();
-    let mut unmeasured_start = 0;
-    let mut column = 0;
-    for character in text.chars() {
-        if !character.is_control() {
-            plain_text.push(character);
-            continue;
+/// Turns a log line into the spans shown inside the display `columns`. Tabs expand to spaces up to
+/// the next stop, and ASCII control characters show dimmed in caret notation.
+fn visible_spans(text: &str, columns: Range<usize>) -> Vec<Span<'static>> {
+    if is_printable_ascii(text) {
+        return vec![Span::raw(printable_ascii_window(text, columns))];
+    }
+    let mut row = VisibleRow::new(columns);
+    let mut plain_text_start = 0;
+    let controls = text
+        .char_indices()
+        .filter(|(_, character)| character.is_control());
+    for (index, control) in controls {
+        row.push_text(&text[plain_text_start..index]);
+        row.push_control(control);
+        plain_text_start = index + control.len_utf8();
+    }
+    row.push_text(&text[plain_text_start..]);
+    row.spans
+}
+
+fn is_printable_ascii(text: &str) -> bool {
+    text.bytes().all(|byte| matches!(byte, b' '..=b'~'))
+}
+
+/// Printable ASCII takes one column per byte, so the window is a plain slice.
+fn printable_ascii_window(text: &str, columns: Range<usize>) -> String {
+    let start = columns.start.min(text.len());
+    let end = columns.end.min(text.len());
+    text[start..end].to_owned()
+}
+
+/// A display row cut to a window of columns, built from the left one symbol at a time. A symbol cut
+/// in half by the left edge becomes spaces, so the rest of the row keeps its columns.
+struct VisibleRow {
+    columns: Range<usize>,
+    column: usize,
+    spans: Vec<Span<'static>>,
+}
+
+impl VisibleRow {
+    fn new(columns: Range<usize>) -> Self {
+        Self {
+            columns,
+            column: 0,
+            spans: Vec::new(),
         }
-        // Measured as a whole, so emoji sequences get the width ratatui gives them.
-        column += usize::from(plain_text[unmeasured_start..].cell_width());
-        if character == '\t' {
-            let spaces = TAB_STOP - column % TAB_STOP;
-            plain_text.extend(std::iter::repeat_n(' ', spaces));
-            column += spaces;
-        } else if character.is_ascii_control() {
-            spans.push(Span::raw(std::mem::take(&mut plain_text)));
-            spans.push(caret_notation(character).dim());
-            column += 2;
+    }
+
+    fn push_text(&mut self, text: &str) {
+        let span = Span::raw(text);
+        for grapheme in span.styled_graphemes(Style::default()) {
+            if self.is_full() {
+                return;
+            }
+            let width = usize::from(grapheme.symbol.cell_width());
+            self.push_symbol(grapheme.symbol, width, Style::default());
+        }
+    }
+
+    fn push_control(&mut self, control: char) {
+        if control == '\t' {
+            let spaces = TAB_STOP - self.column % TAB_STOP;
+            self.push_symbol(&" ".repeat(spaces), spaces, Style::default());
+        } else if control.is_ascii_control() {
+            self.push_symbol(&caret_notation(control), 2, Style::new().dim());
         }
         // Other control characters (C1) are dropped, as ratatui would draw nothing for them.
-        unmeasured_start = plain_text.len();
     }
-    spans.push(Span::raw(plain_text));
-    spans
+
+    fn push_symbol(&mut self, symbol: &str, width: usize, style: Style) {
+        if self.is_full() {
+            return;
+        }
+        let next_column = self.column + width;
+        if self.column >= self.columns.start {
+            self.append(symbol, style);
+        } else if next_column > self.columns.start {
+            let visible_width = next_column - self.columns.start;
+            self.append(&" ".repeat(visible_width), Style::default());
+        }
+        self.column = next_column;
+    }
+
+    fn append(&mut self, text: &str, style: Style) {
+        match self.spans.last_mut() {
+            Some(span) if span.style == style => span.content.to_mut().push_str(text),
+            _ => self.spans.push(Span::styled(text.to_owned(), style)),
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.column >= self.columns.end
+    }
 }
 
 fn caret_notation(control: char) -> String {
@@ -77,15 +148,25 @@ mod tests {
     use super::*;
     use crate::{session::Session, ui::tests::rendered_rows};
 
-    fn render_text(text: &str, cursor: usize, width: u16, height: u16) -> Buffer {
-        let mut session = Session::from_text(text);
-        session.tab.set_viewport_height(usize::from(height));
-        session.tab.move_down(cursor, session.log_file.line_count());
+    fn render_session(session: &Session, width: u16, height: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|frame| render(frame, frame.area(), &session.log_file, &session.tab))
             .unwrap();
         terminal.backend().buffer().clone()
+    }
+
+    fn render_text(text: &str, cursor: usize, width: u16, height: u16) -> Buffer {
+        let mut session = Session::from_text(text);
+        session.tab.set_viewport_height(usize::from(height));
+        session.tab.move_down(cursor, session.log_file.line_count());
+        render_session(&session, width, height)
+    }
+
+    fn render_scrolled(text: &str, columns: usize, width: u16, height: u16) -> Buffer {
+        let mut session = Session::from_text(text);
+        session.tab.scroll_right(columns);
+        render_session(&session, width, height)
     }
 
     #[test]
@@ -151,6 +232,13 @@ mod tests {
     }
 
     #[test]
+    fn given_del_character_when_rendering_then_it_shows_in_caret_notation() {
+        let buffer = render_text("a\x7fb\n", 0, 30, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │ a^?b"]);
+    }
+
+    #[test]
     fn given_nul_and_del_when_converting_then_they_use_standard_caret_notation() {
         assert_eq!(caret_notation('\0'), "^@");
         assert_eq!(caret_notation('\x7f'), "^?");
@@ -161,5 +249,67 @@ mod tests {
         let buffer = render_text("", 0, 10, 2);
 
         assert_eq!(rendered_rows(&buffer), ["", ""]);
+    }
+
+    #[test]
+    fn given_scrolled_view_when_rendering_then_every_line_is_cut_and_the_gutter_stays() {
+        let buffer = render_scrolled("abcdef\nxyz\n", 2, 20, 2);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │ cdef", " 2 │ z"]);
+    }
+
+    #[test]
+    fn given_wide_character_cut_by_the_left_edge_when_rendering_then_its_visible_half_is_a_space() {
+        let buffer = render_scrolled("漢字x\n", 1, 14, 1);
+
+        let symbol_at = |column| buffer[(column, 0)].symbol().to_owned();
+        assert_eq!(symbol_at(5), " ");
+        assert_eq!(symbol_at(6), "字");
+        assert_eq!(symbol_at(8), "x");
+    }
+
+    #[test]
+    fn given_tab_left_of_the_edge_when_scrolled_then_text_after_it_keeps_its_tab_stop() {
+        let buffer = render_scrolled("a\tb\n", 4, 14, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │     b"]);
+    }
+
+    #[test]
+    fn given_control_character_left_of_the_edge_when_scrolled_then_its_caret_notation_is_skipped() {
+        let buffer = render_scrolled("\x1bXY\n", 2, 14, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │ XY"]);
+    }
+
+    #[test]
+    fn given_view_scrolled_past_the_end_of_a_line_when_rendering_then_only_the_gutter_shows() {
+        let buffer = render_scrolled("abc\n", 10, 14, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │"]);
+    }
+
+    #[test]
+    fn given_caret_notation_cut_by_the_left_edge_when_scrolled_then_its_visible_half_is_a_space() {
+        let buffer = render_scrolled("\x1bXY\n", 1, 14, 1);
+
+        assert_eq!(rendered_rows(&buffer), [" 1 │  XY"]);
+    }
+
+    #[test]
+    fn given_arabic_ligature_before_a_tab_when_rendering_then_the_tab_still_ends_on_a_stop() {
+        let buffer = render_text("\u{644}\u{627}\tx\n", 0, 30, 1);
+
+        let x_column = (0..30).find(|&column| buffer[(column, 0)].symbol() == "x");
+        assert_eq!(x_column, Some(5 + 8));
+    }
+
+    #[test]
+    fn given_controls_inside_and_past_the_window_when_cutting_then_only_the_window_is_kept() {
+        let visible = visible_spans("abc\x1bdefgh\x1b", 2..7);
+
+        let texts: Vec<&str> = visible.iter().map(|span| span.content.as_ref()).collect();
+        assert_eq!(texts, ["c", "^[", "de"]);
+        assert_eq!(visible[1].style, Style::new().dim());
     }
 }

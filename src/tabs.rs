@@ -106,7 +106,6 @@ impl Viewport {
         self.top
     }
 
-    #[cfg_attr(not(test), expect(dead_code))]
     pub fn left_column(&self) -> usize {
         self.left_column
     }
