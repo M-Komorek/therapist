@@ -5,33 +5,41 @@ use crate::action::{Action, AppAction, ViewAction};
 #[derive(Debug, PartialEq)]
 pub enum KeyResolution {
     Action(Action),
-    PendingChanged,
+    LastKeysChanged,
     Ignored,
 }
 
 /// Turns key presses into actions. Between presses it keeps the count typed so far (`5` in
-/// `5j`) and the keys of a started sequence (the first `g` of `gg`).
+/// `5j`) and the keys of a started sequence (the first `g` of `gg`). It also remembers the keys
+/// of the current or last command, so they can be shown until the next key.
 #[derive(Default)]
 pub struct Keymap {
     count: Option<usize>,
     started_sequence: Vec<KeyEvent>,
+    last_keys: Vec<KeyEvent>,
 }
 
 impl Keymap {
     pub fn resolve(&mut self, key: KeyEvent) -> KeyResolution {
-        let was_pending = self.is_pending();
+        let last_keys_before = self.last_keys.clone();
         match self.consume(key) {
             Some(action) => KeyResolution::Action(action),
-            None if was_pending || self.is_pending() => KeyResolution::PendingChanged,
+            None if self.last_keys != last_keys_before => KeyResolution::LastKeysChanged,
             None => KeyResolution::Ignored,
         }
+    }
+
+    pub fn last_keys_text(&self) -> String {
+        self.last_keys.iter().map(key_name).collect()
     }
 
     fn consume(&mut self, key: KeyEvent) -> Option<Action> {
         if key == ESCAPE {
             self.clear();
+            self.last_keys.clear();
             return None;
         }
+        self.remember_key(key);
         if self.breaks_started_sequence(key) {
             self.started_sequence.clear();
         }
@@ -53,6 +61,13 @@ impl Keymap {
                 None
             }
         }
+    }
+
+    fn remember_key(&mut self, key: KeyEvent) {
+        if !self.is_pending() {
+            self.last_keys.clear();
+        }
+        self.last_keys.push(key);
     }
 
     fn breaks_started_sequence(&self, key: KeyEvent) -> bool {
@@ -159,6 +174,20 @@ fn find_binding(keys: &[KeyEvent]) -> BindingMatch {
         BindingMatch::Prefix
     } else {
         BindingMatch::NotBound
+    }
+}
+
+fn key_name(key: &KeyEvent) -> String {
+    let mut modifiers = String::new();
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        modifiers.push_str("Ctrl-");
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        modifiers.push_str("Alt-");
+    }
+    match key.code {
+        KeyCode::Char(character) if modifiers.is_empty() => character.to_string(),
+        code => format!("<{modifiers}{code}>"),
     }
 }
 
@@ -404,21 +433,18 @@ mod tests {
     #[test]
     fn given_started_g_when_unmapped_key_is_pressed_then_next_g_starts_a_new_sequence() {
         let mut keymap = Keymap::default();
+        resolve_typed(&mut keymap, "gx");
 
         assert_eq!(
-            resolve_typed(&mut keymap, "gx"),
-            KeyResolution::PendingChanged
-        );
-        assert_eq!(
-            resolve_typed(&mut keymap, "g"),
-            KeyResolution::PendingChanged
+            resolve_typed(&mut keymap, "gg"),
+            resolved_view(ViewAction::GoToLineNumber(1))
         );
     }
 
     #[test]
-    fn given_nothing_pending_when_count_digit_or_g_is_pressed_then_pending_keys_change() {
-        assert_eq!(resolve_fresh("5"), KeyResolution::PendingChanged);
-        assert_eq!(resolve_fresh("g"), KeyResolution::PendingChanged);
+    fn given_nothing_pending_when_count_digit_or_g_is_pressed_then_last_keys_change() {
+        assert_eq!(resolve_fresh("5"), KeyResolution::LastKeysChanged);
+        assert_eq!(resolve_fresh("g"), KeyResolution::LastKeysChanged);
     }
 
     #[test]
@@ -426,7 +452,7 @@ mod tests {
         let mut keymap = Keymap::default();
         resolve_typed(&mut keymap, "5");
 
-        assert_eq!(keymap.resolve(ESCAPE), KeyResolution::PendingChanged);
+        assert_eq!(keymap.resolve(ESCAPE), KeyResolution::LastKeysChanged);
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
             resolved_view(ViewAction::MoveDown(1))
@@ -439,11 +465,11 @@ mod tests {
 
         let resolution = resolve_keys(&mut keymap, &[key('g'), ESCAPE, key('g')]);
 
-        assert_eq!(resolution, KeyResolution::PendingChanged);
+        assert_eq!(resolution, KeyResolution::LastKeysChanged);
     }
 
     #[test]
-    fn given_nothing_pending_when_escape_is_pressed_then_it_is_ignored() {
+    fn given_nothing_shown_when_escape_is_pressed_then_it_is_ignored() {
         assert_eq!(Keymap::default().resolve(ESCAPE), KeyResolution::Ignored);
     }
 
@@ -453,7 +479,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "5x"),
-            KeyResolution::PendingChanged
+            KeyResolution::LastKeysChanged
         );
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
@@ -462,12 +488,65 @@ mod tests {
     }
 
     #[test]
-    fn given_nothing_pending_when_unmapped_key_is_pressed_then_it_is_ignored() {
-        assert_eq!(resolve_fresh("x"), KeyResolution::Ignored);
+    fn given_count_and_started_g_when_reading_last_keys_then_they_show_as_typed() {
+        let mut keymap = Keymap::default();
+
+        resolve_typed(&mut keymap, "12g");
+
+        assert_eq!(keymap.last_keys_text(), "12g");
     }
 
     #[test]
-    fn given_mapped_key_with_other_modifier_when_resolving_then_it_is_ignored() {
-        assert_eq!(Keymap::default().resolve(ctrl('q')), KeyResolution::Ignored);
+    fn given_finished_command_when_reading_last_keys_then_they_stay_until_the_next_key() {
+        let mut keymap = Keymap::default();
+
+        resolve_typed(&mut keymap, "5j");
+        assert_eq!(keymap.last_keys_text(), "5j");
+
+        resolve_typed(&mut keymap, "k");
+        assert_eq!(keymap.last_keys_text(), "k");
+    }
+
+    #[test]
+    fn given_last_keys_when_escape_is_pressed_then_they_are_cleared() {
+        let mut keymap = Keymap::default();
+        resolve_typed(&mut keymap, "5j");
+
+        assert_eq!(keymap.resolve(ESCAPE), KeyResolution::LastKeysChanged);
+        assert_eq!(keymap.last_keys_text(), "");
+    }
+
+    #[test]
+    fn given_keys_with_modifiers_or_names_when_reading_last_keys_then_they_use_key_notation() {
+        let last_keys_text = |key| {
+            let mut keymap = Keymap::default();
+            keymap.resolve(key);
+            keymap.last_keys_text()
+        };
+
+        assert_eq!(last_keys_text(ctrl('d')), "<Ctrl-d>");
+        assert_eq!(last_keys_text(plain(KeyCode::Down)), "<Down>");
+        let alt_x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
+        assert_eq!(last_keys_text(alt_x), "<Alt-x>");
+        let shift_g = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
+        assert_eq!(last_keys_text(shift_g), "G");
+    }
+
+    #[test]
+    fn given_nothing_pending_when_unmapped_key_is_pressed_then_only_the_last_keys_change() {
+        assert_eq!(resolve_fresh("x"), KeyResolution::LastKeysChanged);
+    }
+
+    #[test]
+    fn given_unmapped_key_shown_when_it_is_pressed_again_then_it_is_ignored() {
+        assert_eq!(resolve_fresh("xx"), KeyResolution::Ignored);
+    }
+
+    #[test]
+    fn given_mapped_key_with_other_modifier_when_resolving_then_no_action_runs() {
+        assert_eq!(
+            Keymap::default().resolve(ctrl('q')),
+            KeyResolution::LastKeysChanged
+        );
     }
 }

@@ -37,15 +37,22 @@ pub fn render(frame: &mut Frame, app: &App) {
         screen_areas.status_bar,
         &app.session().log_file,
         &app.session().tab,
+        &app.last_keys_text(),
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Size};
+    use ratatui::{
+        Terminal,
+        backend::TestBackend,
+        buffer::Buffer,
+        crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+        layout::Size,
+    };
 
     use super::*;
-    use crate::session::Session;
+    use crate::{session::Session, terminal::Event};
 
     pub(super) fn rendered_rows(buffer: &Buffer) -> Vec<String> {
         buffer
@@ -58,16 +65,39 @@ mod tests {
             .collect()
     }
 
+    fn make_app() -> App {
+        App::new(Session::from_text("first\nsecond\n"), Size::new(30, 3))
+    }
+
+    fn render_app(app: &App) -> Vec<String> {
+        let mut terminal = Terminal::new(TestBackend::new(30, 3)).unwrap();
+        terminal.draw(|frame| render(frame, app)).unwrap();
+        rendered_rows(terminal.backend().buffer())
+    }
+
     #[test]
     fn given_app_when_rendering_then_log_view_is_above_the_status_bar() {
-        let app = App::new(Session::from_text("first\nsecond\n"), Size::new(20, 3));
-        let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
-
-        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let app = make_app();
 
         assert_eq!(
-            rendered_rows(terminal.backend().buffer()),
-            [" 1 │ first", " 2 │ second", "app.log    1/2 (50%)"]
+            render_app(&app),
+            [
+                " 1 │ first",
+                " 2 │ second",
+                "app.log              1/2 (50%)"
+            ]
         );
+    }
+
+    #[test]
+    fn given_count_typed_when_rendering_then_the_status_bar_shows_it_before_the_position() {
+        let mut app = make_app();
+
+        app.handle(Event::Key(KeyEvent::new(
+            KeyCode::Char('5'),
+            KeyModifiers::NONE,
+        )));
+
+        assert_eq!(render_app(&app)[2], "app.log          5 | 1/2 (50%)");
     }
 }

@@ -35,11 +35,15 @@ impl App {
         &self.session
     }
 
+    pub fn last_keys_text(&self) -> String {
+        self.keymap.last_keys_text()
+    }
+
     pub fn handle(&mut self, event: Event) -> EventEffect {
         match event {
             Event::Key(key) => match self.keymap.resolve(key) {
                 KeyResolution::Action(action) => self.dispatch(action),
-                KeyResolution::PendingChanged => EventEffect::Redraw,
+                KeyResolution::LastKeysChanged => EventEffect::Redraw,
                 KeyResolution::Ignored => EventEffect::Nothing,
             },
             Event::Resize(screen_size) => {
@@ -132,8 +136,9 @@ mod tests {
     }
 
     #[test]
-    fn given_app_when_unmapped_key_is_pressed_then_nothing_happens() {
+    fn given_unmapped_key_shown_when_it_is_pressed_again_then_nothing_happens() {
         let mut app = make_app();
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
 
         let effect = press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
 

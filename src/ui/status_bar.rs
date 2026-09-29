@@ -2,10 +2,18 @@ use ratatui::{Frame, layout::Rect, text::Line};
 
 use crate::{log_file::LogFile, tabs::Tab};
 
-pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
+pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab, last_keys: &str) {
     let position = position(tab.cursor(), log_file.line_count());
+    let right_text = last_keys_and_position(last_keys, position);
     frame.render_widget(Line::raw(log_file.file_name()), area);
-    frame.render_widget(Line::raw(position).right_aligned(), area);
+    frame.render_widget(Line::raw(right_text).right_aligned(), area);
+}
+
+fn last_keys_and_position(last_keys: &str, position: String) -> String {
+    if last_keys.is_empty() {
+        return position;
+    }
+    format!("{last_keys} | {position}")
 }
 
 fn position(cursor: usize, line_count: usize) -> String {
@@ -24,12 +32,20 @@ mod tests {
     use super::*;
     use crate::{session::Session, ui::tests::rendered_rows};
 
-    fn render_status(text: &str, cursor: usize) -> String {
+    fn render_status(text: &str, cursor: usize, last_keys: &str) -> String {
         let mut session = Session::from_text(text);
         session.tab.move_down(cursor, session.log_file.line_count());
-        let mut terminal = Terminal::new(TestBackend::new(20, 1)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(30, 1)).unwrap();
         terminal
-            .draw(|frame| render(frame, frame.area(), &session.log_file, &session.tab))
+            .draw(|frame| {
+                render(
+                    frame,
+                    frame.area(),
+                    &session.log_file,
+                    &session.tab,
+                    last_keys,
+                );
+            })
             .unwrap();
         rendered_rows(terminal.backend().buffer()).remove(0)
     }
@@ -37,12 +53,23 @@ mod tests {
     #[test]
     fn given_cursor_on_second_of_four_lines_when_rendering_then_name_is_left_and_position_is_right()
     {
-        assert_eq!(render_status("a\nb\nc\nd\n", 1), "app.log    2/4 (50%)");
+        assert_eq!(
+            render_status("a\nb\nc\nd\n", 1, ""),
+            "app.log              2/4 (50%)"
+        );
     }
 
     #[test]
     fn given_empty_file_when_rendering_then_position_is_zero_of_zero() {
-        assert_eq!(render_status("", 0), "app.log          0/0");
+        assert_eq!(render_status("", 0, ""), "app.log                    0/0");
+    }
+
+    #[test]
+    fn given_last_keys_when_rendering_then_a_separator_sets_them_apart_from_the_position() {
+        assert_eq!(
+            render_status("a\nb\nc\nd\n", 1, "5j"),
+            "app.log         5j | 2/4 (50%)"
+        );
     }
 
     #[test]
