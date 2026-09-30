@@ -26,17 +26,18 @@ impl ScreenAreas {
 
 pub fn render(frame: &mut Frame, app: &App) {
     let screen_areas = ScreenAreas::new(frame.area());
+    let session = app.session();
     log_view::render(
         frame,
         screen_areas.log_view,
-        &app.session().log_file,
-        &app.session().tab,
+        &session.log_file,
+        &session.tab,
     );
     status_bar::render(
         frame,
         screen_areas.status_bar,
-        &app.session().log_file,
-        &app.session().tab,
+        &session.log_file,
+        &session.tab,
         &app.last_keys_text(),
     );
 }

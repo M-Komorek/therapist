@@ -41,19 +41,19 @@ impl Tab {
     }
 
     pub fn half_page_up(&mut self) {
-        self.scroll_up(self.viewport.half_page());
+        self.scroll_up_with_cursor(self.viewport.half_page());
     }
 
     pub fn half_page_down(&mut self, line_count: usize) {
-        self.scroll_down(self.viewport.half_page(), line_count);
+        self.scroll_down_with_cursor(self.viewport.half_page(), line_count);
     }
 
     pub fn page_up(&mut self) {
-        self.scroll_up(self.viewport.full_page());
+        self.scroll_up_with_cursor(self.viewport.full_page());
     }
 
     pub fn page_down(&mut self, line_count: usize) {
-        self.scroll_down(self.viewport.full_page(), line_count);
+        self.scroll_down_with_cursor(self.viewport.full_page(), line_count);
     }
 
     pub fn scroll_left(&mut self, columns: usize) {
@@ -90,12 +90,12 @@ impl Tab {
         self.viewport.keep_cursor_visible(self.cursor);
     }
 
-    fn scroll_up(&mut self, lines: usize) {
+    fn scroll_up_with_cursor(&mut self, lines: usize) {
         self.viewport.scroll_up(lines);
         self.move_up(lines);
     }
 
-    fn scroll_down(&mut self, lines: usize, line_count: usize) {
+    fn scroll_down_with_cursor(&mut self, lines: usize, line_count: usize) {
         self.viewport.scroll_down(lines, line_count);
         self.move_down(lines, line_count);
     }

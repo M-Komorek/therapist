@@ -115,30 +115,33 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     // App
     #[cfg(debug_assertions)]
     (&[ctrl('p')], app(AppAction::DebugPanic)),
-    (&[key('q')], app(AppAction::Quit)),
+    (&[char_key('q')], app(AppAction::Quit)),
     (&[ctrl('c')], app(AppAction::Quit)),
     (&[ctrl('z')], app(AppAction::Suspend)),
     // Moving by lines
-    (&[key('j')], view(ViewAction::MoveDown(1))),
+    (&[char_key('j')], view(ViewAction::MoveDown(1))),
     (&[plain(KeyCode::Down)], view(ViewAction::MoveDown(1))),
-    (&[key('k')], view(ViewAction::MoveUp(1))),
+    (&[char_key('k')], view(ViewAction::MoveUp(1))),
     (&[plain(KeyCode::Up)], view(ViewAction::MoveUp(1))),
     // Jumping to a line
-    (&[key('g'), key('g')], view(ViewAction::GoToLineNumber(1))),
-    (&[key('G')], view(ViewAction::GoToLastLine)),
+    (
+        &[char_key('g'), char_key('g')],
+        view(ViewAction::GoToLineNumber(1)),
+    ),
+    (&[char_key('G')], view(ViewAction::GoToLastLine)),
     // Moving by pages
     (&[ctrl('d')], view(ViewAction::HalfPageDown)),
     (&[ctrl('u')], view(ViewAction::HalfPageUp)),
     (&[ctrl('f')], view(ViewAction::PageDown)),
     (&[ctrl('b')], view(ViewAction::PageUp)),
     // Scrolling sideways
-    (&[key('h')], view(ViewAction::ScrollLeft(1))),
+    (&[char_key('h')], view(ViewAction::ScrollLeft(1))),
     (&[plain(KeyCode::Left)], view(ViewAction::ScrollLeft(1))),
-    (&[key('l')], view(ViewAction::ScrollRight(1))),
+    (&[char_key('l')], view(ViewAction::ScrollRight(1))),
     (&[plain(KeyCode::Right)], view(ViewAction::ScrollRight(1))),
-    (&[key('H')], view(ViewAction::ScrollLeftWide)),
-    (&[key('L')], view(ViewAction::ScrollRightWide)),
-    (&[key('0')], view(ViewAction::ScrollToFirstColumn)),
+    (&[char_key('H')], view(ViewAction::ScrollLeftWide)),
+    (&[char_key('L')], view(ViewAction::ScrollRightWide)),
+    (&[char_key('0')], view(ViewAction::ScrollToFirstColumn)),
 ];
 
 fn apply_count(action: Action, count: Option<usize>) -> Action {
@@ -195,7 +198,7 @@ const fn plain(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
 
-const fn key(character: char) -> KeyEvent {
+const fn char_key(character: char) -> KeyEvent {
     plain(KeyCode::Char(character))
 }
 
@@ -224,7 +227,7 @@ mod tests {
     }
 
     fn resolve_typed(keymap: &mut Keymap, typed: &str) -> KeyResolution {
-        let keys: Vec<KeyEvent> = typed.chars().map(key).collect();
+        let keys: Vec<KeyEvent> = typed.chars().map(char_key).collect();
         resolve_keys(keymap, &keys)
     }
 
@@ -238,8 +241,8 @@ mod tests {
 
     #[test]
     fn given_every_pair_of_bindings_when_compared_then_neither_equals_nor_starts_the_other() {
-        for (index, (keys, _)) in BINDINGS.iter().enumerate() {
-            for (other_keys, _) in &BINDINGS[index + 1..] {
+        for (binding_position, (keys, _)) in BINDINGS.iter().enumerate() {
+            for (other_keys, _) in &BINDINGS[binding_position + 1..] {
                 assert!(
                     !keys.starts_with(other_keys) && !other_keys.starts_with(keys),
                     "{keys:?} conflicts with {other_keys:?}"
@@ -377,7 +380,7 @@ mod tests {
 
     #[test]
     fn given_count_when_page_key_is_pressed_then_count_is_ignored() {
-        let resolution = resolve_keys(&mut Keymap::default(), &[key('5'), ctrl('d')]);
+        let resolution = resolve_keys(&mut Keymap::default(), &[char_key('5'), ctrl('d')]);
 
         assert_eq!(resolution, resolved_view(ViewAction::HalfPageDown));
     }
@@ -463,7 +466,7 @@ mod tests {
     fn given_started_g_when_escape_is_pressed_then_next_g_starts_a_new_sequence() {
         let mut keymap = Keymap::default();
 
-        let resolution = resolve_keys(&mut keymap, &[key('g'), ESCAPE, key('g')]);
+        let resolution = resolve_keys(&mut keymap, &[char_key('g'), ESCAPE, char_key('g')]);
 
         assert_eq!(resolution, KeyResolution::LastKeysChanged);
     }

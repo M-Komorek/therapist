@@ -3,7 +3,7 @@ use ratatui::{Frame, layout::Rect, text::Line};
 use crate::{log_file::LogFile, tabs::Tab};
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab, last_keys: &str) {
-    let position = position(tab.cursor(), log_file.line_count());
+    let position = position_text(tab.cursor(), log_file.line_count());
     let right_text = last_keys_and_position(last_keys, position);
     frame.render_widget(Line::raw(log_file.file_name()), area);
     frame.render_widget(Line::raw(right_text).right_aligned(), area);
@@ -16,7 +16,7 @@ fn last_keys_and_position(last_keys: &str, position: String) -> String {
     format!("{last_keys} | {position}")
 }
 
-fn position(cursor: usize, line_count: usize) -> String {
+fn position_text(cursor: usize, line_count: usize) -> String {
     if line_count == 0 {
         return "0/0".to_owned();
     }
@@ -74,6 +74,6 @@ mod tests {
 
     #[test]
     fn given_large_file_when_formatting_position_then_percent_is_rounded_down() {
-        assert_eq!(position(1203, 88213), "1204/88213 (1%)");
+        assert_eq!(position_text(1203, 88213), "1204/88213 (1%)");
     }
 }

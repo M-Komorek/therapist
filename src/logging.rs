@@ -11,21 +11,21 @@ use tracing_subscriber::{
     filter::{LevelFilter, ParseError},
 };
 
-const LEVEL_VARIABLE: &str = "THERAPIST_LOG";
+const FILTER_VARIABLE: &str = "THERAPIST_LOG";
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoggingError {
-    #[error("Invalid THERAPIST_LOG: {0}")]
+    #[error("invalid {FILTER_VARIABLE}: {0}")]
     InvalidFilter(#[from] ParseError),
-    #[error("Cannot create the log file {}: {source}", path.display())]
+    #[error("cannot create the log file {}: {source}", path.display())]
     CannotCreateFile { path: PathBuf, source: io::Error },
-    #[error("Cannot install the logger: {0}")]
+    #[error("cannot install the logger: {0}")]
     CannotInstall(#[from] SetGlobalDefaultError),
 }
 
 /// Sends tracing events to `log_path`, filtered by `THERAPIST_LOG` (EnvFilter syntax, `info` by default).
 pub fn init(log_path: &Path) -> Result<(), LoggingError> {
-    let filter = parse_filter(&std::env::var(LEVEL_VARIABLE).unwrap_or_default())?;
+    let filter = parse_filter(&std::env::var(FILTER_VARIABLE).unwrap_or_default())?;
     let log_file = File::create(log_path).map_err(|source| LoggingError::CannotCreateFile {
         path: log_path.to_path_buf(),
         source,

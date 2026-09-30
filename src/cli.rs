@@ -20,9 +20,9 @@ pub struct Cli {
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliError {
-    #[error("Cannot open the file: {0}")]
+    #[error("cannot open the file: {0}")]
     CannotOpen(io::Error),
-    #[error("Not a regular file")]
+    #[error("not a regular file")]
     NotARegularFile,
 }
 

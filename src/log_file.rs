@@ -17,9 +17,9 @@ const READ_BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogFileError {
-    #[error("Cannot open {}: {source}", path.display())]
+    #[error("cannot open {}: {source}", path.display())]
     CannotOpen { path: PathBuf, source: io::Error },
-    #[error("Cannot read {}: {source}", path.display())]
+    #[error("cannot read {}: {source}", path.display())]
     CannotRead { path: PathBuf, source: io::Error },
 }
 
@@ -65,9 +65,11 @@ impl LogFile {
 
     pub fn lines(&self, range: Range<usize>) -> Result<Vec<String>, LogFileError> {
         let range_end = range.end.min(self.line_count());
-        let checkpoint = match self.line_index.checkpoint_for(range.start) {
-            Some(checkpoint) if range.start < range_end => checkpoint,
-            _ => return Ok(Vec::new()),
+        if range.start >= range_end {
+            return Ok(Vec::new());
+        }
+        let Some(checkpoint) = self.line_index.checkpoint_for(range.start) else {
+            return Ok(Vec::new());
         };
         let mut line_collector =
             LineCollector::new(checkpoint.lines_to_skip, range_end - range.start);
