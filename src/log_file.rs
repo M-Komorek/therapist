@@ -30,6 +30,7 @@ pub enum LogFileError {
 pub struct LogFile {
     path: PathBuf,
     file: Arc<File>,
+    file_size: u64,
     line_index: LineIndex,
     indexing: Indexing,
 }
@@ -46,17 +47,21 @@ pub enum Indexing {
 pub struct Indexer {
     path: PathBuf,
     file: Arc<File>,
+    file_size: u64,
 }
 
 impl LogFile {
     pub fn open(path: &Path) -> Result<Self, LogFileError> {
-        let file = File::open(path).map_err(|source| LogFileError::CannotOpen {
+        let cannot_open = |source| LogFileError::CannotOpen {
             path: path.to_path_buf(),
             source,
-        })?;
+        };
+        let file = File::open(path).map_err(cannot_open)?;
+        let file_size = file.metadata().map_err(cannot_open)?.len();
         Ok(Self {
             path: path.to_path_buf(),
             file: Arc::new(file),
+            file_size,
             line_index: LineIndex::new(LINES_PER_CHECKPOINT, BYTES_PER_CHECKPOINT),
             indexing: Indexing::Running,
         })
@@ -66,6 +71,7 @@ impl LogFile {
         Indexer {
             path: self.path.clone(),
             file: Arc::clone(&self.file),
+            file_size: self.file_size,
         }
     }
 
@@ -75,6 +81,10 @@ impl LogFile {
 
     pub fn indexing(&self) -> Indexing {
         self.indexing
+    }
+
+    pub fn percent_indexed(&self) -> u64 {
+        percent_indexed(self.line_index.bytes_indexed(), self.file_size)
     }
 
     pub fn set_indexing(&mut self, indexing: Indexing) {
@@ -124,23 +134,21 @@ impl Indexer {
         chunk_size: usize,
         mut on_progress: impl FnMut(LineIndex),
     ) -> Result<(), LogFileError> {
-        let cannot_read = |source| LogFileError::CannotRead {
-            path: self.path.clone(),
-            source,
-        };
-        let file_size = self.file.metadata().map_err(cannot_read)?.len();
         let mut line_index = LineIndex::new(LINES_PER_CHECKPOINT, BYTES_PER_CHECKPOINT);
         let mut reported_percent = None;
         read_chunks(&self.file, 0, chunk_size, |chunk| {
             line_index.add_chunk(chunk);
-            let percent = percent_indexed(line_index.bytes_indexed(), file_size);
+            let percent = percent_indexed(line_index.bytes_indexed(), self.file_size);
             if reported_percent != Some(percent) {
                 reported_percent = Some(percent);
                 on_progress(line_index.clone());
             }
             ControlFlow::Continue(())
         })
-        .map_err(cannot_read)?;
+        .map_err(|source| LogFileError::CannotRead {
+            path: self.path.clone(),
+            source,
+        })?;
         on_progress(line_index);
         Ok(())
     }
@@ -311,6 +319,16 @@ mod tests {
     }
 
     #[test]
+    fn given_first_tenth_of_the_file_indexed_when_asking_progress_then_it_is_10_percent() {
+        let (_temp_file, mut log_file) = open_unindexed_with("x\n".repeat(50).as_bytes());
+        let first_index = progress_in_chunks_of(&log_file, 10).remove(0);
+
+        log_file.set_line_index(first_index);
+
+        assert_eq!(log_file.percent_indexed(), 10);
+    }
+
+    #[test]
     fn given_file_read_in_one_byte_chunks_when_indexed_then_progress_is_reported_when_the_percentage_changes()
      {
         let (_temp_file, log_file) = open_unindexed_with("x\n".repeat(500).as_bytes());
@@ -337,6 +355,7 @@ mod tests {
         let indexer = Indexer {
             path: temp_file.path().to_path_buf(),
             file: Arc::new(File::create(temp_file.path()).unwrap()),
+            file_size: 0,
         };
 
         let result = indexer.run(|_line_index| {});

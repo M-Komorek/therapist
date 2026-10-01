@@ -1,28 +1,45 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
-use crate::{log_file::LogFile, tabs::Tab};
+use crate::{
+    log_file::{Indexing, LogFile},
+    tabs::Tab,
+};
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab, last_keys: &str) {
-    let position = position_text(tab.cursor(), log_file.line_count());
-    let right_text = last_keys_and_position(last_keys, position);
+    let indexing = log_file.indexing();
+    let position = position_text(tab.cursor(), log_file.line_count(), indexing);
+    let indexing_progress = indexing_text(indexing, log_file.percent_indexed());
+    let right_text = right_text(last_keys, position, indexing_progress);
     frame.render_widget(Line::raw(log_file.file_name()), area);
     frame.render_widget(Line::raw(right_text).right_aligned(), area);
 }
 
-fn last_keys_and_position(last_keys: &str, position: String) -> String {
-    if last_keys.is_empty() {
-        return position;
+fn right_text(last_keys: &str, position: String, indexing_progress: Option<String>) -> String {
+    let mut segments = Vec::new();
+    if !last_keys.is_empty() {
+        segments.push(last_keys.to_owned());
     }
-    format!("{last_keys} | {position}")
+    segments.push(position);
+    segments.extend(indexing_progress);
+    segments.join(" | ")
 }
 
-fn position_text(cursor: usize, line_count: usize) -> String {
-    if line_count == 0 {
-        return "0/0".to_owned();
+fn position_text(cursor: usize, line_count: usize, indexing: Indexing) -> String {
+    let line_number = if line_count == 0 { 0 } else { cursor + 1 };
+    let position = format!("{line_number}/{line_count}");
+    match indexing {
+        Indexing::Running | Indexing::Failed => format!("{position}+"),
+        Indexing::Done if line_count == 0 => position,
+        Indexing::Done => format!("{position} ({}%)", line_number * 100 / line_count),
     }
-    let line_number = cursor + 1;
-    let percent = line_number * 100 / line_count;
-    format!("{line_number}/{line_count} ({percent}%)")
+}
+
+fn indexing_text(indexing: Indexing, percent_indexed: u64) -> Option<String> {
+    match indexing {
+        Indexing::Running => Some(format!("indexing {percent_indexed}%")),
+        Indexing::Failed => Some("indexing failed".to_owned()),
+        Indexing::Done => None,
+    }
 }
 
 #[cfg(test)]
@@ -35,6 +52,10 @@ mod tests {
     fn render_status(text: &str, cursor: usize, last_keys: &str) -> String {
         let mut session = Session::from_text(text);
         session.tab.move_down(cursor, session.log_file.line_count());
+        render_session_status(&session, last_keys)
+    }
+
+    fn render_session_status(session: &Session, last_keys: &str) -> String {
         let mut terminal = Terminal::new(TestBackend::new(30, 1)).unwrap();
         terminal
             .draw(|frame| {
@@ -74,6 +95,48 @@ mod tests {
 
     #[test]
     fn given_large_file_when_formatting_position_then_percent_is_rounded_down() {
-        assert_eq!(position_text(1203, 88213), "1204/88213 (1%)");
+        assert_eq!(
+            position_text(1203, 88213, Indexing::Done),
+            "1204/88213 (1%)"
+        );
+    }
+
+    #[test]
+    fn given_file_still_indexing_when_rendering_then_total_has_a_plus_and_progress_follows() {
+        let session = Session::unindexed_from_text("a\nb\n");
+
+        assert_eq!(
+            render_session_status(&session, ""),
+            "app.log     0/0+ | indexing 0%"
+        );
+    }
+
+    #[test]
+    fn given_indexing_failed_when_rendering_then_total_has_a_plus_and_failure_is_shown() {
+        let mut session = Session::from_text("a\nb\nc\nd\n");
+        session.log_file.set_indexing(Indexing::Failed);
+
+        assert_eq!(
+            render_session_status(&session, ""),
+            "app.log 1/4+ | indexing failed"
+        );
+    }
+
+    #[test]
+    fn given_file_still_indexing_when_formatting_position_then_there_is_no_percent() {
+        assert_eq!(position_text(1203, 88213, Indexing::Running), "1204/88213+");
+    }
+
+    #[test]
+    fn given_indexing_running_when_formatting_progress_then_percent_is_shown() {
+        assert_eq!(
+            indexing_text(Indexing::Running, 45),
+            Some("indexing 45%".to_owned())
+        );
+    }
+
+    #[test]
+    fn given_indexing_done_when_formatting_progress_then_nothing_is_shown() {
+        assert_eq!(indexing_text(Indexing::Done, 100), None);
     }
 }
