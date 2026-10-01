@@ -11,7 +11,8 @@ use std::{
 
 use line_index::LineIndex;
 
-const CHECKPOINT_INTERVAL: usize = 1000;
+const LINES_PER_CHECKPOINT: usize = 1000;
+const BYTES_PER_CHECKPOINT: u64 = 64 * 1024;
 const INDEX_CHUNK_SIZE: usize = 1024 * 1024;
 const READ_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -38,7 +39,7 @@ impl LogFile {
             source,
         })?;
 
-        let mut line_index = LineIndex::new(CHECKPOINT_INTERVAL);
+        let mut line_index = LineIndex::new(LINES_PER_CHECKPOINT, BYTES_PER_CHECKPOINT);
         read_chunks(&file, 0, INDEX_CHUNK_SIZE, |chunk| {
             line_index.add_chunk(chunk);
             ControlFlow::Continue(())
@@ -253,6 +254,23 @@ mod tests {
             ["line 123999", "line 124000"]
         );
         assert_eq!(log_file.lines(199_999..200_000).unwrap(), ["line 199999"]);
+    }
+
+    #[test]
+    fn given_lines_that_reach_the_byte_limit_first_when_reading_then_lines_after_checkpoints_are_found()
+     {
+        let line_body = "x".repeat(10_000);
+        let text: String = (0..100)
+            .map(|line_number| format!("{line_number} {line_body}\n"))
+            .collect();
+        let (_temp_file, log_file) = open_with(text.as_bytes());
+
+        let lines = log_file.lines(50..52).unwrap();
+
+        assert_eq!(
+            lines,
+            [format!("50 {line_body}"), format!("51 {line_body}")]
+        );
     }
 
     #[test]

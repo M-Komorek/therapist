@@ -1,12 +1,20 @@
-/// The byte offset of every `checkpoint_interval`-th line start, built from consecutive chunks of
-/// a file.
+/// Checkpoints (line starts) built from consecutive chunks of a file. A new checkpoint is the
+/// first line start `lines_per_checkpoint` lines or `bytes_per_checkpoint` bytes past the previous
+/// one, whichever comes first.
 #[derive(Debug, PartialEq)]
 pub struct LineIndex {
-    checkpoint_interval: usize,
-    checkpoints: Vec<u64>,
+    lines_per_checkpoint: usize,
+    bytes_per_checkpoint: u64,
+    checkpoints: Vec<LineStart>,
     newline_count: usize,
     bytes_indexed: u64,
     ends_with_newline: bool,
+}
+
+#[derive(Debug, PartialEq)]
+struct LineStart {
+    line: usize,
+    byte_offset: u64,
 }
 
 #[derive(Debug, PartialEq)]
@@ -16,10 +24,14 @@ pub struct Checkpoint {
 }
 
 impl LineIndex {
-    pub fn new(checkpoint_interval: usize) -> Self {
+    pub fn new(lines_per_checkpoint: usize, bytes_per_checkpoint: u64) -> Self {
         Self {
-            checkpoint_interval: checkpoint_interval.max(1),
-            checkpoints: vec![0],
+            lines_per_checkpoint,
+            bytes_per_checkpoint,
+            checkpoints: vec![LineStart {
+                line: 0,
+                byte_offset: 0,
+            }],
             newline_count: 0,
             bytes_indexed: 0,
             ends_with_newline: false,
@@ -29,9 +41,12 @@ impl LineIndex {
     pub fn add_chunk(&mut self, chunk: &[u8]) {
         for newline_position in memchr::memchr_iter(b'\n', chunk) {
             self.newline_count += 1;
-            if self.newline_count == self.checkpoints.len() * self.checkpoint_interval {
-                self.checkpoints
-                    .push(self.bytes_indexed + newline_position as u64 + 1);
+            let line_start = LineStart {
+                line: self.newline_count,
+                byte_offset: self.bytes_indexed + newline_position as u64 + 1,
+            };
+            if self.is_checkpoint_due(&line_start) {
+                self.checkpoints.push(line_start);
             }
         }
         if let Some(&last_byte) = chunk.last() {
@@ -49,10 +64,22 @@ impl LineIndex {
         if line >= self.line_count() {
             return None;
         }
-        let byte_offset = *self.checkpoints.get(line / self.checkpoint_interval)?;
+        let checkpoints_up_to_line = self
+            .checkpoints
+            .partition_point(|checkpoint| checkpoint.line <= line);
+        let nearest_checkpoint = self
+            .checkpoints
+            .get(checkpoints_up_to_line.checked_sub(1)?)?;
         Some(Checkpoint {
-            byte_offset,
-            lines_to_skip: line % self.checkpoint_interval,
+            byte_offset: nearest_checkpoint.byte_offset,
+            lines_to_skip: line - nearest_checkpoint.line,
+        })
+    }
+
+    fn is_checkpoint_due(&self, line_start: &LineStart) -> bool {
+        self.checkpoints.last().is_none_or(|last_checkpoint| {
+            line_start.line - last_checkpoint.line >= self.lines_per_checkpoint
+                || line_start.byte_offset - last_checkpoint.byte_offset >= self.bytes_per_checkpoint
         })
     }
 }
@@ -61,8 +88,16 @@ impl LineIndex {
 mod tests {
     use super::*;
 
-    fn index_of(text: &str, checkpoint_interval: usize) -> LineIndex {
-        let mut line_index = LineIndex::new(checkpoint_interval);
+    fn index_of(text: &str, lines_per_checkpoint: usize) -> LineIndex {
+        index_with_limits(text, lines_per_checkpoint, u64::MAX)
+    }
+
+    fn index_with_limits(
+        text: &str,
+        lines_per_checkpoint: usize,
+        bytes_per_checkpoint: u64,
+    ) -> LineIndex {
+        let mut line_index = LineIndex::new(lines_per_checkpoint, bytes_per_checkpoint);
         line_index.add_chunk(text.as_bytes());
         line_index
     }
@@ -109,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn given_interval_of_one_when_looking_up_then_every_line_is_a_checkpoint() {
+    fn given_line_limit_of_one_when_looking_up_then_every_line_is_a_checkpoint() {
         let line_index = index_of("a\nbb\nccc", 1);
 
         assert_eq!(lookup(&line_index, 0), Some((0, 0)));
@@ -118,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn given_interval_of_two_when_looking_up_then_nearest_earlier_checkpoint_is_used() {
+    fn given_line_limit_of_two_when_looking_up_then_nearest_earlier_checkpoint_is_used() {
         let line_index = index_of("a\nbb\nccc\ndddd\ne", 2);
 
         assert_eq!(lookup(&line_index, 1), Some((0, 1)));
@@ -127,17 +162,44 @@ mod tests {
     }
 
     #[test]
-    fn given_interval_larger_than_file_when_looking_up_then_lines_are_skipped_from_start() {
+    fn given_line_limit_larger_than_file_when_looking_up_then_lines_are_skipped_from_start() {
         let line_index = index_of("a\nbb\nccc", 10);
 
         assert_eq!(lookup(&line_index, 2), Some((0, 2)));
     }
 
     #[test]
-    fn given_zero_interval_when_looking_up_then_it_works_like_interval_of_one() {
+    fn given_line_limit_of_zero_when_looking_up_then_it_works_like_a_limit_of_one() {
         let line_index = index_of("a\nbb", 0);
 
         assert_eq!(lookup(&line_index, 1), Some((2, 0)));
+    }
+
+    #[test]
+    fn given_byte_limit_when_looking_up_then_checkpoint_is_first_line_start_that_many_bytes_on() {
+        let line_index = index_with_limits("aaaa\nbb\ncc\nd", usize::MAX, 5);
+
+        assert_eq!(lookup(&line_index, 1), Some((5, 0)));
+        assert_eq!(lookup(&line_index, 2), Some((5, 1)));
+        assert_eq!(lookup(&line_index, 3), Some((11, 0)));
+    }
+
+    #[test]
+    fn given_lines_longer_than_byte_limit_when_looking_up_then_every_line_is_a_checkpoint() {
+        let line_index = index_with_limits("aaaaaa\nbbbbbb\nc", usize::MAX, 4);
+
+        assert_eq!(lookup(&line_index, 1), Some((7, 0)));
+        assert_eq!(lookup(&line_index, 2), Some((14, 0)));
+    }
+
+    #[test]
+    fn given_both_limits_when_looking_up_then_whichever_is_reached_first_places_the_checkpoint() {
+        let line_index = index_with_limits("a\nb\nc\ndddddddd\ne\nf\ng", 3, 6);
+
+        assert_eq!(lookup(&line_index, 2), Some((0, 2)));
+        assert_eq!(lookup(&line_index, 3), Some((6, 0)));
+        assert_eq!(lookup(&line_index, 4), Some((15, 0)));
+        assert_eq!(lookup(&line_index, 6), Some((15, 2)));
     }
 
     #[test]
@@ -150,15 +212,22 @@ mod tests {
     #[test]
     fn given_text_split_into_two_chunks_anywhere_when_indexed_then_it_matches_one_chunk() {
         let text = "a\r\nbb\n\nccc\r\nd";
-        let indexed_in_one_go = index_of(text, 2);
+        for (lines_per_checkpoint, bytes_per_checkpoint) in [(2, u64::MAX), (usize::MAX, 4)] {
+            let indexed_in_one_go =
+                index_with_limits(text, lines_per_checkpoint, bytes_per_checkpoint);
 
-        for split_at in 0..=text.len() {
-            let (first_chunk, second_chunk) = text.as_bytes().split_at(split_at);
-            let mut indexed_in_chunks = LineIndex::new(2);
-            indexed_in_chunks.add_chunk(first_chunk);
-            indexed_in_chunks.add_chunk(second_chunk);
+            for split_at in 0..=text.len() {
+                let (first_chunk, second_chunk) = text.as_bytes().split_at(split_at);
+                let mut indexed_in_chunks =
+                    LineIndex::new(lines_per_checkpoint, bytes_per_checkpoint);
+                indexed_in_chunks.add_chunk(first_chunk);
+                indexed_in_chunks.add_chunk(second_chunk);
 
-            assert_eq!(indexed_in_chunks, indexed_in_one_go, "split at {split_at}");
+                assert_eq!(
+                    indexed_in_chunks, indexed_in_one_go,
+                    "split at {split_at} with limits {lines_per_checkpoint} lines, {bytes_per_checkpoint} bytes"
+                );
+            }
         }
     }
 }
