@@ -22,6 +22,12 @@ impl Session {
 #[cfg(test)]
 impl Session {
     pub fn from_text(text: &str) -> Self {
+        let mut session = Self::unindexed_from_text(text);
+        session.log_file.index_synchronously().unwrap();
+        session
+    }
+
+    pub fn unindexed_from_text(text: &str) -> Self {
         let temp_directory = tempfile::tempdir().unwrap();
         let path = temp_directory.path().join("app.log");
         std::fs::write(&path, text).unwrap();

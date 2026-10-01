@@ -2,7 +2,9 @@ use ratatui::layout::{Rect, Size};
 
 use crate::{
     action::{Action, AppAction, ViewAction},
+    jobs::JobMessage,
     keymap::{KeyResolution, Keymap},
+    log_file::Indexing,
     session::Session,
     terminal::Event,
     ui::ScreenAreas,
@@ -51,6 +53,26 @@ impl App {
                 EventEffect::Redraw
             }
         }
+    }
+
+    pub fn handle_job_message(&mut self, job_message: JobMessage) -> EventEffect {
+        let log_file = &mut self.session.log_file;
+        match job_message {
+            JobMessage::IndexProgress(line_index) => log_file.set_line_index(line_index),
+            JobMessage::Done => {
+                tracing::info!(line_count = log_file.line_count(), "file indexed");
+                log_file.set_indexing(Indexing::Done);
+            }
+            JobMessage::Failed(error) => {
+                tracing::error!(%error, "indexing failed");
+                log_file.set_indexing(Indexing::Failed);
+            }
+        }
+        EventEffect::Redraw
+    }
+
+    pub fn has_running_jobs(&self) -> bool {
+        self.session.log_file.indexing() == Indexing::Running
     }
 
     fn update_viewport_size(&mut self, screen_size: Size) {
@@ -105,12 +127,30 @@ mod tests {
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::{jobs::JobError, log_file::LineIndex};
 
     fn make_app() -> App {
         App::new(
             Session::from_text("first\nsecond\nthird\n"),
             Size::new(20, 4),
         )
+    }
+
+    fn make_indexing_app(text: &str) -> (App, Vec<LineIndex>) {
+        let session = Session::unindexed_from_text(text);
+        let mut reported_indexes = Vec::new();
+        session
+            .log_file
+            .indexer()
+            .run(|line_index| reported_indexes.push(line_index))
+            .unwrap();
+        (App::new(session, Size::new(20, 4)), reported_indexes)
+    }
+
+    fn deliver(app: &mut App, reported_indexes: Vec<LineIndex>) {
+        for line_index in reported_indexes {
+            app.handle_job_message(JobMessage::IndexProgress(line_index));
+        }
     }
 
     fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> EventEffect {
@@ -276,6 +316,53 @@ mod tests {
         app.handle(Event::Resize(Size::new(20, 2)));
 
         assert_eq!(app.session.tab.viewport().top(), 2);
+    }
+
+    #[test]
+    fn given_unindexed_file_when_app_starts_then_a_job_is_running() {
+        let (app, _reported_indexes) = make_indexing_app("a\nb\n");
+
+        assert!(app.has_running_jobs());
+    }
+
+    #[test]
+    fn given_indexing_app_when_progress_arrives_then_the_screen_is_redrawn() {
+        let (mut app, mut reported_indexes) = make_indexing_app("a\nb\n");
+
+        let effect = app.handle_job_message(JobMessage::IndexProgress(reported_indexes.remove(0)));
+
+        assert_eq!(effect, EventEffect::Redraw);
+    }
+
+    #[test]
+    fn given_progress_delivered_when_capital_g_is_pressed_then_cursor_goes_to_last_indexed_line() {
+        let (mut app, reported_indexes) = make_indexing_app("first\nsecond\nthird\n");
+        deliver(&mut app, reported_indexes);
+
+        press(&mut app, KeyCode::Char('G'), KeyModifiers::SHIFT);
+
+        assert_eq!(app.session.tab.cursor(), 2);
+    }
+
+    #[test]
+    fn given_indexing_app_when_done_arrives_then_no_job_is_running() {
+        let (mut app, reported_indexes) = make_indexing_app("a\nb\n");
+        deliver(&mut app, reported_indexes);
+
+        app.handle_job_message(JobMessage::Done);
+
+        assert!(!app.has_running_jobs());
+    }
+
+    #[test]
+    fn given_indexing_app_when_indexing_fails_then_no_job_is_running_and_indexed_lines_stay() {
+        let (mut app, reported_indexes) = make_indexing_app("a\nb\n");
+        deliver(&mut app, reported_indexes);
+
+        app.handle_job_message(JobMessage::Failed(JobError::Panicked));
+
+        assert!(!app.has_running_jobs());
+        assert_eq!(app.session.log_file.line_count(), 2);
     }
 
     #[cfg(debug_assertions)]

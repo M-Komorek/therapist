@@ -1,7 +1,7 @@
 /// Checkpoints (line starts) built from consecutive chunks of a file. A new checkpoint is the
 /// first line start `lines_per_checkpoint` lines or `bytes_per_checkpoint` bytes past the previous
 /// one, whichever comes first.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct LineIndex {
     lines_per_checkpoint: usize,
     bytes_per_checkpoint: u64,
@@ -11,7 +11,7 @@ pub struct LineIndex {
     ends_with_newline: bool,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct LineStart {
     line: usize,
     byte_offset: u64,
@@ -53,6 +53,10 @@ impl LineIndex {
             self.ends_with_newline = last_byte == b'\n';
         }
         self.bytes_indexed += chunk.len() as u64;
+    }
+
+    pub fn bytes_indexed(&self) -> u64 {
+        self.bytes_indexed
     }
 
     pub fn line_count(&self) -> usize {

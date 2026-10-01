@@ -1,6 +1,7 @@
 mod action;
 mod app;
 mod cli;
+mod jobs;
 mod keymap;
 mod log_file;
 mod logging;
@@ -9,16 +10,24 @@ mod tabs;
 mod terminal;
 mod ui;
 
-use std::{io, process::ExitCode};
+use std::{
+    io,
+    process::ExitCode,
+    sync::mpsc::{self, Receiver},
+    time::Duration,
+};
 
 use clap::Parser;
 
 use crate::{
     app::{App, EventEffect},
     cli::Cli,
+    jobs::JobMessage,
     session::Session,
     terminal::Terminal,
 };
+
+const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 
 #[derive(Debug, thiserror::Error)]
 enum AppError {
@@ -45,19 +54,24 @@ fn run(cli: Cli) -> Result<(), AppError> {
     logging::init(&cli.log_file)?;
     tracing::info!(file = %cli.file.display(), "starting");
     let session = Session::open(&cli.file)?;
-    tracing::info!(line_count = session.log_file.line_count(), "file indexed");
     terminal::install_panic_hook();
+    let (job_sender, job_receiver) = mpsc::channel();
+    jobs::spawn_indexer(job_sender, session.log_file.indexer());
     let mut terminal = Terminal::enter()?;
     let mut app = App::new(session, terminal.size()?);
-    run_loop(&mut terminal, &mut app)?;
+    run_loop(&mut terminal, &mut app, &job_receiver)?;
     tracing::info!("exiting");
     Ok(())
 }
 
-fn run_loop(terminal: &mut Terminal, app: &mut App) -> io::Result<()> {
+fn run_loop(
+    terminal: &mut Terminal,
+    app: &mut App,
+    job_receiver: &Receiver<JobMessage>,
+) -> io::Result<()> {
     draw(terminal, app)?;
     loop {
-        match handle_waiting_events(terminal, app)? {
+        match handle_waiting_events(terminal, app, job_receiver)? {
             EventEffect::Nothing => {}
             EventEffect::Redraw => draw(terminal, app)?,
             EventEffect::Suspend => {
@@ -70,17 +84,28 @@ fn run_loop(terminal: &mut Terminal, app: &mut App) -> io::Result<()> {
 }
 
 /// Handles the next event and every event already waiting behind it, so keys that arrive faster
-/// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws.
-fn handle_waiting_events(terminal: &Terminal, app: &mut App) -> io::Result<EventEffect> {
+/// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws. While a
+/// job runs, waiting for a key times out, so that job messages are handled in between.
+fn handle_waiting_events(
+    terminal: &Terminal,
+    app: &mut App,
+    job_receiver: &Receiver<JobMessage>,
+) -> io::Result<EventEffect> {
+    let input_timeout = app.has_running_jobs().then_some(JOB_POLL_TIMEOUT);
     let mut batch_effect = EventEffect::Nothing;
     loop {
         let effect = terminal
-            .next_event()?
+            .next_event(input_timeout)?
             .map_or(EventEffect::Nothing, |event| app.handle(event));
         match effect {
             EventEffect::Nothing => {}
             EventEffect::Redraw => batch_effect = EventEffect::Redraw,
             EventEffect::Suspend | EventEffect::Quit => return Ok(effect),
+        }
+        for job_message in job_receiver.try_iter() {
+            if app.handle_job_message(job_message) == EventEffect::Redraw {
+                batch_effect = EventEffect::Redraw;
+            }
         }
         if !terminal.has_waiting_event()? {
             return Ok(batch_effect);

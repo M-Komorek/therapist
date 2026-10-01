@@ -1,6 +1,6 @@
 use std::{
     io::{self, BufWriter, Stdout, stdout},
-    panic,
+    panic, thread,
     time::{Duration, Instant},
 };
 
@@ -77,7 +77,12 @@ impl Terminal {
         self.screen.size()
     }
 
-    pub fn next_event(&self) -> io::Result<Option<Event>> {
+    pub fn next_event(&self, timeout: Option<Duration>) -> io::Result<Option<Event>> {
+        if let Some(timeout) = timeout
+            && !event::poll(timeout)?
+        {
+            return Ok(None);
+        }
         Ok(to_event(event::read()?))
     }
 
@@ -100,12 +105,17 @@ impl Drop for Terminal {
     }
 }
 
+/// Restores the terminal when the main thread panics. A panic on another thread is only logged,
+/// because the app keeps running and the default hook would write over the screen.
 pub fn install_panic_hook() {
+    let main_thread = thread::current().id();
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        let _ = leave_tui_mode();
         tracing::error!("{panic_info}");
-        previous_hook(panic_info);
+        if thread::current().id() == main_thread {
+            let _ = leave_tui_mode();
+            previous_hook(panic_info);
+        }
     }));
 }
 
