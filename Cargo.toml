@@ -1,5 +1,5 @@
 [package]
-name = "therapist_v2"
+name = "therapist"
 version = "0.1.0"
 edition = "2024"
 
