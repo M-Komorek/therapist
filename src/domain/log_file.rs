@@ -108,17 +108,17 @@ impl LogFile {
 
 fn read_chunks(
     file: &File,
-    mut offset: u64,
+    mut byte_offset: u64,
     chunk_size: usize,
     mut on_chunk: impl FnMut(&[u8]) -> ControlFlow<()>,
 ) -> io::Result<()> {
     let mut buffer = vec![0; chunk_size];
     loop {
-        let bytes_read = file.read_at(&mut buffer, offset)?;
+        let bytes_read = file.read_at(&mut buffer, byte_offset)?;
         if bytes_read == 0 || on_chunk(&buffer[..bytes_read]).is_break() {
             return Ok(());
         }
-        offset += bytes_read as u64;
+        byte_offset += bytes_read as u64;
     }
 }
 

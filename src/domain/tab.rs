@@ -8,7 +8,7 @@ pub struct Tab {
 
 #[derive(Default)]
 pub struct Viewport {
-    top: usize,
+    top_line: usize,
     height: usize,
     left_column: usize,
     width: usize,
@@ -102,8 +102,8 @@ impl Tab {
 }
 
 impl Viewport {
-    pub fn top(&self) -> usize {
-        self.top
+    pub fn top_line(&self) -> usize {
+        self.top_line
     }
 
     pub fn left_column(&self) -> usize {
@@ -131,14 +131,14 @@ impl Viewport {
     }
 
     fn scroll_up(&mut self, lines_to_scroll: usize) {
-        self.top = self.top.saturating_sub(lines_to_scroll);
+        self.top_line = self.top_line.saturating_sub(lines_to_scroll);
     }
 
     fn scroll_down(&mut self, lines_to_scroll: usize, line_count: usize) {
         let top_of_last_page = line_count.saturating_sub(self.height);
-        if self.top < top_of_last_page {
-            self.top = self
-                .top
+        if self.top_line < top_of_last_page {
+            self.top_line = self
+                .top_line
                 .saturating_add(lines_to_scroll)
                 .min(top_of_last_page);
         }
@@ -157,10 +157,10 @@ impl Viewport {
     }
 
     fn keep_cursor_visible(&mut self, cursor: usize) {
-        if cursor < self.top || self.height == 0 {
-            self.top = cursor;
-        } else if cursor >= self.top + self.height {
-            self.top = cursor + 1 - self.height;
+        if cursor < self.top_line || self.height == 0 {
+            self.top_line = cursor;
+        } else if cursor >= self.top_line + self.height {
+            self.top_line = cursor + 1 - self.height;
         }
     }
 }
@@ -205,31 +205,31 @@ mod tests {
         tab.move_down(1, 0);
 
         assert_eq!(tab.cursor(), 0);
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
     }
 
     #[test]
     fn given_cursor_on_last_visible_line_when_moving_down_then_view_scrolls_one_line() {
         let mut tab = make_tab(3);
         tab.move_down(2, 10);
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
 
         tab.move_down(1, 10);
 
         assert_eq!(tab.cursor(), 3);
-        assert_eq!(tab.viewport().top(), 1);
+        assert_eq!(tab.viewport().top_line(), 1);
     }
 
     #[test]
     fn given_cursor_moving_above_the_view_when_moving_up_then_view_starts_at_cursor() {
         let mut tab = make_tab(3);
         tab.move_down(5, 10);
-        assert_eq!(tab.viewport().top(), 3);
+        assert_eq!(tab.viewport().top_line(), 3);
 
         tab.move_up(3);
 
         assert_eq!(tab.cursor(), 2);
-        assert_eq!(tab.viewport().top(), 2);
+        assert_eq!(tab.viewport().top_line(), 2);
     }
 
     #[test]
@@ -238,7 +238,7 @@ mod tests {
 
         tab.move_down(4, 10);
 
-        assert_eq!(tab.viewport().top(), 4);
+        assert_eq!(tab.viewport().top_line(), 4);
     }
 
     #[test]
@@ -248,7 +248,7 @@ mod tests {
 
         tab.set_viewport_height(5);
 
-        assert_eq!(tab.viewport().top(), 4);
+        assert_eq!(tab.viewport().top_line(), 4);
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         tab.go_to_line_number(50, 100);
 
         assert_eq!(tab.cursor(), 49);
-        assert_eq!(tab.viewport().top(), 40);
+        assert_eq!(tab.viewport().top_line(), 40);
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         tab.go_to_last_line(100);
 
         assert_eq!(tab.cursor(), 99);
-        assert_eq!(tab.viewport().top(), 90);
+        assert_eq!(tab.viewport().top_line(), 90);
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
         tab.go_to_last_line(0);
 
         assert_eq!(tab.cursor(), 0);
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
     }
 
     #[test]
@@ -307,7 +307,7 @@ mod tests {
 
         tab.half_page_down(100);
 
-        assert_eq!(tab.viewport().top(), 5);
+        assert_eq!(tab.viewport().top_line(), 5);
         assert_eq!(tab.cursor(), 7);
     }
 
@@ -317,11 +317,11 @@ mod tests {
         let mut tab = make_tab(10);
         tab.move_down(17, 20);
         tab.move_up(9);
-        assert_eq!(tab.viewport().top(), 8);
+        assert_eq!(tab.viewport().top_line(), 8);
 
         tab.half_page_down(20);
 
-        assert_eq!(tab.viewport().top(), 10);
+        assert_eq!(tab.viewport().top_line(), 10);
         assert_eq!(tab.cursor(), 13);
     }
 
@@ -333,7 +333,7 @@ mod tests {
 
         tab.half_page_down(20);
 
-        assert_eq!(tab.viewport().top(), 10);
+        assert_eq!(tab.viewport().top_line(), 10);
         assert_eq!(tab.cursor(), 19);
     }
 
@@ -343,22 +343,22 @@ mod tests {
         let mut tab = make_tab(5);
         tab.go_to_last_line(20);
         tab.set_viewport_height(10);
-        assert_eq!(tab.viewport().top(), 15);
+        assert_eq!(tab.viewport().top_line(), 15);
 
         tab.half_page_down(20);
 
-        assert_eq!(tab.viewport().top(), 15);
+        assert_eq!(tab.viewport().top_line(), 15);
     }
 
     #[test]
     fn given_scrolled_view_when_half_page_up_then_view_scrolls_and_cursor_keeps_its_row() {
         let mut tab = make_tab(10);
         tab.go_to_line_number(33, 100);
-        assert_eq!(tab.viewport().top(), 23);
+        assert_eq!(tab.viewport().top_line(), 23);
 
         tab.half_page_up();
 
-        assert_eq!(tab.viewport().top(), 18);
+        assert_eq!(tab.viewport().top_line(), 18);
         assert_eq!(tab.cursor(), 27);
     }
 
@@ -369,7 +369,7 @@ mod tests {
 
         tab.half_page_up();
 
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
         assert_eq!(tab.cursor(), 2);
     }
 
@@ -378,11 +378,11 @@ mod tests {
         let mut tab = make_tab(10);
 
         tab.page_down(100);
-        assert_eq!(tab.viewport().top(), 10);
+        assert_eq!(tab.viewport().top_line(), 10);
         assert_eq!(tab.cursor(), 10);
 
         tab.page_up();
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
         assert_eq!(tab.cursor(), 0);
     }
 
@@ -392,7 +392,7 @@ mod tests {
 
         tab.half_page_down(100);
 
-        assert_eq!(tab.viewport().top(), 1);
+        assert_eq!(tab.viewport().top_line(), 1);
         assert_eq!(tab.cursor(), 1);
     }
 
@@ -403,7 +403,7 @@ mod tests {
         tab.half_page_down(0);
         tab.page_down(0);
 
-        assert_eq!(tab.viewport().top(), 0);
+        assert_eq!(tab.viewport().top_line(), 0);
         assert_eq!(tab.cursor(), 0);
     }
 

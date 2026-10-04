@@ -7,9 +7,9 @@ const TAB_STOP: usize = 8;
 /// Turns a log line into the spans shown inside the `visible_columns`. Tabs expand to spaces up to
 /// the next stop, and ASCII control characters show dimmed in caret notation.
 pub(super) fn visible_spans(text: &str, visible_columns: Range<usize>) -> Vec<Span<'static>> {
-    let bytes_up_to_window_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
-    if is_printable_ascii(bytes_up_to_window_end) {
-        return vec![Span::raw(printable_ascii_window(text, visible_columns))];
+    let bytes_before_visible_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
+    if is_printable_ascii(bytes_before_visible_end) {
+        return vec![Span::raw(visible_ascii_slice(text, visible_columns))];
     }
     let mut row = VisibleRow::new(visible_columns);
     let mut plain_text_start = 0;
@@ -29,14 +29,14 @@ fn is_printable_ascii(bytes: &[u8]) -> bool {
     bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
 }
 
-/// Printable ASCII takes one column per byte, so the window is a plain slice.
-fn printable_ascii_window(text: &str, visible_columns: Range<usize>) -> String {
-    let window_start = visible_columns.start.min(text.len());
-    let window_end = visible_columns.end.min(text.len());
-    text[window_start..window_end].to_owned()
+/// Printable ASCII takes one column per byte, so the visible part is a plain slice.
+fn visible_ascii_slice(text: &str, visible_columns: Range<usize>) -> String {
+    let visible_start = visible_columns.start.min(text.len());
+    let visible_end = visible_columns.end.min(text.len());
+    text[visible_start..visible_end].to_owned()
 }
 
-/// A display row cut to a window of columns, built from the left one symbol at a time. A symbol cut
+/// A display row cut to the visible columns, built from the left one symbol at a time. A symbol cut
 /// in half by the left edge becomes spaces, so the rest of the row keeps its columns.
 struct VisibleRow {
     visible_columns: Range<usize>,
@@ -118,7 +118,8 @@ mod tests {
     }
 
     #[test]
-    fn given_controls_inside_and_past_the_window_when_cutting_then_only_the_window_is_kept() {
+    fn given_controls_inside_and_past_the_visible_columns_when_cutting_then_only_those_columns_are_kept()
+     {
         let visible = visible_spans("abc\x1bdefgh\x1b", 2..7);
 
         let span_texts: Vec<&str> = visible.iter().map(|span| span.content.as_ref()).collect();

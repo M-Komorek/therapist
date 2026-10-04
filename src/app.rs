@@ -101,8 +101,8 @@ impl App {
             ViewAction::HalfPageDown => tab.half_page_down(line_count),
             ViewAction::PageUp => tab.page_up(),
             ViewAction::PageDown => tab.page_down(line_count),
-            ViewAction::ScrollLeft(columns) => tab.scroll_left(columns),
-            ViewAction::ScrollRight(columns) => tab.scroll_right(columns),
+            ViewAction::ScrollLeft(columns_to_scroll) => tab.scroll_left(columns_to_scroll),
+            ViewAction::ScrollRight(columns_to_scroll) => tab.scroll_right(columns_to_scroll),
             ViewAction::ScrollLeftWide => tab.scroll_left_wide(),
             ViewAction::ScrollRightWide => tab.scroll_right_wide(),
             ViewAction::ScrollToFirstColumn => tab.scroll_to_first_column(),
@@ -258,7 +258,7 @@ mod tests {
 
         type_keys(&mut app, "j");
 
-        assert_eq!(app.session.tab.viewport().top(), 0);
+        assert_eq!(app.session.tab.viewport().top_line(), 0);
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod tests {
 
         app.handle_event(Event::Resize(Size::new(20, 2)));
 
-        assert_eq!(app.session.tab.viewport().top(), 2);
+        assert_eq!(app.session.tab.viewport().top_line(), 2);
     }
 
     #[test]

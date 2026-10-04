@@ -4,7 +4,7 @@ use super::visible_row::visible_spans;
 use crate::domain::{log_file::LogFile, tab::Tab};
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
-    let first_line = tab.viewport().top();
+    let first_line = tab.viewport().top_line();
     let line_texts = match log_file.read_lines(first_line..first_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
         Err(error) => {
@@ -132,7 +132,8 @@ mod tests {
     }
 
     #[test]
-    fn given_non_ascii_past_the_window_when_rendering_then_the_visible_part_is_unchanged() {
+    fn given_non_ascii_past_the_visible_columns_when_rendering_then_the_visible_part_is_unchanged()
+    {
         let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
 
         assert_eq!(rendered_rows(&buffer), [" 1 │ abc"]);
