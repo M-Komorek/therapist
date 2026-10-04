@@ -1,5 +1,4 @@
 # therapist
 
-[![CI](https://github.com/M-Komorek/therapist/workflows/CI/badge.svg)](https://github.com/M-Komorek/therapist/actions)
+# > **Deprecated:** this is the old v1 code. Development continues on `main`.
 
-Therapist is a TUI tool designed for efficient browsing and analysis of logs.
