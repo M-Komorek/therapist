@@ -1,3 +1,6 @@
+const LINES_PER_CHECKPOINT: usize = 1000;
+const BYTES_PER_CHECKPOINT: u64 = 64 * 1024;
+
 /// Checkpoints (line starts) built from consecutive chunks of a file. A new checkpoint is the
 /// first line start `lines_per_checkpoint` lines or `bytes_per_checkpoint` bytes past the previous
 /// one, whichever comes first.
@@ -5,22 +8,22 @@
 pub struct LineIndex {
     lines_per_checkpoint: usize,
     bytes_per_checkpoint: u64,
-    checkpoints: Vec<LineStart>,
+    checkpoints: Vec<Checkpoint>,
     newline_count: usize,
     bytes_indexed: u64,
     ends_with_newline: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct LineStart {
-    line: usize,
-    byte_offset: u64,
+pub struct Checkpoint {
+    pub line: usize,
+    pub byte_offset: u64,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Checkpoint {
-    pub byte_offset: u64,
-    pub lines_to_skip: usize,
+impl Default for LineIndex {
+    fn default() -> Self {
+        Self::new(LINES_PER_CHECKPOINT, BYTES_PER_CHECKPOINT)
+    }
 }
 
 impl LineIndex {
@@ -28,7 +31,7 @@ impl LineIndex {
         Self {
             lines_per_checkpoint,
             bytes_per_checkpoint,
-            checkpoints: vec![LineStart {
+            checkpoints: vec![Checkpoint {
                 line: 0,
                 byte_offset: 0,
             }],
@@ -41,7 +44,7 @@ impl LineIndex {
     pub fn add_chunk(&mut self, chunk: &[u8]) {
         for newline_position in memchr::memchr_iter(b'\n', chunk) {
             self.newline_count += 1;
-            let line_start = LineStart {
+            let line_start = Checkpoint {
                 line: self.newline_count,
                 byte_offset: self.bytes_indexed + newline_position as u64 + 1,
             };
@@ -55,8 +58,11 @@ impl LineIndex {
         self.bytes_indexed += chunk.len() as u64;
     }
 
-    pub fn bytes_indexed(&self) -> u64 {
-        self.bytes_indexed
+    pub fn percent_indexed(&self, file_size: u64) -> u64 {
+        if file_size == 0 {
+            return 100;
+        }
+        (self.bytes_indexed * 100 / file_size).min(100)
     }
 
     pub fn line_count(&self) -> usize {
@@ -64,23 +70,17 @@ impl LineIndex {
         self.newline_count + usize::from(has_unterminated_last_line)
     }
 
-    pub fn checkpoint_for(&self, line: usize) -> Option<Checkpoint> {
+    pub fn checkpoint_for(&self, line: usize) -> Option<&Checkpoint> {
         if line >= self.line_count() {
             return None;
         }
         let checkpoints_up_to_line = self
             .checkpoints
             .partition_point(|checkpoint| checkpoint.line <= line);
-        let nearest_checkpoint = self
-            .checkpoints
-            .get(checkpoints_up_to_line.checked_sub(1)?)?;
-        Some(Checkpoint {
-            byte_offset: nearest_checkpoint.byte_offset,
-            lines_to_skip: line - nearest_checkpoint.line,
-        })
+        self.checkpoints.get(checkpoints_up_to_line.checked_sub(1)?)
     }
 
-    fn is_checkpoint_due(&self, line_start: &LineStart) -> bool {
+    fn is_checkpoint_due(&self, line_start: &Checkpoint) -> bool {
         self.checkpoints.last().is_none_or(|last_checkpoint| {
             line_start.line - last_checkpoint.line >= self.lines_per_checkpoint
                 || line_start.byte_offset - last_checkpoint.byte_offset >= self.bytes_per_checkpoint
@@ -109,7 +109,20 @@ mod tests {
     fn lookup(line_index: &LineIndex, line: usize) -> Option<(u64, usize)> {
         line_index
             .checkpoint_for(line)
-            .map(|checkpoint| (checkpoint.byte_offset, checkpoint.lines_to_skip))
+            .map(|checkpoint| (checkpoint.byte_offset, line - checkpoint.line))
+    }
+
+    #[test]
+    fn given_empty_file_when_computing_percent_indexed_then_it_is_complete() {
+        assert_eq!(LineIndex::default().percent_indexed(0), 100);
+    }
+
+    #[test]
+    fn given_file_that_grew_while_indexing_when_computing_percent_then_it_stops_at_100() {
+        let mut line_index = LineIndex::default();
+        line_index.add_chunk(&[b'x'; 150]);
+
+        assert_eq!(line_index.percent_indexed(100), 100);
     }
 
     #[test]

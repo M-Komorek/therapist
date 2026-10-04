@@ -56,33 +56,33 @@ impl Tab {
         self.scroll_down_with_cursor(self.viewport.full_page(), line_count);
     }
 
-    pub fn scroll_left(&mut self, columns: usize) {
-        self.viewport.left_column = self.viewport.left_column.saturating_sub(columns);
+    pub fn scroll_left(&mut self, columns_to_scroll: usize) {
+        self.viewport.scroll_left(columns_to_scroll);
     }
 
-    pub fn scroll_right(&mut self, columns: usize) {
-        self.viewport.left_column = self.viewport.left_column.saturating_add(columns);
+    pub fn scroll_right(&mut self, columns_to_scroll: usize) {
+        self.viewport.scroll_right(columns_to_scroll);
     }
 
     pub fn scroll_left_wide(&mut self) {
-        self.scroll_left(self.viewport.wide_scroll());
+        self.viewport.scroll_left(self.viewport.wide_scroll());
     }
 
     pub fn scroll_right_wide(&mut self) {
-        self.scroll_right(self.viewport.wide_scroll());
+        self.viewport.scroll_right(self.viewport.wide_scroll());
     }
 
     pub fn scroll_to_first_column(&mut self) {
-        self.viewport.left_column = 0;
+        self.viewport.scroll_to_first_column();
     }
 
     pub fn set_viewport_height(&mut self, height: usize) {
-        self.viewport.height = height;
+        self.viewport.set_height(height);
         self.viewport.keep_cursor_visible(self.cursor);
     }
 
     pub fn set_viewport_width(&mut self, width: usize) {
-        self.viewport.width = width;
+        self.viewport.set_width(width);
     }
 
     fn go_to_line(&mut self, line: usize, line_count: usize) {
@@ -90,14 +90,14 @@ impl Tab {
         self.viewport.keep_cursor_visible(self.cursor);
     }
 
-    fn scroll_up_with_cursor(&mut self, lines: usize) {
-        self.viewport.scroll_up(lines);
-        self.move_up(lines);
+    fn scroll_up_with_cursor(&mut self, lines_to_scroll: usize) {
+        self.viewport.scroll_up(lines_to_scroll);
+        self.move_up(lines_to_scroll);
     }
 
-    fn scroll_down_with_cursor(&mut self, lines: usize, line_count: usize) {
-        self.viewport.scroll_down(lines, line_count);
-        self.move_down(lines, line_count);
+    fn scroll_down_with_cursor(&mut self, lines_to_scroll: usize, line_count: usize) {
+        self.viewport.scroll_down(lines_to_scroll, line_count);
+        self.move_down(lines_to_scroll, line_count);
     }
 }
 
@@ -108,6 +108,14 @@ impl Viewport {
 
     pub fn left_column(&self) -> usize {
         self.left_column
+    }
+
+    fn set_height(&mut self, height: usize) {
+        self.height = height;
+    }
+
+    fn set_width(&mut self, width: usize) {
+        self.width = width;
     }
 
     fn wide_scroll(&self) -> usize {
@@ -122,15 +130,30 @@ impl Viewport {
         self.height.max(1)
     }
 
-    fn scroll_up(&mut self, lines: usize) {
-        self.top = self.top.saturating_sub(lines);
+    fn scroll_up(&mut self, lines_to_scroll: usize) {
+        self.top = self.top.saturating_sub(lines_to_scroll);
     }
 
-    fn scroll_down(&mut self, lines: usize, line_count: usize) {
+    fn scroll_down(&mut self, lines_to_scroll: usize, line_count: usize) {
         let top_of_last_page = line_count.saturating_sub(self.height);
         if self.top < top_of_last_page {
-            self.top = self.top.saturating_add(lines).min(top_of_last_page);
+            self.top = self
+                .top
+                .saturating_add(lines_to_scroll)
+                .min(top_of_last_page);
         }
+    }
+
+    fn scroll_left(&mut self, columns_to_scroll: usize) {
+        self.left_column = self.left_column.saturating_sub(columns_to_scroll);
+    }
+
+    fn scroll_right(&mut self, columns_to_scroll: usize) {
+        self.left_column = self.left_column.saturating_add(columns_to_scroll);
+    }
+
+    fn scroll_to_first_column(&mut self) {
+        self.left_column = 0;
     }
 
     fn keep_cursor_visible(&mut self, cursor: usize) {

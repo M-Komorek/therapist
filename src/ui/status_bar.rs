@@ -1,8 +1,8 @@
 use ratatui::{Frame, layout::Rect, text::Line};
 
-use crate::{
+use crate::domain::{
     log_file::{Indexing, LogFile},
-    tabs::Tab,
+    tab::Tab,
 };
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab, last_keys: &str) {
@@ -44,10 +44,11 @@ fn indexing_text(indexing: Indexing, percent_indexed: u64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend};
-
     use super::*;
-    use crate::{session::Session, ui::tests::rendered_rows};
+    use crate::{
+        domain::session::Session,
+        ui::tests::{render_to_buffer, rendered_rows},
+    };
 
     fn render_status(text: &str, cursor: usize, last_keys: &str) -> String {
         let mut session = Session::from_text(text);
@@ -56,19 +57,16 @@ mod tests {
     }
 
     fn render_session_status(session: &Session, last_keys: &str) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(30, 1)).unwrap();
-        terminal
-            .draw(|frame| {
-                render(
-                    frame,
-                    frame.area(),
-                    &session.log_file,
-                    &session.tab,
-                    last_keys,
-                );
-            })
-            .unwrap();
-        rendered_rows(terminal.backend().buffer()).remove(0)
+        let buffer = render_to_buffer(30, 1, |frame| {
+            render(
+                frame,
+                frame.area(),
+                &session.log_file,
+                &session.tab,
+                last_keys,
+            );
+        });
+        rendered_rows(&buffer).remove(0)
     }
 
     #[test]

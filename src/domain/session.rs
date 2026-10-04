@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use crate::{
+use crate::domain::{
     log_file::{LogFile, LogFileError},
-    tabs::Tab,
+    tab::Tab,
 };
 
 pub struct Session {

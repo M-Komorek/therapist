@@ -2,11 +2,9 @@ use ratatui::layout::{Rect, Size};
 
 use crate::{
     action::{Action, AppAction, ViewAction},
-    jobs::JobMessage,
+    domain::{jobs::JobMessage, log_file::Indexing, session::Session},
+    infra::terminal::Event,
     keymap::{KeyResolution, Keymap},
-    log_file::Indexing,
-    session::Session,
-    terminal::Event,
     ui::ScreenAreas,
 };
 
@@ -41,7 +39,7 @@ impl App {
         self.keymap.last_keys_text()
     }
 
-    pub fn handle(&mut self, event: Event) -> EventEffect {
+    pub fn handle_event(&mut self, event: Event) -> EventEffect {
         match event {
             Event::Key(key) => match self.keymap.resolve(key) {
                 KeyResolution::Action(action) => self.dispatch(action),
@@ -76,10 +74,10 @@ impl App {
     }
 
     fn update_viewport_size(&mut self, screen_size: Size) {
-        let log_view = ScreenAreas::new(Rect::from(screen_size)).log_view;
+        let log_view_area = ScreenAreas::new(Rect::from(screen_size)).log_view;
         let tab = &mut self.session.tab;
-        tab.set_viewport_height(usize::from(log_view.height));
-        tab.set_viewport_width(usize::from(log_view.width));
+        tab.set_viewport_height(usize::from(log_view_area.height));
+        tab.set_viewport_width(usize::from(log_view_area.width));
     }
 
     fn dispatch(&mut self, action: Action) -> EventEffect {
@@ -127,7 +125,7 @@ mod tests {
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
-    use crate::{jobs::JobError, log_file::LineIndex};
+    use crate::domain::{jobs::JobError, log_file::LineIndex};
 
     fn make_app() -> App {
         App::new(
@@ -153,15 +151,34 @@ mod tests {
         }
     }
 
-    fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> EventEffect {
-        app.handle(Event::Key(KeyEvent::new(code, modifiers)))
+    fn type_keys(app: &mut App, typed: &str) -> EventEffect {
+        let mut effect = EventEffect::Nothing;
+        for character in typed.chars() {
+            let modifiers = if character.is_uppercase() {
+                KeyModifiers::SHIFT
+            } else {
+                KeyModifiers::NONE
+            };
+            effect = app.handle_event(Event::Key(KeyEvent::new(
+                KeyCode::Char(character),
+                modifiers,
+            )));
+        }
+        effect
+    }
+
+    fn press_ctrl(app: &mut App, character: char) -> EventEffect {
+        app.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char(character),
+            KeyModifiers::CONTROL,
+        )))
     }
 
     #[test]
     fn given_app_when_q_is_pressed_then_it_quits() {
         let mut app = make_app();
 
-        let effect = press(&mut app, KeyCode::Char('q'), KeyModifiers::NONE);
+        let effect = type_keys(&mut app, "q");
 
         assert_eq!(effect, EventEffect::Quit);
     }
@@ -170,7 +187,7 @@ mod tests {
     fn given_app_when_ctrl_z_is_pressed_then_it_suspends() {
         let mut app = make_app();
 
-        let effect = press(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL);
+        let effect = press_ctrl(&mut app, 'z');
 
         assert_eq!(effect, EventEffect::Suspend);
     }
@@ -178,9 +195,9 @@ mod tests {
     #[test]
     fn given_unmapped_key_shown_when_it_is_pressed_again_then_nothing_happens() {
         let mut app = make_app();
-        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
+        type_keys(&mut app, "x");
 
-        let effect = press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE);
+        let effect = type_keys(&mut app, "x");
 
         assert_eq!(effect, EventEffect::Nothing);
     }
@@ -189,7 +206,7 @@ mod tests {
     fn given_app_when_j_is_pressed_then_cursor_moves_down_and_screen_is_redrawn() {
         let mut app = make_app();
 
-        let effect = press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        let effect = type_keys(&mut app, "j");
 
         assert_eq!(effect, EventEffect::Redraw);
         assert_eq!(app.session.tab.cursor(), 1);
@@ -198,9 +215,9 @@ mod tests {
     #[test]
     fn given_cursor_on_second_line_when_k_is_pressed_then_cursor_moves_up() {
         let mut app = make_app();
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        type_keys(&mut app, "j");
 
-        press(&mut app, KeyCode::Char('k'), KeyModifiers::NONE);
+        type_keys(&mut app, "k");
 
         assert_eq!(app.session.tab.cursor(), 0);
     }
@@ -209,7 +226,7 @@ mod tests {
     fn given_app_when_count_digit_is_pressed_then_screen_is_redrawn_without_moving() {
         let mut app = make_app();
 
-        let effect = press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
+        let effect = type_keys(&mut app, "2");
 
         assert_eq!(effect, EventEffect::Redraw);
         assert_eq!(app.session.tab.cursor(), 0);
@@ -218,9 +235,9 @@ mod tests {
     #[test]
     fn given_pending_count_when_j_is_pressed_then_cursor_moves_that_many_lines() {
         let mut app = make_app();
-        press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
+        type_keys(&mut app, "2");
 
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        type_keys(&mut app, "j");
 
         assert_eq!(app.session.tab.cursor(), 2);
     }
@@ -228,11 +245,9 @@ mod tests {
     #[test]
     fn given_cursor_on_last_line_when_j_is_pressed_then_cursor_stays_there() {
         let mut app = make_app();
-        for _ in 0..2 {
-            press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
-        }
+        type_keys(&mut app, "jj");
 
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        type_keys(&mut app, "j");
 
         assert_eq!(app.session.tab.cursor(), 2);
     }
@@ -241,7 +256,7 @@ mod tests {
     fn given_new_app_when_j_is_pressed_then_the_view_does_not_scroll() {
         let mut app = make_app();
 
-        press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
+        type_keys(&mut app, "j");
 
         assert_eq!(app.session.tab.viewport().top(), 0);
     }
@@ -250,7 +265,7 @@ mod tests {
     fn given_app_when_capital_g_is_pressed_then_cursor_goes_to_last_line() {
         let mut app = make_app();
 
-        press(&mut app, KeyCode::Char('G'), KeyModifiers::SHIFT);
+        type_keys(&mut app, "G");
 
         assert_eq!(app.session.tab.cursor(), 2);
     }
@@ -258,9 +273,9 @@ mod tests {
     #[test]
     fn given_count_when_capital_g_is_pressed_then_cursor_goes_to_that_line_number() {
         let mut app = make_app();
-        press(&mut app, KeyCode::Char('2'), KeyModifiers::NONE);
+        type_keys(&mut app, "2");
 
-        press(&mut app, KeyCode::Char('G'), KeyModifiers::SHIFT);
+        type_keys(&mut app, "G");
 
         assert_eq!(app.session.tab.cursor(), 1);
     }
@@ -269,7 +284,7 @@ mod tests {
     fn given_app_when_ctrl_d_is_pressed_then_cursor_moves_half_a_page() {
         let mut app = make_app();
 
-        let effect = press(&mut app, KeyCode::Char('d'), KeyModifiers::CONTROL);
+        let effect = press_ctrl(&mut app, 'd');
 
         assert_eq!(effect, EventEffect::Redraw);
         assert_eq!(app.session.tab.cursor(), 1);
@@ -278,10 +293,10 @@ mod tests {
     #[test]
     fn given_count_when_l_then_h_are_pressed_then_view_scrolls_right_then_left() {
         let mut app = make_app();
-        press(&mut app, KeyCode::Char('3'), KeyModifiers::NONE);
-        press(&mut app, KeyCode::Char('l'), KeyModifiers::NONE);
+        type_keys(&mut app, "3");
+        type_keys(&mut app, "l");
 
-        press(&mut app, KeyCode::Char('h'), KeyModifiers::NONE);
+        type_keys(&mut app, "h");
 
         assert_eq!(app.session.tab.viewport().left_column(), 2);
     }
@@ -290,9 +305,9 @@ mod tests {
     fn given_terminal_resized_to_100_columns_when_capital_l_is_pressed_then_view_scrolls_20_columns()
      {
         let mut app = make_app();
-        app.handle(Event::Resize(Size::new(100, 10)));
+        app.handle_event(Event::Resize(Size::new(100, 10)));
 
-        press(&mut app, KeyCode::Char('L'), KeyModifiers::SHIFT);
+        type_keys(&mut app, "L");
 
         assert_eq!(app.session.tab.viewport().left_column(), 20);
     }
@@ -301,7 +316,7 @@ mod tests {
     fn given_app_when_terminal_is_resized_then_screen_is_redrawn() {
         let mut app = make_app();
 
-        let effect = app.handle(Event::Resize(Size::new(30, 10)));
+        let effect = app.handle_event(Event::Resize(Size::new(30, 10)));
 
         assert_eq!(effect, EventEffect::Redraw);
     }
@@ -309,11 +324,9 @@ mod tests {
     #[test]
     fn given_cursor_on_last_line_when_window_shrinks_then_view_scrolls_to_keep_it_visible() {
         let mut app = make_app();
-        for _ in 0..2 {
-            press(&mut app, KeyCode::Char('j'), KeyModifiers::NONE);
-        }
+        type_keys(&mut app, "jj");
 
-        app.handle(Event::Resize(Size::new(20, 2)));
+        app.handle_event(Event::Resize(Size::new(20, 2)));
 
         assert_eq!(app.session.tab.viewport().top(), 2);
     }
@@ -339,7 +352,7 @@ mod tests {
         let (mut app, reported_indexes) = make_indexing_app("first\nsecond\nthird\n");
         deliver(&mut app, reported_indexes);
 
-        press(&mut app, KeyCode::Char('G'), KeyModifiers::SHIFT);
+        type_keys(&mut app, "G");
 
         assert_eq!(app.session.tab.cursor(), 2);
     }
@@ -371,6 +384,6 @@ mod tests {
     fn given_debug_build_when_ctrl_p_is_pressed_then_app_panics() {
         let mut app = make_app();
 
-        press(&mut app, KeyCode::Char('p'), KeyModifiers::CONTROL);
+        press_ctrl(&mut app, 'p');
     }
 }

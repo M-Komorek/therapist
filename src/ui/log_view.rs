@@ -1,20 +1,11 @@
-use std::ops::Range;
+use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
-use ratatui::{
-    Frame,
-    buffer::CellWidth,
-    layout::Rect,
-    style::{Style, Stylize},
-    text::{Line, Span},
-};
-
-use crate::{log_file::LogFile, tabs::Tab};
-
-const TAB_STOP: usize = 8;
+use super::visible_row::visible_spans;
+use crate::domain::{log_file::LogFile, tab::Tab};
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
     let first_line = tab.viewport().top();
-    let line_texts = match log_file.lines(first_line..first_line + usize::from(area.height)) {
+    let line_texts = match log_file.read_lines(first_line..first_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
         Err(error) => {
             frame.render_widget(Line::raw(error.to_string()), area);
@@ -24,13 +15,13 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
     let line_number_width = line_number_width(log_file.line_count());
     let left_column = tab.viewport().left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
-    for ((row, text), line) in area.rows().zip(&line_texts).zip(first_line..) {
+    for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(first_line..) {
         let mut display_line = Line::from(gutter(line, line_number_width));
-        display_line.extend(visible_spans(text, visible_columns.clone()));
+        display_line.extend(visible_spans(line_text, visible_columns.clone()));
         if line == tab.cursor() {
             display_line = display_line.reversed();
         }
-        frame.render_widget(display_line, row);
+        frame.render_widget(display_line, row_area);
     }
 }
 
@@ -42,119 +33,20 @@ fn gutter(line: usize, line_number_width: usize) -> String {
     format!(" {:>line_number_width$} │ ", line + 1)
 }
 
-/// Turns a log line into the spans shown inside the `visible_columns`. Tabs expand to spaces up to
-/// the next stop, and ASCII control characters show dimmed in caret notation.
-fn visible_spans(text: &str, visible_columns: Range<usize>) -> Vec<Span<'static>> {
-    let bytes_up_to_window_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
-    if is_printable_ascii(bytes_up_to_window_end) {
-        return vec![Span::raw(printable_ascii_window(text, visible_columns))];
-    }
-    let mut row = VisibleRow::new(visible_columns);
-    let mut plain_text_start = 0;
-    let controls = text
-        .char_indices()
-        .filter(|(_, character)| character.is_control());
-    for (control_offset, control) in controls {
-        row.push_text(&text[plain_text_start..control_offset]);
-        row.push_control(control);
-        plain_text_start = control_offset + control.len_utf8();
-    }
-    row.push_text(&text[plain_text_start..]);
-    row.spans
-}
-
-fn is_printable_ascii(bytes: &[u8]) -> bool {
-    bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
-}
-
-/// Printable ASCII takes one column per byte, so the window is a plain slice.
-fn printable_ascii_window(text: &str, visible_columns: Range<usize>) -> String {
-    let window_start = visible_columns.start.min(text.len());
-    let window_end = visible_columns.end.min(text.len());
-    text[window_start..window_end].to_owned()
-}
-
-/// A display row cut to a window of columns, built from the left one symbol at a time. A symbol cut
-/// in half by the left edge becomes spaces, so the rest of the row keeps its columns.
-struct VisibleRow {
-    visible_columns: Range<usize>,
-    current_column: usize,
-    spans: Vec<Span<'static>>,
-}
-
-impl VisibleRow {
-    fn new(visible_columns: Range<usize>) -> Self {
-        Self {
-            visible_columns,
-            current_column: 0,
-            spans: Vec::new(),
-        }
-    }
-
-    fn push_text(&mut self, text: &str) {
-        let span = Span::raw(text);
-        for grapheme in span.styled_graphemes(Style::default()) {
-            if self.is_full() {
-                return;
-            }
-            let width = usize::from(grapheme.symbol.cell_width());
-            self.push_symbol(grapheme.symbol, width, Style::default());
-        }
-    }
-
-    fn push_control(&mut self, control: char) {
-        if control == '\t' {
-            let spaces = TAB_STOP - self.current_column % TAB_STOP;
-            self.push_symbol(&" ".repeat(spaces), spaces, Style::default());
-        } else if control.is_ascii_control() {
-            self.push_symbol(&caret_notation(control), 2, Style::new().dim());
-        }
-        // Other control characters (C1) are dropped, as ratatui would draw nothing for them.
-    }
-
-    fn push_symbol(&mut self, symbol: &str, width: usize, style: Style) {
-        if self.is_full() {
-            return;
-        }
-        let next_column = self.current_column + width;
-        if self.current_column >= self.visible_columns.start {
-            self.append(symbol, style);
-        } else if next_column > self.visible_columns.start {
-            let visible_width = next_column - self.visible_columns.start;
-            self.append(&" ".repeat(visible_width), Style::default());
-        }
-        self.current_column = next_column;
-    }
-
-    fn append(&mut self, text: &str, style: Style) {
-        match self.spans.last_mut() {
-            Some(span) if span.style == style => span.content.to_mut().push_str(text),
-            _ => self.spans.push(Span::styled(text.to_owned(), style)),
-        }
-    }
-
-    fn is_full(&self) -> bool {
-        self.current_column >= self.visible_columns.end
-    }
-}
-
-fn caret_notation(control: char) -> String {
-    format!("^{}", char::from(control as u8 ^ 0x40))
-}
-
 #[cfg(test)]
 mod tests {
-    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, style::Modifier};
+    use ratatui::{buffer::Buffer, style::Modifier};
 
     use super::*;
-    use crate::{session::Session, ui::tests::rendered_rows};
+    use crate::{
+        domain::session::Session,
+        ui::tests::{render_to_buffer, rendered_rows},
+    };
 
     fn render_session(session: &Session, width: u16, height: u16) -> Buffer {
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-        terminal
-            .draw(|frame| render(frame, frame.area(), &session.log_file, &session.tab))
-            .unwrap();
-        terminal.backend().buffer().clone()
+        render_to_buffer(width, height, |frame| {
+            render(frame, frame.area(), &session.log_file, &session.tab);
+        })
     }
 
     fn render_text(text: &str, cursor: usize, width: u16, height: u16) -> Buffer {
@@ -164,9 +56,9 @@ mod tests {
         render_session(&session, width, height)
     }
 
-    fn render_scrolled(text: &str, columns: usize, width: u16, height: u16) -> Buffer {
+    fn render_scrolled(text: &str, columns_to_scroll: usize, width: u16, height: u16) -> Buffer {
         let mut session = Session::from_text(text);
-        session.tab.scroll_right(columns);
+        session.tab.scroll_right(columns_to_scroll);
         render_session(&session, width, height)
     }
 
@@ -240,12 +132,6 @@ mod tests {
     }
 
     #[test]
-    fn given_nul_and_del_when_converting_then_they_use_standard_caret_notation() {
-        assert_eq!(caret_notation('\0'), "^@");
-        assert_eq!(caret_notation('\x7f'), "^?");
-    }
-
-    #[test]
     fn given_non_ascii_past_the_window_when_rendering_then_the_visible_part_is_unchanged() {
         let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
 
@@ -310,14 +196,5 @@ mod tests {
 
         let x_column = (0..30).find(|&column| buffer[(column, 0)].symbol() == "x");
         assert_eq!(x_column, Some(5 + 8));
-    }
-
-    #[test]
-    fn given_controls_inside_and_past_the_window_when_cutting_then_only_the_window_is_kept() {
-        let visible = visible_spans("abc\x1bdefgh\x1b", 2..7);
-
-        let span_texts: Vec<&str> = visible.iter().map(|span| span.content.as_ref()).collect();
-        assert_eq!(span_texts, ["c", "^[", "de"]);
-        assert_eq!(visible[1].style, Style::new().dim());
     }
 }

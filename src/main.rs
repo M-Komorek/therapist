@@ -1,13 +1,8 @@
 mod action;
 mod app;
-mod cli;
-mod jobs;
+mod domain;
+mod infra;
 mod keymap;
-mod log_file;
-mod logging;
-mod session;
-mod tabs;
-mod terminal;
 mod ui;
 
 use std::{
@@ -21,10 +16,16 @@ use clap::Parser;
 
 use crate::{
     app::{App, EventEffect},
-    cli::Cli,
-    jobs::JobMessage,
-    session::Session,
-    terminal::Terminal,
+    domain::{
+        jobs::{self, JobMessage},
+        log_file::LogFileError,
+        session::Session,
+    },
+    infra::{
+        cli::Cli,
+        logging::{self, LoggingError},
+        terminal::{self, Terminal},
+    },
 };
 
 const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -32,9 +33,9 @@ const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 #[derive(Debug, thiserror::Error)]
 enum AppError {
     #[error(transparent)]
-    Logging(#[from] logging::LoggingError),
+    Logging(#[from] LoggingError),
     #[error(transparent)]
-    LogFile(#[from] log_file::LogFileError),
+    LogFile(#[from] LogFileError),
     #[error("terminal error: {0}")]
     Terminal(#[from] io::Error),
 }
@@ -96,7 +97,7 @@ fn handle_waiting_events(
     loop {
         let effect = terminal
             .next_event(input_timeout)?
-            .map_or(EventEffect::Nothing, |event| app.handle(event));
+            .map_or(EventEffect::Nothing, |event| app.handle_event(event));
         match effect {
             EventEffect::Nothing => {}
             EventEffect::Redraw => batch_effect = EventEffect::Redraw,

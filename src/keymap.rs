@@ -1,6 +1,10 @@
+mod bindings;
+
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, AppAction, ViewAction};
+use crate::action::Action;
+
+use bindings::{BindingMatch, apply_count, find_binding, plain};
 
 #[derive(Debug, PartialEq)]
 pub enum KeyResolution {
@@ -86,7 +90,8 @@ impl Keymap {
             return None;
         };
         let digit = character.to_digit(10)?;
-        (digit != 0 || self.count.is_some()).then_some(digit as usize)
+        let zero_extends_count = self.count.is_some();
+        (digit != 0 || zero_extends_count).then_some(digit as usize)
     }
 
     fn add_count_digit(&mut self, digit: usize) {
@@ -110,76 +115,6 @@ impl Keymap {
 
 const ESCAPE: KeyEvent = plain(KeyCode::Esc);
 
-/// What each key sequence does when no count is typed before it.
-const BINDINGS: &[(&[KeyEvent], Action)] = &[
-    // App
-    #[cfg(debug_assertions)]
-    (&[ctrl('p')], app(AppAction::DebugPanic)),
-    (&[char_key('q')], app(AppAction::Quit)),
-    (&[ctrl('c')], app(AppAction::Quit)),
-    (&[ctrl('z')], app(AppAction::Suspend)),
-    // Moving by lines
-    (&[char_key('j')], view(ViewAction::MoveDown(1))),
-    (&[plain(KeyCode::Down)], view(ViewAction::MoveDown(1))),
-    (&[char_key('k')], view(ViewAction::MoveUp(1))),
-    (&[plain(KeyCode::Up)], view(ViewAction::MoveUp(1))),
-    // Jumping to a line
-    (
-        &[char_key('g'), char_key('g')],
-        view(ViewAction::GoToLineNumber(1)),
-    ),
-    (&[char_key('G')], view(ViewAction::GoToLastLine)),
-    // Moving by pages
-    (&[ctrl('d')], view(ViewAction::HalfPageDown)),
-    (&[ctrl('u')], view(ViewAction::HalfPageUp)),
-    (&[ctrl('f')], view(ViewAction::PageDown)),
-    (&[ctrl('b')], view(ViewAction::PageUp)),
-    // Scrolling sideways
-    (&[char_key('h')], view(ViewAction::ScrollLeft(1))),
-    (&[plain(KeyCode::Left)], view(ViewAction::ScrollLeft(1))),
-    (&[char_key('l')], view(ViewAction::ScrollRight(1))),
-    (&[plain(KeyCode::Right)], view(ViewAction::ScrollRight(1))),
-    (&[char_key('H')], view(ViewAction::ScrollLeftWide)),
-    (&[char_key('L')], view(ViewAction::ScrollRightWide)),
-    (&[char_key('0')], view(ViewAction::ScrollToFirstColumn)),
-];
-
-fn apply_count(action: Action, count: Option<usize>) -> Action {
-    let Some(count) = count else {
-        return action;
-    };
-    match action {
-        Action::View(ViewAction::MoveDown(_)) => view(ViewAction::MoveDown(count)),
-        Action::View(ViewAction::MoveUp(_)) => view(ViewAction::MoveUp(count)),
-        Action::View(ViewAction::ScrollLeft(_)) => view(ViewAction::ScrollLeft(count)),
-        Action::View(ViewAction::ScrollRight(_)) => view(ViewAction::ScrollRight(count)),
-        Action::View(ViewAction::GoToLineNumber(_) | ViewAction::GoToLastLine) => {
-            view(ViewAction::GoToLineNumber(count))
-        }
-        _ => action,
-    }
-}
-
-enum BindingMatch {
-    Complete(&'static Action),
-    Prefix,
-    NotBound,
-}
-
-fn find_binding(keys: &[KeyEvent]) -> BindingMatch {
-    if let Some((_, action)) = BINDINGS.iter().find(|(binding, _)| *binding == keys) {
-        return BindingMatch::Complete(action);
-    }
-    let is_prefix = BINDINGS
-        .iter()
-        .any(|(binding, _)| binding.starts_with(keys));
-    if is_prefix {
-        BindingMatch::Prefix
-    } else {
-        BindingMatch::NotBound
-    }
-}
-
 fn key_name(key: &KeyEvent) -> String {
     let mut modifiers = String::new();
     if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -194,29 +129,13 @@ fn key_name(key: &KeyEvent) -> String {
     }
 }
 
-const fn plain(code: KeyCode) -> KeyEvent {
-    KeyEvent::new(code, KeyModifiers::NONE)
-}
-
-const fn char_key(character: char) -> KeyEvent {
-    plain(KeyCode::Char(character))
-}
-
-const fn ctrl(character: char) -> KeyEvent {
-    KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL)
-}
-
-const fn app(app_action: AppAction) -> Action {
-    Action::App(app_action)
-}
-
-const fn view(view_action: ViewAction) -> Action {
-    Action::View(view_action)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        bindings::{app, char_key, ctrl, view},
+        *,
+    };
+    use crate::action::{AppAction, ViewAction};
 
     fn resolve_keys(keymap: &mut Keymap, keys: &[KeyEvent]) -> KeyResolution {
         let mut resolution = KeyResolution::Ignored;
@@ -237,18 +156,6 @@ mod tests {
 
     fn resolved_view(view_action: ViewAction) -> KeyResolution {
         KeyResolution::Action(view(view_action))
-    }
-
-    #[test]
-    fn given_every_pair_of_bindings_when_compared_then_neither_equals_nor_starts_the_other() {
-        for (binding_position, (keys, _)) in BINDINGS.iter().enumerate() {
-            for (other_keys, _) in &BINDINGS[binding_position + 1..] {
-                assert!(
-                    !keys.starts_with(other_keys) && !other_keys.starts_with(keys),
-                    "{keys:?} conflicts with {other_keys:?}"
-                );
-            }
-        }
     }
 
     #[test]

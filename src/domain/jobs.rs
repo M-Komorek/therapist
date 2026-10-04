@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use crate::log_file::{Indexer, LineIndex, LogFileError};
+use crate::domain::log_file::{Indexer, LineIndex, LogFileError};
 
 /// What a job thread sends to the run loop. Every job ends with exactly one `Done` or `Failed`.
 /// Sending fails only once the run loop has stopped, which means the app is quitting, so jobs
@@ -56,7 +56,7 @@ mod tests {
     use std::{io, path::PathBuf, sync::mpsc};
 
     use super::*;
-    use crate::session::Session;
+    use crate::domain::session::Session;
 
     fn run_job(
         job: impl FnOnce(&Sender<JobMessage>) -> Result<(), JobError> + Send + 'static,

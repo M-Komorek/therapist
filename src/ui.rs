@@ -1,5 +1,6 @@
 mod log_view;
 mod status_bar;
+mod visible_row;
 
 use ratatui::{
     Frame,
@@ -53,7 +54,17 @@ mod tests {
     };
 
     use super::*;
-    use crate::{session::Session, terminal::Event};
+    use crate::{domain::session::Session, infra::terminal::Event};
+
+    pub(super) fn render_to_buffer(
+        width: u16,
+        height: u16,
+        render: impl FnOnce(&mut Frame),
+    ) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(render).unwrap();
+        terminal.backend().buffer().clone()
+    }
 
     pub(super) fn rendered_rows(buffer: &Buffer) -> Vec<String> {
         buffer
@@ -71,9 +82,7 @@ mod tests {
     }
 
     fn render_app(app: &App) -> Vec<String> {
-        let mut terminal = Terminal::new(TestBackend::new(30, 3)).unwrap();
-        terminal.draw(|frame| render(frame, app)).unwrap();
-        rendered_rows(terminal.backend().buffer())
+        rendered_rows(&render_to_buffer(30, 3, |frame| render(frame, app)))
     }
 
     #[test]
@@ -94,7 +103,7 @@ mod tests {
     fn given_count_typed_when_rendering_then_the_status_bar_shows_it_before_the_position() {
         let mut app = make_app();
 
-        app.handle(Event::Key(KeyEvent::new(
+        app.handle_event(Event::Key(KeyEvent::new(
             KeyCode::Char('5'),
             KeyModifiers::NONE,
         )));
