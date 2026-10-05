@@ -1,17 +1,36 @@
-use ratatui::{Frame, layout::Rect, text::Line};
+use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use crate::domain::{
     log_file::{Indexing, LogFile},
     tab::Tab,
 };
 
-pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab, last_keys: &str) {
+#[derive(Debug, PartialEq)]
+pub enum StatusMessage {
+    Error(String),
+}
+
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    log_file: &LogFile,
+    tab: &Tab,
+    last_keys: &str,
+    status_message: Option<&StatusMessage>,
+) {
     let indexing = log_file.indexing();
     let position = position_text(tab.cursor(), log_file.line_count(), indexing);
     let indexing_progress = indexing_text(indexing, log_file.percent_indexed());
     let right_text = right_text(last_keys, position, indexing_progress);
-    frame.render_widget(Line::raw(log_file.file_name()), area);
+    frame.render_widget(left_line(log_file, status_message), area);
     frame.render_widget(Line::raw(right_text).right_aligned(), area);
+}
+
+fn left_line<'a>(log_file: &'a LogFile, status_message: Option<&'a StatusMessage>) -> Line<'a> {
+    match status_message {
+        Some(StatusMessage::Error(message_text)) => Line::from(message_text.as_str().red()),
+        None => Line::raw(log_file.file_name()),
+    }
 }
 
 fn right_text(last_keys: &str, position: String, indexing_progress: Option<String>) -> String {
@@ -44,6 +63,8 @@ fn indexing_text(indexing: Indexing, percent_indexed: u64) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::{buffer::Buffer, style::Color};
+
     use super::*;
     use crate::{
         domain::session::Session,
@@ -57,16 +78,36 @@ mod tests {
     }
 
     fn render_session_status(session: &Session, last_keys: &str) -> String {
-        let buffer = render_to_buffer(30, 1, |frame| {
+        rendered_rows(&render_status_buffer(session, last_keys, None)).remove(0)
+    }
+
+    fn render_status_buffer(
+        session: &Session,
+        last_keys: &str,
+        status_message: Option<&StatusMessage>,
+    ) -> Buffer {
+        render_to_buffer(30, 1, |frame| {
             render(
                 frame,
                 frame.area(),
                 &session.log_file,
                 &session.tab,
                 last_keys,
+                status_message,
             );
-        });
-        rendered_rows(&buffer).remove(0)
+        })
+    }
+
+    #[test]
+    fn given_error_message_when_rendering_then_it_replaces_the_file_name_in_red() {
+        let session = Session::from_text("a\nb\n");
+        let error_message = StatusMessage::Error("Not a command: x".to_owned());
+
+        let buffer = render_status_buffer(&session, "", Some(&error_message));
+
+        assert_eq!(rendered_rows(&buffer), ["Not a command: x     1/2 (50%)"]);
+        assert_eq!(buffer[(0, 0)].fg, Color::Red);
+        assert_ne!(buffer[(29, 0)].fg, Color::Red);
     }
 
     #[test]

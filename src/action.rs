@@ -8,6 +8,8 @@ pub enum Action {
 pub enum AppAction {
     Quit,
     Suspend,
+    OpenCommandLine,
+    ShowError(String),
     #[cfg(debug_assertions)]
     DebugPanic,
 }

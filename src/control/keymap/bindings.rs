@@ -10,6 +10,7 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     (&[char_key('q')], app(AppAction::Quit)),
     (&[ctrl('c')], app(AppAction::Quit)),
     (&[ctrl('z')], app(AppAction::Suspend)),
+    (&[char_key(':')], app(AppAction::OpenCommandLine)),
     // Moving by lines
     (&[char_key('j')], view(ViewAction::MoveDown(1))),
     (&[plain(KeyCode::Down)], view(ViewAction::MoveDown(1))),

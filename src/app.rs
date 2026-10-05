@@ -1,11 +1,14 @@
-use ratatui::layout::{Rect, Size};
+use ratatui::{
+    crossterm::event::KeyEvent,
+    layout::{Rect, Size},
+};
 
 use crate::{
     action::{Action, AppAction, ViewAction},
+    control::Control,
     domain::{jobs::JobMessage, log_file::Indexing, session::Session},
     infra::terminal::Event,
-    keymap::{KeyResolution, Keymap},
-    ui::ScreenAreas,
+    ui::{ScreenAreas, StatusMessage},
 };
 
 #[derive(Debug, PartialEq)]
@@ -18,14 +21,16 @@ pub enum EventEffect {
 
 pub struct App {
     session: Session,
-    keymap: Keymap,
+    control: Control,
+    status_message: Option<StatusMessage>,
 }
 
 impl App {
     pub fn new(session: Session, screen_size: Size) -> Self {
         let mut app = Self {
             session,
-            keymap: Keymap::default(),
+            control: Control::default(),
+            status_message: None,
         };
         app.update_viewport_size(screen_size);
         app
@@ -35,17 +40,17 @@ impl App {
         &self.session
     }
 
-    pub fn last_keys_text(&self) -> String {
-        self.keymap.last_keys_text()
+    pub fn control(&self) -> &Control {
+        &self.control
+    }
+
+    pub fn status_message(&self) -> Option<&StatusMessage> {
+        self.status_message.as_ref()
     }
 
     pub fn handle_event(&mut self, event: Event) -> EventEffect {
         match event {
-            Event::Key(key) => match self.keymap.resolve(key) {
-                KeyResolution::Action(action) => self.dispatch(action),
-                KeyResolution::LastKeysChanged => EventEffect::Redraw,
-                KeyResolution::Ignored => EventEffect::Nothing,
-            },
+            Event::Key(key) => self.handle_key(key),
             Event::Resize(screen_size) => {
                 self.update_viewport_size(screen_size);
                 EventEffect::Redraw
@@ -73,6 +78,14 @@ impl App {
         self.session.log_file.indexing() == Indexing::Running
     }
 
+    fn handle_key(&mut self, key: KeyEvent) -> EventEffect {
+        self.status_message = None;
+        match self.control.resolve(key) {
+            Some(action) => self.dispatch(action),
+            None => EventEffect::Redraw,
+        }
+    }
+
     fn update_viewport_size(&mut self, screen_size: Size) {
         let log_view_area = ScreenAreas::new(Rect::from(screen_size)).log_view;
         let tab = &mut self.session.tab;
@@ -82,7 +95,7 @@ impl App {
 
     fn dispatch(&mut self, action: Action) -> EventEffect {
         match action {
-            Action::App(app_action) => dispatch_app(app_action),
+            Action::App(app_action) => self.dispatch_app(app_action),
             Action::View(view_action) => self.dispatch_view(view_action),
         }
     }
@@ -109,14 +122,26 @@ impl App {
         }
         EventEffect::Redraw
     }
-}
 
-fn dispatch_app(app_action: AppAction) -> EventEffect {
-    match app_action {
-        AppAction::Quit => EventEffect::Quit,
-        AppAction::Suspend => EventEffect::Suspend,
-        #[cfg(debug_assertions)]
-        AppAction::DebugPanic => panic!("Debug panic key pressed"),
+    fn dispatch_app(&mut self, app_action: AppAction) -> EventEffect {
+        match app_action {
+            AppAction::Quit => EventEffect::Quit,
+            AppAction::Suspend => EventEffect::Suspend,
+            AppAction::OpenCommandLine => self.open_command_line(),
+            AppAction::ShowError(error_text) => self.show_error(error_text),
+            #[cfg(debug_assertions)]
+            AppAction::DebugPanic => panic!("Debug panic key pressed"),
+        }
+    }
+
+    fn open_command_line(&mut self) -> EventEffect {
+        self.control.open_command_line();
+        EventEffect::Redraw
+    }
+
+    fn show_error(&mut self, error_text: String) -> EventEffect {
+        self.status_message = Some(StatusMessage::Error(error_text));
+        EventEffect::Redraw
     }
 }
 
@@ -125,7 +150,10 @@ mod tests {
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
-    use crate::domain::{jobs::JobError, log_file::LineIndex};
+    use crate::{
+        control::Mode,
+        domain::{jobs::JobError, log_file::LineIndex},
+    };
 
     fn make_app() -> App {
         App::new(
@@ -174,6 +202,118 @@ mod tests {
         )))
     }
 
+    fn press(app: &mut App, code: KeyCode) -> EventEffect {
+        app.handle_event(Event::Key(code.into()))
+    }
+
+    fn command_line_text(app: &App) -> Option<&str> {
+        match app.control().mode() {
+            Mode::CommandLine(command_line) => Some(command_line.text()),
+            Mode::Normal => None,
+        }
+    }
+
+    fn run_command(app: &mut App, command_text: &str) -> EventEffect {
+        type_keys(app, &format!(":{command_text}"));
+        press(app, KeyCode::Enter)
+    }
+
+    #[test]
+    fn given_app_when_colon_is_pressed_then_the_command_line_opens_empty() {
+        let mut app = make_app();
+
+        let effect = type_keys(&mut app, ":");
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(command_line_text(&app), Some(""));
+    }
+
+    #[test]
+    fn given_open_command_line_when_motion_and_quit_keys_are_typed_then_they_go_to_it() {
+        let mut app = make_app();
+
+        let effect = type_keys(&mut app, ":jq");
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(command_line_text(&app), Some("jq"));
+        assert_eq!(app.session.tab.cursor(), 0);
+    }
+
+    #[test]
+    fn given_line_number_when_submitted_then_cursor_goes_there_and_the_command_line_closes() {
+        let mut app = make_app();
+
+        let effect = run_command(&mut app, "2");
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(app.session.tab.cursor(), 1);
+        assert_eq!(command_line_text(&app), None);
+    }
+
+    #[test]
+    fn given_number_past_the_end_when_submitted_then_cursor_goes_to_the_last_line() {
+        let mut app = make_app();
+
+        run_command(&mut app, "99");
+
+        assert_eq!(app.session.tab.cursor(), 2);
+    }
+
+    #[test]
+    fn given_cursor_below_first_line_when_zero_is_submitted_then_cursor_goes_to_the_first_line() {
+        let mut app = make_app();
+        type_keys(&mut app, "j");
+
+        run_command(&mut app, "0");
+
+        assert_eq!(app.session.tab.cursor(), 0);
+    }
+
+    #[test]
+    fn given_garbage_when_submitted_then_an_error_message_is_set_and_the_command_line_closes() {
+        let mut app = make_app();
+
+        run_command(&mut app, "abc");
+
+        assert_eq!(
+            app.status_message(),
+            Some(&StatusMessage::Error("Not a command: abc".to_owned()))
+        );
+        assert_eq!(command_line_text(&app), None);
+    }
+
+    #[test]
+    fn given_error_message_when_esc_is_pressed_then_it_is_cleared_and_redrawn() {
+        let mut app = make_app();
+        run_command(&mut app, "abc");
+
+        let effect = press(&mut app, KeyCode::Esc);
+
+        assert_eq!(effect, EventEffect::Redraw);
+        assert_eq!(app.status_message(), None);
+    }
+
+    #[test]
+    fn given_error_message_when_a_motion_key_is_pressed_then_it_is_cleared_and_the_motion_runs() {
+        let mut app = make_app();
+        run_command(&mut app, "abc");
+
+        type_keys(&mut app, "j");
+
+        assert_eq!(app.status_message(), None);
+        assert_eq!(app.session.tab.cursor(), 1);
+    }
+
+    #[test]
+    fn given_open_command_line_when_terminal_is_resized_then_it_stays_open_with_its_text() {
+        let mut app = make_app();
+        type_keys(&mut app, ":5");
+
+        app.handle_event(Event::Resize(Size::new(40, 10)));
+
+        assert_eq!(command_line_text(&app), Some("5"));
+    }
+
     #[test]
     fn given_app_when_q_is_pressed_then_it_quits() {
         let mut app = make_app();
@@ -193,13 +333,13 @@ mod tests {
     }
 
     #[test]
-    fn given_unmapped_key_shown_when_it_is_pressed_again_then_nothing_happens() {
+    fn given_unmapped_key_shown_when_it_is_pressed_again_then_the_screen_is_still_redrawn() {
         let mut app = make_app();
         type_keys(&mut app, "x");
 
         let effect = type_keys(&mut app, "x");
 
-        assert_eq!(effect, EventEffect::Nothing);
+        assert_eq!(effect, EventEffect::Redraw);
     }
 
     #[test]
