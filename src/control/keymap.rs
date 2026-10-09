@@ -120,10 +120,10 @@ fn key_name(key: &KeyEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings::{app, char_key, ctrl, view},
+        bindings::{app, char_key, ctrl, log_view},
         *,
     };
-    use crate::action::{AppAction, ViewAction};
+    use crate::action::{AppAction, LogViewAction};
 
     fn resolve_keys(keymap: &mut Keymap, keys: &[KeyEvent]) -> Option<Action> {
         let mut resolution = None;
@@ -142,8 +142,8 @@ mod tests {
         resolve_typed(&mut Keymap::default(), typed)
     }
 
-    fn resolved_view(view_action: ViewAction) -> Option<Action> {
-        Some(view(view_action))
+    fn resolved_log_view(log_view_action: LogViewAction) -> Option<Action> {
+        Some(log_view(log_view_action))
     }
 
     #[test]
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(keymap.last_keys_text(), "");
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_view(ViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveDown(1))
         );
     }
 
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn given_j_or_down_arrow_when_resolving_then_cursor_moves_down_one_line() {
-        let move_down = resolved_view(ViewAction::MoveDown(1));
+        let move_down = resolved_log_view(LogViewAction::MoveDown(1));
 
         assert_eq!(resolve_fresh("j"), move_down);
         assert_eq!(Keymap::default().resolve(plain(KeyCode::Down)), move_down);
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn given_k_or_up_arrow_when_resolving_then_cursor_moves_up_one_line() {
-        let move_up = resolved_view(ViewAction::MoveUp(1));
+        let move_up = resolved_log_view(LogViewAction::MoveUp(1));
 
         assert_eq!(resolve_fresh("k"), move_up);
         assert_eq!(Keymap::default().resolve(plain(KeyCode::Up)), move_up);
@@ -208,18 +208,21 @@ mod tests {
 
     #[test]
     fn given_count_when_j_is_pressed_then_cursor_moves_that_many_lines() {
-        assert_eq!(resolve_fresh("5j"), resolved_view(ViewAction::MoveDown(5)));
+        assert_eq!(
+            resolve_fresh("5j"),
+            resolved_log_view(LogViewAction::MoveDown(5))
+        );
     }
 
     #[test]
     fn given_count_when_h_or_l_is_pressed_then_view_scrolls_that_many_columns() {
         assert_eq!(
             resolve_fresh("3h"),
-            resolved_view(ViewAction::ScrollLeft(3))
+            resolved_log_view(LogViewAction::ScrollLeft(3))
         );
         assert_eq!(
             resolve_fresh("3l"),
-            resolved_view(ViewAction::ScrollRight(3))
+            resolved_log_view(LogViewAction::ScrollRight(3))
         );
     }
 
@@ -229,25 +232,28 @@ mod tests {
 
         assert_eq!(
             resolve(KeyCode::Left),
-            resolved_view(ViewAction::ScrollLeft(1))
+            resolved_log_view(LogViewAction::ScrollLeft(1))
         );
         assert_eq!(
             resolve(KeyCode::Right),
-            resolved_view(ViewAction::ScrollRight(1))
+            resolved_log_view(LogViewAction::ScrollRight(1))
         );
     }
 
     #[test]
     fn given_finished_motion_with_count_when_next_motion_is_pressed_then_count_does_not_carry_over()
     {
-        assert_eq!(resolve_fresh("5jj"), resolved_view(ViewAction::MoveDown(1)));
+        assert_eq!(
+            resolve_fresh("5jj"),
+            resolved_log_view(LogViewAction::MoveDown(1))
+        );
     }
 
     #[test]
     fn given_g_pressed_twice_when_resolving_then_cursor_goes_to_first_line() {
         assert_eq!(
             resolve_fresh("gg"),
-            resolved_view(ViewAction::GoToLineNumber(1))
+            resolved_log_view(LogViewAction::GoToLineNumber(1))
         );
     }
 
@@ -255,20 +261,23 @@ mod tests {
     fn given_count_when_gg_is_pressed_then_cursor_goes_to_that_line() {
         assert_eq!(
             resolve_fresh("5gg"),
-            resolved_view(ViewAction::GoToLineNumber(5))
+            resolved_log_view(LogViewAction::GoToLineNumber(5))
         );
     }
 
     #[test]
     fn given_no_count_when_capital_g_is_pressed_then_cursor_goes_to_last_line() {
-        assert_eq!(resolve_fresh("G"), resolved_view(ViewAction::GoToLastLine));
+        assert_eq!(
+            resolve_fresh("G"),
+            resolved_log_view(LogViewAction::GoToLastLine)
+        );
     }
 
     #[test]
     fn given_count_when_capital_g_is_pressed_then_cursor_goes_to_that_line() {
         assert_eq!(
             resolve_fresh("5G"),
-            resolved_view(ViewAction::GoToLineNumber(5))
+            resolved_log_view(LogViewAction::GoToLineNumber(5))
         );
     }
 
@@ -278,7 +287,7 @@ mod tests {
 
         assert_eq!(
             Keymap::default().resolve(shift_g),
-            resolved_view(ViewAction::GoToLastLine)
+            resolved_log_view(LogViewAction::GoToLastLine)
         );
     }
 
@@ -286,28 +295,37 @@ mod tests {
     fn given_page_keys_when_resolving_then_they_move_half_or_full_pages() {
         let resolve = |key| Keymap::default().resolve(key);
 
-        assert_eq!(resolve(ctrl('d')), resolved_view(ViewAction::HalfPageDown));
-        assert_eq!(resolve(ctrl('u')), resolved_view(ViewAction::HalfPageUp));
-        assert_eq!(resolve(ctrl('f')), resolved_view(ViewAction::PageDown));
-        assert_eq!(resolve(ctrl('b')), resolved_view(ViewAction::PageUp));
+        assert_eq!(
+            resolve(ctrl('d')),
+            resolved_log_view(LogViewAction::HalfPageDown)
+        );
+        assert_eq!(
+            resolve(ctrl('u')),
+            resolved_log_view(LogViewAction::HalfPageUp)
+        );
+        assert_eq!(
+            resolve(ctrl('f')),
+            resolved_log_view(LogViewAction::PageDown)
+        );
+        assert_eq!(resolve(ctrl('b')), resolved_log_view(LogViewAction::PageUp));
     }
 
     #[test]
     fn given_count_when_page_key_is_pressed_then_count_is_ignored() {
         let resolution = resolve_keys(&mut Keymap::default(), &[char_key('5'), ctrl('d')]);
 
-        assert_eq!(resolution, resolved_view(ViewAction::HalfPageDown));
+        assert_eq!(resolution, resolved_log_view(LogViewAction::HalfPageDown));
     }
 
     #[test]
     fn given_capital_h_or_l_when_resolving_then_view_scrolls_wide() {
         assert_eq!(
             resolve_fresh("H"),
-            resolved_view(ViewAction::ScrollLeftWide)
+            resolved_log_view(LogViewAction::ScrollLeftWide)
         );
         assert_eq!(
             resolve_fresh("L"),
-            resolved_view(ViewAction::ScrollRightWide)
+            resolved_log_view(LogViewAction::ScrollRightWide)
         );
     }
 
@@ -315,36 +333,48 @@ mod tests {
     fn given_no_count_when_0_is_pressed_then_view_scrolls_to_first_column() {
         assert_eq!(
             resolve_fresh("0"),
-            resolved_view(ViewAction::ScrollToFirstColumn)
+            resolved_log_view(LogViewAction::ScrollToFirstColumn)
         );
     }
 
     #[test]
     fn given_count_digit_when_0_is_pressed_then_it_extends_the_count() {
-        assert_eq!(resolve_fresh("10k"), resolved_view(ViewAction::MoveUp(10)));
+        assert_eq!(
+            resolve_fresh("10k"),
+            resolved_log_view(LogViewAction::MoveUp(10))
+        );
     }
 
     #[test]
     fn given_huge_count_when_j_is_pressed_then_count_saturates() {
         assert_eq!(
             resolve_fresh("99999999999999999999999j"),
-            resolved_view(ViewAction::MoveDown(usize::MAX))
+            resolved_log_view(LogViewAction::MoveDown(usize::MAX))
         );
     }
 
     #[test]
     fn given_started_g_when_j_is_pressed_then_cursor_moves_down() {
-        assert_eq!(resolve_fresh("gj"), resolved_view(ViewAction::MoveDown(1)));
+        assert_eq!(
+            resolve_fresh("gj"),
+            resolved_log_view(LogViewAction::MoveDown(1))
+        );
     }
 
     #[test]
     fn given_count_and_started_g_when_j_is_pressed_then_count_still_applies() {
-        assert_eq!(resolve_fresh("3gj"), resolved_view(ViewAction::MoveDown(3)));
+        assert_eq!(
+            resolve_fresh("3gj"),
+            resolved_log_view(LogViewAction::MoveDown(3))
+        );
     }
 
     #[test]
     fn given_started_g_when_digit_is_pressed_then_g_is_dropped_and_digit_starts_a_count() {
-        assert_eq!(resolve_fresh("g5j"), resolved_view(ViewAction::MoveDown(5)));
+        assert_eq!(
+            resolve_fresh("g5j"),
+            resolved_log_view(LogViewAction::MoveDown(5))
+        );
     }
 
     #[test]
@@ -354,7 +384,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "gg"),
-            resolved_view(ViewAction::GoToLineNumber(1))
+            resolved_log_view(LogViewAction::GoToLineNumber(1))
         );
     }
 
@@ -373,7 +403,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_view(ViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveDown(1))
         );
     }
 
@@ -394,7 +424,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_view(ViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveDown(1))
         );
     }
 

@@ -1,4 +1,4 @@
-use crate::action::{Action, ViewAction};
+use crate::action::{Action, LogViewAction};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub(super) enum CommandError {
@@ -13,7 +13,9 @@ pub(super) fn parse_command(command_text: &str) -> Result<Option<Action>, Comman
     }
     if is_line_number(command_text) {
         let line_number = saturating_line_number(command_text);
-        return Ok(Some(Action::View(ViewAction::GoToLineNumber(line_number))));
+        return Ok(Some(Action::LogView(LogViewAction::GoToLineNumber(
+            line_number,
+        ))));
     }
     Err(CommandError::NotACommand(command_text.to_owned()))
 }
@@ -31,7 +33,9 @@ mod tests {
     use super::*;
 
     fn go_to(line_number: usize) -> Result<Option<Action>, CommandError> {
-        Ok(Some(Action::View(ViewAction::GoToLineNumber(line_number))))
+        Ok(Some(Action::LogView(LogViewAction::GoToLineNumber(
+            line_number,
+        ))))
     }
 
     #[test]

@@ -3,6 +3,7 @@ mod app;
 mod control;
 mod domain;
 mod platform;
+mod runtime;
 mod ui;
 
 use std::{io, process::ExitCode};
@@ -46,7 +47,7 @@ fn run(cli: Cli) -> Result<(), AppError> {
     let log_file = LogFile::open(&cli.file)?;
     terminal::install_panic_hook();
     let mut terminal = Terminal::enter()?;
-    app::run(&mut terminal, Model::new(log_file))?;
+    runtime::run(&mut terminal, Model::new(log_file))?;
     tracing::info!("exiting");
     Ok(())
 }

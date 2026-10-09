@@ -1,6 +1,6 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, AppAction, ViewAction};
+use crate::action::{Action, AppAction, LogViewAction};
 
 /// What each key sequence does when no count is typed before it.
 const BINDINGS: &[(&[KeyEvent], Action)] = &[
@@ -12,29 +12,41 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     (&[ctrl('z')], app(AppAction::Suspend)),
     (&[char_key(':')], app(AppAction::OpenCommandLine)),
     // Moving by lines
-    (&[char_key('j')], view(ViewAction::MoveDown(1))),
-    (&[plain(KeyCode::Down)], view(ViewAction::MoveDown(1))),
-    (&[char_key('k')], view(ViewAction::MoveUp(1))),
-    (&[plain(KeyCode::Up)], view(ViewAction::MoveUp(1))),
+    (&[char_key('j')], log_view(LogViewAction::MoveDown(1))),
+    (
+        &[plain(KeyCode::Down)],
+        log_view(LogViewAction::MoveDown(1)),
+    ),
+    (&[char_key('k')], log_view(LogViewAction::MoveUp(1))),
+    (&[plain(KeyCode::Up)], log_view(LogViewAction::MoveUp(1))),
     // Jumping to a line
     (
         &[char_key('g'), char_key('g')],
-        view(ViewAction::GoToLineNumber(1)),
+        log_view(LogViewAction::GoToLineNumber(1)),
     ),
-    (&[char_key('G')], view(ViewAction::GoToLastLine)),
+    (&[char_key('G')], log_view(LogViewAction::GoToLastLine)),
     // Moving by pages
-    (&[ctrl('d')], view(ViewAction::HalfPageDown)),
-    (&[ctrl('u')], view(ViewAction::HalfPageUp)),
-    (&[ctrl('f')], view(ViewAction::PageDown)),
-    (&[ctrl('b')], view(ViewAction::PageUp)),
+    (&[ctrl('d')], log_view(LogViewAction::HalfPageDown)),
+    (&[ctrl('u')], log_view(LogViewAction::HalfPageUp)),
+    (&[ctrl('f')], log_view(LogViewAction::PageDown)),
+    (&[ctrl('b')], log_view(LogViewAction::PageUp)),
     // Scrolling sideways
-    (&[char_key('h')], view(ViewAction::ScrollLeft(1))),
-    (&[plain(KeyCode::Left)], view(ViewAction::ScrollLeft(1))),
-    (&[char_key('l')], view(ViewAction::ScrollRight(1))),
-    (&[plain(KeyCode::Right)], view(ViewAction::ScrollRight(1))),
-    (&[char_key('H')], view(ViewAction::ScrollLeftWide)),
-    (&[char_key('L')], view(ViewAction::ScrollRightWide)),
-    (&[char_key('0')], view(ViewAction::ScrollToFirstColumn)),
+    (&[char_key('h')], log_view(LogViewAction::ScrollLeft(1))),
+    (
+        &[plain(KeyCode::Left)],
+        log_view(LogViewAction::ScrollLeft(1)),
+    ),
+    (&[char_key('l')], log_view(LogViewAction::ScrollRight(1))),
+    (
+        &[plain(KeyCode::Right)],
+        log_view(LogViewAction::ScrollRight(1)),
+    ),
+    (&[char_key('H')], log_view(LogViewAction::ScrollLeftWide)),
+    (&[char_key('L')], log_view(LogViewAction::ScrollRightWide)),
+    (
+        &[char_key('0')],
+        log_view(LogViewAction::ScrollToFirstColumn),
+    ),
 ];
 
 pub(super) enum BindingMatch {
@@ -65,12 +77,14 @@ pub(super) fn apply_count(action: Action, count: Option<usize>) -> Action {
         return action;
     };
     match action {
-        Action::View(ViewAction::MoveDown(_)) => view(ViewAction::MoveDown(count)),
-        Action::View(ViewAction::MoveUp(_)) => view(ViewAction::MoveUp(count)),
-        Action::View(ViewAction::ScrollLeft(_)) => view(ViewAction::ScrollLeft(count)),
-        Action::View(ViewAction::ScrollRight(_)) => view(ViewAction::ScrollRight(count)),
-        Action::View(ViewAction::GoToLineNumber(_) | ViewAction::GoToLastLine) => {
-            view(ViewAction::GoToLineNumber(count))
+        Action::LogView(LogViewAction::MoveDown(_)) => log_view(LogViewAction::MoveDown(count)),
+        Action::LogView(LogViewAction::MoveUp(_)) => log_view(LogViewAction::MoveUp(count)),
+        Action::LogView(LogViewAction::ScrollLeft(_)) => log_view(LogViewAction::ScrollLeft(count)),
+        Action::LogView(LogViewAction::ScrollRight(_)) => {
+            log_view(LogViewAction::ScrollRight(count))
+        }
+        Action::LogView(LogViewAction::GoToLineNumber(_) | LogViewAction::GoToLastLine) => {
+            log_view(LogViewAction::GoToLineNumber(count))
         }
         _ => action,
     }
@@ -92,8 +106,8 @@ pub(super) const fn app(app_action: AppAction) -> Action {
     Action::App(app_action)
 }
 
-pub(super) const fn view(view_action: ViewAction) -> Action {
-    Action::View(view_action)
+pub(super) const fn log_view(log_view_action: LogViewAction) -> Action {
+    Action::LogView(log_view_action)
 }
 
 #[cfg(test)]

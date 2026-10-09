@@ -67,7 +67,7 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     use super::*;
-    use crate::action::ViewAction;
+    use crate::action::LogViewAction;
 
     fn type_keys(control: &mut Control, typed: &str) -> Option<Action> {
         let mut resolution = None;
@@ -101,7 +101,7 @@ mod tests {
 
         assert_eq!(
             type_keys(&mut control, "j"),
-            Some(Action::View(ViewAction::MoveDown(1)))
+            Some(Action::LogView(LogViewAction::MoveDown(1)))
         );
     }
 
@@ -133,7 +133,7 @@ mod tests {
 
         assert_eq!(
             resolution,
-            Some(Action::View(ViewAction::GoToLineNumber(2)))
+            Some(Action::LogView(LogViewAction::GoToLineNumber(2)))
         );
         assert_eq!(command_line_text(&control), None);
     }
@@ -157,7 +157,7 @@ mod tests {
         assert_eq!(control.last_keys_text(), "");
         assert_eq!(
             type_keys(&mut control, "j"),
-            Some(Action::View(ViewAction::MoveDown(1)))
+            Some(Action::LogView(LogViewAction::MoveDown(1)))
         );
     }
 }

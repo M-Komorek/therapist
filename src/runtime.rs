@@ -4,12 +4,8 @@ use std::{
     time::Duration,
 };
 
-use super::{
-    Model,
-    jobs::{self, JobMessage},
-    update::{Effect, handle_event, handle_job_message},
-};
 use crate::{
+    app::{self, Effect, JobMessage, Model},
     domain::log_file::Indexing,
     platform::terminal::{Event, Terminal},
     ui,
@@ -19,8 +15,8 @@ const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 
 pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
     let (job_sender, job_receiver) = mpsc::channel();
-    jobs::spawn_indexer(job_sender, model.log_file.indexer());
-    handle_event(&mut model, Event::Resize(terminal.size()?));
+    app::spawn_indexer(job_sender, model.log_file.indexer());
+    app::resize_log_view(&mut model, terminal.size()?);
     draw(terminal, &model)?;
 
     loop {
@@ -57,13 +53,20 @@ fn handle_waiting_events(
             Effect::Suspend | Effect::Quit => return Ok(effect),
         }
         for job_message in job_receiver.try_iter() {
-            if handle_job_message(model, job_message) == Effect::Redraw {
+            if app::handle_job_message(model, job_message) == Effect::Redraw {
                 batch_effect = Effect::Redraw;
             }
         }
         if !terminal.has_waiting_event()? {
             return Ok(batch_effect);
         }
+    }
+}
+
+fn handle_event(model: &mut Model, event: Event) -> Effect {
+    match event {
+        Event::Key(key) => app::handle_key(model, key),
+        Event::Resize(screen_size) => app::resize_log_view(model, screen_size),
     }
 }
 

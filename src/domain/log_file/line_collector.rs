@@ -20,11 +20,15 @@ impl LineCollector {
     }
 
     pub(super) fn add_chunk(&mut self, chunk: &[u8]) -> ControlFlow<()> {
+        if self.is_full() {
+            return ControlFlow::Break(());
+        }
+
         let mut line_start = 0;
         for newline_position in memchr::memchr_iter(b'\n', chunk) {
             self.push_line_part(&chunk[line_start..newline_position]);
             self.finish_line();
-            if self.lines.len() == self.lines_to_keep {
+            if self.is_full() {
                 return ControlFlow::Break(());
             }
             line_start = newline_position + 1;
@@ -34,10 +38,14 @@ impl LineCollector {
     }
 
     pub(super) fn finish(mut self) -> Vec<String> {
-        if !self.partial_line.is_empty() && self.lines.len() < self.lines_to_keep {
+        if !self.partial_line.is_empty() && !self.is_full() {
             self.finish_line();
         }
         self.lines
+    }
+
+    fn is_full(&self) -> bool {
+        self.lines.len() >= self.lines_to_keep
     }
 
     fn push_line_part(&mut self, line_part: &[u8]) {
@@ -93,6 +101,16 @@ mod tests {
 
         assert!(flow.is_break());
         assert_eq!(line_collector.finish(), ["a"]);
+    }
+
+    #[test]
+    fn given_no_lines_to_keep_when_adding_a_chunk_then_it_asks_to_stop_and_keeps_nothing() {
+        let mut line_collector = LineCollector::new(0, 0);
+
+        let flow = line_collector.add_chunk(b"a\nb\n");
+
+        assert!(flow.is_break());
+        assert!(line_collector.finish().is_empty());
     }
 
     #[test]

@@ -3,12 +3,10 @@ use ratatui::{
     layout::{Rect, Size},
 };
 
-use super::{Model, StatusMessage, jobs::JobMessage};
+use super::{Model, ScreenAreas, StatusMessage, jobs::JobMessage};
 use crate::{
-    action::{Action, AppAction, ViewAction},
+    action::{Action, AppAction, LogViewAction},
     domain::log_file::Indexing,
-    platform::terminal::Event,
-    ui::ScreenAreas,
 };
 
 #[derive(Debug, PartialEq)]
@@ -19,17 +17,7 @@ pub enum Effect {
     Quit,
 }
 
-pub(super) fn handle_event(model: &mut Model, event: Event) -> Effect {
-    match event {
-        Event::Key(key) => handle_key(model, key),
-        Event::Resize(screen_size) => {
-            resize_log_view(model, screen_size);
-            Effect::Redraw
-        }
-    }
-}
-
-pub(super) fn handle_job_message(model: &mut Model, job_message: JobMessage) -> Effect {
+pub fn handle_job_message(model: &mut Model, job_message: JobMessage) -> Effect {
     let log_file = &mut model.log_file;
     match job_message {
         JobMessage::IndexProgress(line_index) => log_file.set_line_index(line_index),
@@ -45,7 +33,7 @@ pub(super) fn handle_job_message(model: &mut Model, job_message: JobMessage) -> 
     Effect::Redraw
 }
 
-fn handle_key(model: &mut Model, key: KeyEvent) -> Effect {
+pub fn handle_key(model: &mut Model, key: KeyEvent) -> Effect {
     model.status_message = None;
     match model.control.resolve(key) {
         Some(action) => dispatch(model, action),
@@ -53,41 +41,46 @@ fn handle_key(model: &mut Model, key: KeyEvent) -> Effect {
     }
 }
 
-fn resize_log_view(model: &mut Model, screen_size: Size) {
+pub fn resize_log_view(model: &mut Model, screen_size: Size) -> Effect {
     let log_view_area = ScreenAreas::new(Rect::from(screen_size)).log_view;
     let log_view_state = &mut model.log_view_state;
     log_view_state.set_height(usize::from(log_view_area.height));
     log_view_state.set_width(usize::from(log_view_area.width));
+    Effect::Redraw
 }
 
 fn dispatch(model: &mut Model, action: Action) -> Effect {
     match action {
         Action::App(app_action) => dispatch_app(model, app_action),
-        Action::View(view_action) => dispatch_view(model, view_action),
+        Action::LogView(log_view_action) => dispatch_log_view(model, log_view_action),
     }
 }
 
-fn dispatch_view(model: &mut Model, view_action: ViewAction) -> Effect {
+fn dispatch_log_view(model: &mut Model, log_view_action: LogViewAction) -> Effect {
     let line_count = model.log_file.line_count();
     let log_view_state = &mut model.log_view_state;
-    match view_action {
-        ViewAction::MoveUp(lines_to_move) => log_view_state.move_up(lines_to_move),
-        ViewAction::MoveDown(lines_to_move) => log_view_state.move_down(lines_to_move, line_count),
-        ViewAction::GoToLineNumber(line_number) => {
+    match log_view_action {
+        LogViewAction::MoveUp(lines_to_move) => log_view_state.move_up(lines_to_move),
+        LogViewAction::MoveDown(lines_to_move) => {
+            log_view_state.move_down(lines_to_move, line_count)
+        }
+        LogViewAction::GoToLineNumber(line_number) => {
             log_view_state.go_to_line_number(line_number, line_count)
         }
-        ViewAction::GoToLastLine => log_view_state.go_to_last_line(line_count),
-        ViewAction::HalfPageUp => log_view_state.half_page_up(),
-        ViewAction::HalfPageDown => log_view_state.half_page_down(line_count),
-        ViewAction::PageUp => log_view_state.page_up(),
-        ViewAction::PageDown => log_view_state.page_down(line_count),
-        ViewAction::ScrollLeft(columns_to_scroll) => log_view_state.scroll_left(columns_to_scroll),
-        ViewAction::ScrollRight(columns_to_scroll) => {
+        LogViewAction::GoToLastLine => log_view_state.go_to_last_line(line_count),
+        LogViewAction::HalfPageUp => log_view_state.half_page_up(),
+        LogViewAction::HalfPageDown => log_view_state.half_page_down(line_count),
+        LogViewAction::PageUp => log_view_state.page_up(),
+        LogViewAction::PageDown => log_view_state.page_down(line_count),
+        LogViewAction::ScrollLeft(columns_to_scroll) => {
+            log_view_state.scroll_left(columns_to_scroll)
+        }
+        LogViewAction::ScrollRight(columns_to_scroll) => {
             log_view_state.scroll_right(columns_to_scroll)
         }
-        ViewAction::ScrollLeftWide => log_view_state.scroll_left_wide(),
-        ViewAction::ScrollRightWide => log_view_state.scroll_right_wide(),
-        ViewAction::ScrollToFirstColumn => log_view_state.scroll_to_first_column(),
+        LogViewAction::ScrollLeftWide => log_view_state.scroll_left_wide(),
+        LogViewAction::ScrollRightWide => log_view_state.scroll_right_wide(),
+        LogViewAction::ScrollToFirstColumn => log_view_state.scroll_to_first_column(),
     }
     Effect::Redraw
 }
@@ -120,13 +113,13 @@ mod test_helpers {
         layout::Size,
     };
 
-    use super::{Effect, handle_event};
-    use crate::{app::Model, domain::log_file::LogFile, platform::terminal::Event};
+    use super::{Effect, handle_key, resize_log_view};
+    use crate::{app::Model, domain::log_file::LogFile};
 
     impl Model {
         pub fn with_screen_size(log_file: LogFile, screen_size: Size) -> Self {
             let mut model = Self::new(log_file);
-            handle_event(&mut model, Event::Resize(screen_size));
+            resize_log_view(&mut model, screen_size);
             model
         }
 
@@ -139,26 +132,20 @@ mod test_helpers {
                 } else {
                     KeyModifiers::NONE
                 };
-                effect = handle_event(
-                    self,
-                    Event::Key(KeyEvent::new(KeyCode::Char(character), modifiers)),
-                );
+                effect = handle_key(self, KeyEvent::new(KeyCode::Char(character), modifiers));
             }
             effect
         }
 
         pub fn press_ctrl(&mut self, character: char) -> Effect {
-            handle_event(
+            handle_key(
                 self,
-                Event::Key(KeyEvent::new(
-                    KeyCode::Char(character),
-                    KeyModifiers::CONTROL,
-                )),
+                KeyEvent::new(KeyCode::Char(character), KeyModifiers::CONTROL),
             )
         }
 
         pub fn press(&mut self, code: KeyCode) -> Effect {
-            handle_event(self, Event::Key(code.into()))
+            handle_key(self, code.into())
         }
     }
 }
@@ -303,7 +290,7 @@ mod tests {
         let mut model = make_model();
         model.type_keys(":5");
 
-        handle_event(&mut model, Event::Resize(Size::new(40, 10)));
+        resize_log_view(&mut model, Size::new(40, 10));
 
         assert_eq!(command_line_text(&model), Some("5"));
     }
@@ -439,7 +426,7 @@ mod tests {
     fn given_terminal_resized_to_100_columns_when_capital_l_is_pressed_then_view_scrolls_20_columns()
      {
         let mut model = make_model();
-        handle_event(&mut model, Event::Resize(Size::new(100, 10)));
+        resize_log_view(&mut model, Size::new(100, 10));
 
         model.type_keys("L");
 
@@ -450,7 +437,7 @@ mod tests {
     fn given_app_when_terminal_is_resized_then_screen_is_redrawn() {
         let mut model = make_model();
 
-        let effect = handle_event(&mut model, Event::Resize(Size::new(30, 10)));
+        let effect = resize_log_view(&mut model, Size::new(30, 10));
 
         assert_eq!(effect, Effect::Redraw);
     }
@@ -460,7 +447,7 @@ mod tests {
         let mut model = make_model();
         model.type_keys("jj");
 
-        handle_event(&mut model, Event::Resize(Size::new(20, 2)));
+        resize_log_view(&mut model, Size::new(20, 2));
 
         assert_eq!(model.log_view_state.top_line(), 2);
     }

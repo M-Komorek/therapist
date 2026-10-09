@@ -3,28 +3,12 @@ mod log_view;
 mod status_bar;
 mod visible_row;
 
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
+use ratatui::Frame;
+
+use crate::{
+    app::{Model, ScreenAreas},
+    control::Mode,
 };
-
-use crate::{app::Model, control::Mode};
-
-pub struct ScreenAreas {
-    pub log_view: Rect,
-    pub bottom_row: Rect,
-}
-
-impl ScreenAreas {
-    pub fn new(screen: Rect) -> Self {
-        let [log_view, bottom_row] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(screen);
-        Self {
-            log_view,
-            bottom_row,
-        }
-    }
-}
 
 pub fn render(frame: &mut Frame, model: &Model) {
     let screen_areas = ScreenAreas::new(frame.area());
@@ -40,7 +24,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
             screen_areas.bottom_row,
             ':',
             command_line.text(),
-            command_line.cursor_column(),
+            command_line.text_before_cursor(),
         ),
         Mode::Normal => status_bar::render(
             frame,

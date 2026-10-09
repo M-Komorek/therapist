@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     App(AppAction),
-    View(ViewAction),
+    LogView(LogViewAction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,7 +15,7 @@ pub enum AppAction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ViewAction {
+pub enum LogViewAction {
     MoveUp(usize),
     MoveDown(usize),
     GoToLineNumber(usize),

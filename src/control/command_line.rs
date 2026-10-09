@@ -1,9 +1,6 @@
 mod parser;
 
-use ratatui::{
-    buffer::CellWidth,
-    crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
-};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::{Action, AppAction};
 
@@ -39,8 +36,8 @@ impl CommandLine {
         &self.text
     }
 
-    pub fn cursor_column(&self) -> u16 {
-        self.text[..self.cursor].cell_width()
+    pub fn text_before_cursor(&self) -> &str {
+        &self.text[..self.cursor]
     }
 
     fn edit(&mut self, key: KeyEvent) {
@@ -92,7 +89,7 @@ fn is_typed(modifiers: KeyModifiers) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::ViewAction;
+    use crate::action::LogViewAction;
 
     fn type_text(command_line: &mut CommandLine, typed: &str) {
         for character in typed.chars() {
@@ -115,7 +112,7 @@ mod tests {
         let command_line = make_command_line("123");
 
         assert_eq!(command_line.text(), "123");
-        assert_eq!(command_line.cursor_column(), 3);
+        assert_eq!(command_line.text_before_cursor(), "123");
     }
 
     #[test]
@@ -138,17 +135,7 @@ mod tests {
         press(&mut command_line, KeyCode::Backspace);
 
         assert_eq!(command_line.text(), "żów");
-        assert_eq!(command_line.cursor_column(), 2);
-    }
-
-    #[test]
-    fn given_wide_characters_when_measuring_the_cursor_then_it_counts_display_columns() {
-        let mut command_line = make_command_line("漢字");
-        assert_eq!(command_line.cursor_column(), 4);
-
-        press(&mut command_line, KeyCode::Left);
-
-        assert_eq!(command_line.cursor_column(), 2);
+        assert_eq!(command_line.text_before_cursor(), "żó");
     }
 
     #[test]
@@ -176,11 +163,11 @@ mod tests {
     fn given_cursor_at_the_start_when_end_is_pressed_then_cursor_goes_after_the_text() {
         let mut command_line = make_command_line("ab");
         press(&mut command_line, KeyCode::Home);
-        assert_eq!(command_line.cursor_column(), 0);
+        assert_eq!(command_line.text_before_cursor(), "");
 
         press(&mut command_line, KeyCode::End);
 
-        assert_eq!(command_line.cursor_column(), 2);
+        assert_eq!(command_line.text_before_cursor(), "ab");
     }
 
     #[test]
@@ -217,7 +204,7 @@ mod tests {
 
         assert_eq!(
             outcome,
-            CommandLineOutcome::Submitted(Action::View(ViewAction::GoToLineNumber(5000)))
+            CommandLineOutcome::Submitted(Action::LogView(LogViewAction::GoToLineNumber(5000)))
         );
     }
 
