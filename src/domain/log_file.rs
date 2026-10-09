@@ -124,6 +124,20 @@ fn read_chunks(
 
 #[cfg(test)]
 impl LogFile {
+    pub fn from_text(text: &str) -> Self {
+        let mut log_file = Self::unindexed_from_text(text);
+        log_file.index_synchronously().unwrap();
+        log_file
+    }
+
+    pub fn unindexed_from_text(text: &str) -> Self {
+        let temp_directory = tempfile::tempdir().unwrap();
+        let path = temp_directory.path().join("app.log");
+        std::fs::write(&path, text).unwrap();
+        // Dropping temp_directory deletes the file, but the open handle keeps it readable.
+        Self::open(&path).unwrap()
+    }
+
     pub fn index_synchronously(&mut self) -> Result<(), LogFileError> {
         self.indexer()
             .run(|line_index| self.line_index = line_index)?;

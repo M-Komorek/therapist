@@ -1,25 +1,23 @@
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
-use crate::domain::{
-    log_file::{Indexing, LogFile},
-    tab::Tab,
+use crate::{
+    app::StatusMessage,
+    domain::{
+        log_file::{Indexing, LogFile},
+        log_view_state::LogViewState,
+    },
 };
-
-#[derive(Debug, PartialEq)]
-pub enum StatusMessage {
-    Error(String),
-}
 
 pub fn render(
     frame: &mut Frame,
     area: Rect,
     log_file: &LogFile,
-    tab: &Tab,
+    log_view_state: &LogViewState,
     last_keys: &str,
     status_message: Option<&StatusMessage>,
 ) {
     let indexing = log_file.indexing();
-    let position = position_text(tab.cursor(), log_file.line_count(), indexing);
+    let position = position_text(log_view_state.cursor(), log_file.line_count(), indexing);
     let indexing_progress = indexing_text(indexing, log_file.percent_indexed());
     let right_text = right_text(last_keys, position, indexing_progress);
     frame.render_widget(left_line(log_file, status_message), area);
@@ -66,23 +64,34 @@ mod tests {
     use ratatui::{buffer::Buffer, style::Color};
 
     use super::*;
-    use crate::{
-        domain::session::Session,
-        ui::tests::{render_to_buffer, rendered_rows},
-    };
+    use crate::ui::tests::{render_to_buffer, rendered_rows};
 
     fn render_status(text: &str, cursor: usize, last_keys: &str) -> String {
-        let mut session = Session::from_text(text);
-        session.tab.move_down(cursor, session.log_file.line_count());
-        render_session_status(&session, last_keys)
+        let log_file = LogFile::from_text(text);
+        let mut log_view_state = LogViewState::default();
+        log_view_state.move_down(cursor, log_file.line_count());
+        rendered_rows(&render_status_buffer(
+            &log_file,
+            &log_view_state,
+            last_keys,
+            None,
+        ))
+        .remove(0)
     }
 
-    fn render_session_status(session: &Session, last_keys: &str) -> String {
-        rendered_rows(&render_status_buffer(session, last_keys, None)).remove(0)
+    fn render_log_file_status(log_file: &LogFile) -> String {
+        rendered_rows(&render_status_buffer(
+            log_file,
+            &LogViewState::default(),
+            "",
+            None,
+        ))
+        .remove(0)
     }
 
     fn render_status_buffer(
-        session: &Session,
+        log_file: &LogFile,
+        log_view_state: &LogViewState,
         last_keys: &str,
         status_message: Option<&StatusMessage>,
     ) -> Buffer {
@@ -90,8 +99,8 @@ mod tests {
             render(
                 frame,
                 frame.area(),
-                &session.log_file,
-                &session.tab,
+                log_file,
+                log_view_state,
                 last_keys,
                 status_message,
             );
@@ -100,10 +109,15 @@ mod tests {
 
     #[test]
     fn given_error_message_when_rendering_then_it_replaces_the_file_name_in_red() {
-        let session = Session::from_text("a\nb\n");
+        let log_file = LogFile::from_text("a\nb\n");
         let error_message = StatusMessage::Error("Not a command: x".to_owned());
 
-        let buffer = render_status_buffer(&session, "", Some(&error_message));
+        let buffer = render_status_buffer(
+            &log_file,
+            &LogViewState::default(),
+            "",
+            Some(&error_message),
+        );
 
         assert_eq!(rendered_rows(&buffer), ["Not a command: x     1/2 (50%)"]);
         assert_eq!(buffer[(0, 0)].fg, Color::Red);
@@ -142,21 +156,21 @@ mod tests {
 
     #[test]
     fn given_file_still_indexing_when_rendering_then_total_has_a_plus_and_progress_follows() {
-        let session = Session::unindexed_from_text("a\nb\n");
+        let log_file = LogFile::unindexed_from_text("a\nb\n");
 
         assert_eq!(
-            render_session_status(&session, ""),
+            render_log_file_status(&log_file),
             "app.log     0/0+ | indexing 0%"
         );
     }
 
     #[test]
     fn given_indexing_failed_when_rendering_then_total_has_a_plus_and_failure_is_shown() {
-        let mut session = Session::from_text("a\nb\nc\nd\n");
-        session.log_file.set_indexing(Indexing::Failed);
+        let mut log_file = LogFile::from_text("a\nb\nc\nd\n");
+        log_file.set_indexing(Indexing::Failed);
 
         assert_eq!(
-            render_session_status(&session, ""),
+            render_log_file_status(&log_file),
             "app.log 1/4+ | indexing failed"
         );
     }

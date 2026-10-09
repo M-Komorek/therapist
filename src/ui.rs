@@ -8,9 +8,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
 };
 
-pub use status_bar::StatusMessage;
-
-use crate::{app::App, control::Mode};
+use crate::{app::Model, control::Mode};
 
 pub struct ScreenAreas {
     pub log_view: Rect,
@@ -28,16 +26,15 @@ impl ScreenAreas {
     }
 }
 
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, model: &Model) {
     let screen_areas = ScreenAreas::new(frame.area());
-    let session = app.session();
     log_view::render(
         frame,
         screen_areas.log_view,
-        &session.log_file,
-        &session.tab,
+        &model.log_file,
+        &model.log_view_state,
     );
-    match app.control().mode() {
+    match model.control.mode() {
         Mode::CommandLine(command_line) => command_line::render(
             frame,
             screen_areas.bottom_row,
@@ -48,10 +45,10 @@ pub fn render(frame: &mut Frame, app: &App) {
         Mode::Normal => status_bar::render(
             frame,
             screen_areas.bottom_row,
-            &session.log_file,
-            &session.tab,
-            &app.control().last_keys_text(),
-            app.status_message(),
+            &model.log_file,
+            &model.log_view_state,
+            &model.control.last_keys_text(),
+            model.status_message.as_ref(),
         ),
     }
 }
@@ -62,12 +59,12 @@ mod tests {
         Terminal,
         backend::TestBackend,
         buffer::Buffer,
-        crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
+        crossterm::event::KeyCode,
         layout::{Position, Size},
     };
 
     use super::*;
-    use crate::{domain::session::Session, infra::terminal::Event};
+    use crate::domain::log_file::LogFile;
 
     pub(super) fn render_to_buffer(
         width: u16,
@@ -90,71 +87,58 @@ mod tests {
             .collect()
     }
 
-    fn make_app() -> App {
-        App::new(Session::from_text("first\nsecond\n"), Size::new(30, 3))
+    fn make_model() -> Model {
+        Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(30, 3))
     }
 
-    fn render_app(app: &App) -> Vec<String> {
-        rendered_rows(&render_to_buffer(30, 3, |frame| render(frame, app)))
+    fn render_model(model: &Model) -> Vec<String> {
+        rendered_rows(&render_to_buffer(30, 3, |frame| render(frame, model)))
     }
 
-    fn type_keys(app: &mut App, typed: &str) {
-        for character in typed.chars() {
-            app.handle_event(Event::Key(KeyEvent::new(
-                KeyCode::Char(character),
-                KeyModifiers::NONE,
-            )));
-        }
-    }
-
-    fn press(app: &mut App, code: KeyCode) {
-        app.handle_event(Event::Key(code.into()));
-    }
-
-    fn cursor_position_after_render(app: &App) -> Position {
+    fn cursor_position_after_render(model: &Model) -> Position {
         let mut terminal = Terminal::new(TestBackend::new(30, 3)).unwrap();
-        terminal.draw(|frame| render(frame, app)).unwrap();
+        terminal.draw(|frame| render(frame, model)).unwrap();
         terminal.get_cursor_position().unwrap()
     }
 
     #[test]
     fn given_open_command_line_when_rendering_then_it_replaces_the_status_bar() {
-        let mut app = make_app();
+        let mut model = make_model();
 
-        type_keys(&mut app, ":12");
+        model.type_keys(":12");
 
-        assert_eq!(render_app(&app), [" 1 │ first", " 2 │ second", ":12"]);
+        assert_eq!(render_model(&model), [" 1 │ first", " 2 │ second", ":12"]);
     }
 
     #[test]
     fn given_wide_characters_on_the_command_line_when_rendering_then_the_cursor_is_at_the_editing_position()
      {
-        let mut app = make_app();
-        type_keys(&mut app, ":漢x");
+        let mut model = make_model();
+        model.type_keys(":漢x");
 
-        press(&mut app, KeyCode::Left);
+        model.press(KeyCode::Left);
 
-        assert_eq!(cursor_position_after_render(&app), Position::new(3, 2));
+        assert_eq!(cursor_position_after_render(&model), Position::new(3, 2));
     }
 
     #[test]
     fn given_command_failed_when_rendering_then_the_error_shows_until_the_next_key() {
-        let mut app = make_app();
-        type_keys(&mut app, ":abc");
-        press(&mut app, KeyCode::Enter);
-        assert_eq!(render_app(&app)[2], "Not a command: abc   1/2 (50%)");
+        let mut model = make_model();
+        model.type_keys(":abc");
+        model.press(KeyCode::Enter);
+        assert_eq!(render_model(&model)[2], "Not a command: abc   1/2 (50%)");
 
-        press(&mut app, KeyCode::Esc);
+        model.press(KeyCode::Esc);
 
-        assert_eq!(render_app(&app)[2], "app.log              1/2 (50%)");
+        assert_eq!(render_model(&model)[2], "app.log              1/2 (50%)");
     }
 
     #[test]
     fn given_app_when_rendering_then_log_view_is_above_the_status_bar() {
-        let app = make_app();
+        let model = make_model();
 
         assert_eq!(
-            render_app(&app),
+            render_model(&model),
             [
                 " 1 │ first",
                 " 2 │ second",
@@ -165,13 +149,10 @@ mod tests {
 
     #[test]
     fn given_count_typed_when_rendering_then_the_status_bar_shows_it_before_the_position() {
-        let mut app = make_app();
+        let mut model = make_model();
 
-        app.handle_event(Event::Key(KeyEvent::new(
-            KeyCode::Char('5'),
-            KeyModifiers::NONE,
-        )));
+        model.type_keys("5");
 
-        assert_eq!(render_app(&app)[2], "app.log          5 | 1/2 (50%)");
+        assert_eq!(render_model(&model)[2], "app.log          5 | 1/2 (50%)");
     }
 }

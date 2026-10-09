@@ -56,7 +56,7 @@ mod tests {
     use std::{io, path::PathBuf, sync::mpsc};
 
     use super::*;
-    use crate::domain::session::Session;
+    use crate::domain::log_file::LogFile;
 
     fn run_job(
         job: impl FnOnce(&Sender<JobMessage>) -> Result<(), JobError> + Send + 'static,
@@ -68,10 +68,10 @@ mod tests {
 
     #[test]
     fn given_log_file_when_indexer_job_runs_then_progress_arrives_before_done() {
-        let session = Session::unindexed_from_text("a\nb\n");
+        let log_file = LogFile::unindexed_from_text("a\nb\n");
         let (job_sender, job_receiver) = mpsc::channel();
 
-        spawn_indexer(job_sender, session.log_file.indexer());
+        spawn_indexer(job_sender, log_file.indexer());
 
         let messages: Vec<JobMessage> = job_receiver.iter().collect();
         assert!(matches!(

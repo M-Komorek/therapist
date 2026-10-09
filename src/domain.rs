@@ -1,4 +1,2 @@
-pub mod jobs;
 pub mod log_file;
-pub mod session;
-pub mod tab;
+pub mod log_view_state;

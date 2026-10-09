@@ -1,10 +1,10 @@
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use super::visible_row::visible_spans;
-use crate::domain::{log_file::LogFile, tab::Tab};
+use crate::domain::{log_file::LogFile, log_view_state::LogViewState};
 
-pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
-    let first_line = tab.viewport().top_line();
+pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state: &LogViewState) {
+    let first_line = log_view_state.top_line();
     let line_texts = match log_file.read_lines(first_line..first_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
         Err(error) => {
@@ -13,12 +13,12 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, tab: &Tab) {
         }
     };
     let line_number_width = line_number_width(log_file.line_count());
-    let left_column = tab.viewport().left_column();
+    let left_column = log_view_state.left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
     for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(first_line..) {
         let mut display_line = Line::from(gutter(line, line_number_width));
         display_line.extend(visible_spans(line_text, visible_columns.clone()));
-        if line == tab.cursor() {
+        if line == log_view_state.cursor() {
             display_line = display_line.reversed();
         }
         frame.render_widget(display_line, row_area);
@@ -38,28 +38,32 @@ mod tests {
     use ratatui::{buffer::Buffer, style::Modifier};
 
     use super::*;
-    use crate::{
-        domain::session::Session,
-        ui::tests::{render_to_buffer, rendered_rows},
-    };
+    use crate::ui::tests::{render_to_buffer, rendered_rows};
 
-    fn render_session(session: &Session, width: u16, height: u16) -> Buffer {
+    fn render_log_view(
+        log_file: &LogFile,
+        log_view_state: &LogViewState,
+        width: u16,
+        height: u16,
+    ) -> Buffer {
         render_to_buffer(width, height, |frame| {
-            render(frame, frame.area(), &session.log_file, &session.tab);
+            render(frame, frame.area(), log_file, log_view_state);
         })
     }
 
     fn render_text(text: &str, cursor: usize, width: u16, height: u16) -> Buffer {
-        let mut session = Session::from_text(text);
-        session.tab.set_viewport_height(usize::from(height));
-        session.tab.move_down(cursor, session.log_file.line_count());
-        render_session(&session, width, height)
+        let log_file = LogFile::from_text(text);
+        let mut log_view_state = LogViewState::default();
+        log_view_state.set_height(usize::from(height));
+        log_view_state.move_down(cursor, log_file.line_count());
+        render_log_view(&log_file, &log_view_state, width, height)
     }
 
     fn render_scrolled(text: &str, columns_to_scroll: usize, width: u16, height: u16) -> Buffer {
-        let mut session = Session::from_text(text);
-        session.tab.scroll_right(columns_to_scroll);
-        render_session(&session, width, height)
+        let log_file = LogFile::from_text(text);
+        let mut log_view_state = LogViewState::default();
+        log_view_state.scroll_right(columns_to_scroll);
+        render_log_view(&log_file, &log_view_state, width, height)
     }
 
     #[test]
