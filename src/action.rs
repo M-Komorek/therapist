@@ -16,14 +16,14 @@ pub enum AppAction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LogViewAction {
-    MoveUp(usize),
-    MoveDown(usize),
-    GoToLineNumber(usize),
-    GoToLastLine,
-    HalfPageUp,
-    HalfPageDown,
-    PageUp,
-    PageDown,
+    MoveCursorUp(usize),
+    MoveCursorDown(usize),
+    MoveCursorToLineNumber(usize),
+    MoveCursorToLastLine,
+    ScrollHalfPageUp,
+    ScrollHalfPageDown,
+    ScrollPageUp,
+    ScrollPageDown,
     ScrollLeft(usize),
     ScrollRight(usize),
     ScrollLeftWide,

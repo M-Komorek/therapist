@@ -9,7 +9,7 @@ use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
         cursor::Show,
-        event::{self, Event as TerminalEvent, KeyEvent, KeyEventKind},
+        event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind},
         execute, queue,
         terminal::{
             BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
@@ -23,7 +23,7 @@ use rustix::process::{Signal, kill_current_process_group};
 const OUTPUT_BUFFER_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, PartialEq)]
-pub enum Event {
+pub enum TerminalEvent {
     Key(KeyEvent),
     Resize(Size),
 }
@@ -77,13 +77,13 @@ impl Terminal {
         self.screen.size()
     }
 
-    pub fn next_event(&self, timeout: Option<Duration>) -> io::Result<Option<Event>> {
+    pub fn next_event(&self, timeout: Option<Duration>) -> io::Result<Option<TerminalEvent>> {
         if let Some(timeout) = timeout
             && !event::poll(timeout)?
         {
             return Ok(None);
         }
-        Ok(to_event(event::read()?))
+        Ok(to_terminal_event(event::read()?))
     }
 
     pub fn has_waiting_event(&self) -> io::Result<bool> {
@@ -119,10 +119,14 @@ pub fn install_panic_hook() {
     }));
 }
 
-fn to_event(event: TerminalEvent) -> Option<Event> {
-    match event {
-        TerminalEvent::Key(key) if key.kind == KeyEventKind::Press => Some(Event::Key(key)),
-        TerminalEvent::Resize(width, height) => Some(Event::Resize(Size::new(width, height))),
+fn to_terminal_event(crossterm_event: CrosstermEvent) -> Option<TerminalEvent> {
+    match crossterm_event {
+        CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => {
+            Some(TerminalEvent::Key(key))
+        }
+        CrosstermEvent::Resize(width, height) => {
+            Some(TerminalEvent::Resize(Size::new(width, height)))
+        }
         _ => None,
     }
 }
@@ -154,26 +158,29 @@ mod tests {
     fn given_key_press_when_converting_then_it_is_a_key_event() {
         let press = key_with_kind(KeyEventKind::Press);
 
-        assert_eq!(to_event(TerminalEvent::Key(press)), Some(Event::Key(press)));
+        assert_eq!(
+            to_terminal_event(CrosstermEvent::Key(press)),
+            Some(TerminalEvent::Key(press))
+        );
     }
 
     #[test]
     fn given_key_release_when_converting_then_it_is_ignored() {
         let release = key_with_kind(KeyEventKind::Release);
 
-        assert_eq!(to_event(TerminalEvent::Key(release)), None);
+        assert_eq!(to_terminal_event(CrosstermEvent::Key(release)), None);
     }
 
     #[test]
     fn given_resize_when_converting_then_it_is_a_resize_event_with_the_new_size() {
         assert_eq!(
-            to_event(TerminalEvent::Resize(80, 24)),
-            Some(Event::Resize(Size::new(80, 24)))
+            to_terminal_event(CrosstermEvent::Resize(80, 24)),
+            Some(TerminalEvent::Resize(Size::new(80, 24)))
         );
     }
 
     #[test]
     fn given_focus_change_when_converting_then_it_is_ignored() {
-        assert_eq!(to_event(TerminalEvent::FocusGained), None);
+        assert_eq!(to_terminal_event(CrosstermEvent::FocusGained), None);
     }
 }

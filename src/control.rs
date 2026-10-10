@@ -18,18 +18,18 @@ pub enum Mode {
 
 /// Sends each key press to the keymap in normal mode, or to the command line while it is open.
 #[derive(Default)]
-pub struct Control {
+pub struct InputController {
     keymap: Keymap,
     mode: Mode,
 }
 
-impl Control {
+impl InputController {
     pub fn resolve(&mut self, key: KeyEvent) -> Option<Action> {
         match &mut self.mode {
             Mode::Normal => self.keymap.resolve(key),
             Mode::CommandLine(command_line) => {
-                let outcome = command_line.handle_key(key);
-                self.handle_command_line_outcome(outcome)
+                let outcome = command_line.resolve(key);
+                self.apply_command_line_outcome(outcome)
             }
         }
     }
@@ -47,7 +47,7 @@ impl Control {
         self.keymap.last_keys_text()
     }
 
-    fn handle_command_line_outcome(&mut self, outcome: CommandLineOutcome) -> Option<Action> {
+    fn apply_command_line_outcome(&mut self, outcome: CommandLineOutcome) -> Option<Action> {
         match outcome {
             CommandLineOutcome::Editing => None,
             CommandLineOutcome::Closed => {
@@ -69,27 +69,27 @@ mod tests {
     use super::*;
     use crate::action::LogViewAction;
 
-    fn type_keys(control: &mut Control, typed: &str) -> Option<Action> {
+    fn type_keys(input_controller: &mut InputController, typed: &str) -> Option<Action> {
         let mut resolution = None;
         for character in typed.chars() {
-            resolution = control.resolve(KeyCode::Char(character).into());
+            resolution = input_controller.resolve(KeyCode::Char(character).into());
         }
         resolution
     }
 
-    fn press(control: &mut Control, code: KeyCode) -> Option<Action> {
-        control.resolve(code.into())
+    fn press(input_controller: &mut InputController, code: KeyCode) -> Option<Action> {
+        input_controller.resolve(code.into())
     }
 
-    fn make_open_command_line(typed: &str) -> Control {
-        let mut control = Control::default();
-        control.open_command_line();
-        type_keys(&mut control, typed);
-        control
+    fn make_open_command_line(typed: &str) -> InputController {
+        let mut input_controller = InputController::default();
+        input_controller.open_command_line();
+        type_keys(&mut input_controller, typed);
+        input_controller
     }
 
-    fn command_line_text(control: &Control) -> Option<&str> {
-        match control.mode() {
+    fn command_line_text(input_controller: &InputController) -> Option<&str> {
+        match input_controller.mode() {
             Mode::CommandLine(command_line) => Some(command_line.text()),
             Mode::Normal => None,
         }
@@ -97,67 +97,67 @@ mod tests {
 
     #[test]
     fn given_normal_mode_when_a_bound_key_is_pressed_then_the_keymap_resolves_it() {
-        let mut control = Control::default();
+        let mut input_controller = InputController::default();
 
         assert_eq!(
-            type_keys(&mut control, "j"),
-            Some(Action::LogView(LogViewAction::MoveDown(1)))
+            type_keys(&mut input_controller, "j"),
+            Some(Action::LogView(LogViewAction::MoveCursorDown(1)))
         );
     }
 
     #[test]
     fn given_normal_mode_when_the_command_line_opens_then_it_is_empty() {
-        let mut control = Control::default();
+        let mut input_controller = InputController::default();
 
-        control.open_command_line();
+        input_controller.open_command_line();
 
-        assert_eq!(command_line_text(&control), Some(""));
+        assert_eq!(command_line_text(&input_controller), Some(""));
     }
 
     #[test]
     fn given_open_command_line_when_keys_are_typed_then_they_edit_it_instead_of_the_keymap() {
-        let mut control = make_open_command_line("");
+        let mut input_controller = make_open_command_line("");
 
-        let resolution = type_keys(&mut control, "jq");
+        let resolution = type_keys(&mut input_controller, "jq");
 
         assert_eq!(resolution, None);
-        assert_eq!(command_line_text(&control), Some("jq"));
+        assert_eq!(command_line_text(&input_controller), Some("jq"));
     }
 
     #[test]
     fn given_line_number_on_the_command_line_when_enter_is_pressed_then_its_action_comes_out_and_it_closes()
      {
-        let mut control = make_open_command_line("2");
+        let mut input_controller = make_open_command_line("2");
 
-        let resolution = press(&mut control, KeyCode::Enter);
+        let resolution = press(&mut input_controller, KeyCode::Enter);
 
         assert_eq!(
             resolution,
-            Some(Action::LogView(LogViewAction::GoToLineNumber(2)))
+            Some(Action::LogView(LogViewAction::MoveCursorToLineNumber(2)))
         );
-        assert_eq!(command_line_text(&control), None);
+        assert_eq!(command_line_text(&input_controller), None);
     }
 
     #[test]
     fn given_text_on_the_command_line_when_esc_is_pressed_then_it_closes_without_an_action() {
-        let mut control = make_open_command_line("2");
+        let mut input_controller = make_open_command_line("2");
 
-        assert_eq!(press(&mut control, KeyCode::Esc), None);
-        assert_eq!(command_line_text(&control), None);
+        assert_eq!(press(&mut input_controller, KeyCode::Esc), None);
+        assert_eq!(command_line_text(&input_controller), None);
     }
 
     #[test]
     fn given_count_typed_when_the_command_line_opens_and_closes_then_the_count_and_last_keys_are_gone()
      {
-        let mut control = Control::default();
-        type_keys(&mut control, "2:");
-        control.open_command_line();
-        press(&mut control, KeyCode::Esc);
+        let mut input_controller = InputController::default();
+        type_keys(&mut input_controller, "2:");
+        input_controller.open_command_line();
+        press(&mut input_controller, KeyCode::Esc);
 
-        assert_eq!(control.last_keys_text(), "");
+        assert_eq!(input_controller.last_keys_text(), "");
         assert_eq!(
-            type_keys(&mut control, "j"),
-            Some(Action::LogView(LogViewAction::MoveDown(1)))
+            type_keys(&mut input_controller, "j"),
+            Some(Action::LogView(LogViewAction::MoveCursorDown(1)))
         );
     }
 }

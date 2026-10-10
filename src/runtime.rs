@@ -7,11 +7,11 @@ use std::{
 use crate::{
     app::{self, Effect, Model},
     jobs::JobNotification,
-    platform::terminal::{Event, Terminal},
+    platform::terminal::{Terminal, TerminalEvent},
     ui,
 };
 
-const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
+const INPUT_TIMEOUT_WHILE_JOBS_RUN: Duration = Duration::from_millis(50);
 
 pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
     let (job_sender, job_receiver) = mpsc::channel();
@@ -20,7 +20,7 @@ pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
 
     loop {
         model.job_board.spawn_scheduled_jobs(&job_sender);
-        match handle_waiting_events(terminal, &mut model, &job_receiver)? {
+        match handle_next_batch(terminal, &mut model, &job_receiver)? {
             Effect::Nothing => {}
             Effect::Redraw => draw(terminal, &model)?,
             Effect::Suspend => {
@@ -35,18 +35,20 @@ pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
 /// Handles the next event and every event already waiting behind it, so keys that arrive faster
 /// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws. While a
 /// job runs, waiting for a key times out, so that job notifications are handled in between.
-fn handle_waiting_events(
+fn handle_next_batch(
     terminal: &Terminal,
     model: &mut Model,
     job_receiver: &Receiver<JobNotification>,
 ) -> io::Result<Effect> {
-    let input_timeout = has_running_jobs(model).then_some(JOB_POLL_TIMEOUT);
+    let input_timeout = has_running_jobs(model).then_some(INPUT_TIMEOUT_WHILE_JOBS_RUN);
     let mut batch_effect = Effect::Nothing;
 
     loop {
         let effect = terminal
             .next_event(input_timeout)?
-            .map_or(Effect::Nothing, |event| handle_event(model, event));
+            .map_or(Effect::Nothing, |terminal_event| {
+                handle_terminal_event(model, terminal_event)
+            });
         match effect {
             Effect::Nothing => {}
             Effect::Redraw => batch_effect = Effect::Redraw,
@@ -63,10 +65,10 @@ fn handle_waiting_events(
     }
 }
 
-fn handle_event(model: &mut Model, event: Event) -> Effect {
-    match event {
-        Event::Key(key) => app::handle_key(model, key),
-        Event::Resize(screen_size) => app::resize_log_view(model, screen_size),
+fn handle_terminal_event(model: &mut Model, terminal_event: TerminalEvent) -> Effect {
+    match terminal_event {
+        TerminalEvent::Key(key) => app::handle_key(model, key),
+        TerminalEvent::Resize(screen_size) => app::resize_log_view(model, screen_size),
     }
 }
 

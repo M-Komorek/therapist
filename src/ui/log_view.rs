@@ -4,8 +4,8 @@ use super::visible_row::visible_spans;
 use crate::domain::{log_file::LogFile, log_view_state::LogViewState};
 
 pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state: &LogViewState) {
-    let first_line = log_view_state.top_line();
-    let line_texts = match log_file.read_lines(first_line..first_line + usize::from(area.height)) {
+    let top_line = log_view_state.top_line();
+    let line_texts = match log_file.read_lines(top_line..top_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
         Err(error) => {
             frame.render_widget(Line::raw(error.to_string()), area);
@@ -15,10 +15,10 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state:
     let line_number_width = line_number_width(log_file.line_count());
     let left_column = log_view_state.left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
-    for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(first_line..) {
+    for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(top_line..) {
         let mut display_line = Line::from(gutter(line, line_number_width));
         display_line.extend(visible_spans(line_text, visible_columns.clone()));
-        if line == log_view_state.cursor() {
+        if line == log_view_state.cursor_line() {
             display_line = display_line.reversed();
         }
         frame.render_widget(display_line, row_area);
@@ -51,11 +51,11 @@ mod tests {
         })
     }
 
-    fn render_text(text: &str, cursor: usize, width: u16, height: u16) -> Buffer {
+    fn render_text(text: &str, cursor_line: usize, width: u16, height: u16) -> Buffer {
         let log_file = LogFile::from_text(text);
         let mut log_view_state = LogViewState::default();
         log_view_state.set_height(usize::from(height));
-        log_view_state.move_down(cursor, log_file.line_count());
+        log_view_state.move_cursor_down(cursor_line, log_file.line_count());
         render_log_view(&log_file, &log_view_state, width, height)
     }
 

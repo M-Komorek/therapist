@@ -22,7 +22,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
-enum AppError {
+enum RunError {
     #[error(transparent)]
     Logging(#[from] LoggingError),
     #[error(transparent)]
@@ -42,10 +42,10 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), AppError> {
-    logging::init(&cli.log_file)?;
-    tracing::info!(file = %cli.file.display(), "starting");
-    let log_file = LogFile::open(&cli.file)?;
+fn run(cli: Cli) -> Result<(), RunError> {
+    logging::init(&cli.therapist_log_path)?;
+    tracing::info!(browsed_file = %cli.browsed_file_path.display(), "starting");
+    let log_file = LogFile::open(&cli.browsed_file_path)?;
     terminal::install_panic_hook();
     let mut terminal = Terminal::enter()?;
     runtime::run(&mut terminal, Model::new(log_file))?;

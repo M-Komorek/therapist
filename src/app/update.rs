@@ -32,7 +32,7 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
 
 pub fn handle_key(model: &mut Model, key: KeyEvent) -> Effect {
     model.status_message = None;
-    match model.control.resolve(key) {
+    match model.input_controller.resolve(key) {
         Some(action) => dispatch(model, action),
         None => Effect::Redraw,
     }
@@ -75,18 +75,18 @@ fn dispatch_log_view(model: &mut Model, log_view_action: LogViewAction) -> Effec
     let line_count = model.log_file.line_count();
     let log_view_state = &mut model.log_view_state;
     match log_view_action {
-        LogViewAction::MoveUp(lines_to_move) => log_view_state.move_up(lines_to_move),
-        LogViewAction::MoveDown(lines_to_move) => {
-            log_view_state.move_down(lines_to_move, line_count)
+        LogViewAction::MoveCursorUp(lines_to_move) => log_view_state.move_cursor_up(lines_to_move),
+        LogViewAction::MoveCursorDown(lines_to_move) => {
+            log_view_state.move_cursor_down(lines_to_move, line_count)
         }
-        LogViewAction::GoToLineNumber(line_number) => {
-            log_view_state.go_to_line_number(line_number, line_count)
+        LogViewAction::MoveCursorToLineNumber(line_number) => {
+            log_view_state.move_cursor_to_line_number(line_number, line_count)
         }
-        LogViewAction::GoToLastLine => log_view_state.go_to_last_line(line_count),
-        LogViewAction::HalfPageUp => log_view_state.half_page_up(),
-        LogViewAction::HalfPageDown => log_view_state.half_page_down(line_count),
-        LogViewAction::PageUp => log_view_state.page_up(),
-        LogViewAction::PageDown => log_view_state.page_down(line_count),
+        LogViewAction::MoveCursorToLastLine => log_view_state.move_cursor_to_last_line(line_count),
+        LogViewAction::ScrollHalfPageUp => log_view_state.scroll_half_page_up(),
+        LogViewAction::ScrollHalfPageDown => log_view_state.scroll_half_page_down(line_count),
+        LogViewAction::ScrollPageUp => log_view_state.scroll_page_up(),
+        LogViewAction::ScrollPageDown => log_view_state.scroll_page_down(line_count),
         LogViewAction::ScrollLeft(columns_to_scroll) => {
             log_view_state.scroll_left(columns_to_scroll)
         }
@@ -112,7 +112,7 @@ fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
 }
 
 fn open_command_line(model: &mut Model) -> Effect {
-    model.control.open_command_line();
+    model.input_controller.open_command_line();
     Effect::Redraw
 }
 
@@ -196,7 +196,7 @@ mod tests {
     }
 
     fn command_line_text(model: &Model) -> Option<&str> {
-        match model.control.mode() {
+        match model.input_controller.mode() {
             Mode::CommandLine(command_line) => Some(command_line.text()),
             Mode::Normal => None,
         }
@@ -225,7 +225,7 @@ mod tests {
 
         assert_eq!(effect, Effect::Redraw);
         assert_eq!(command_line_text(&model), Some("jq"));
-        assert_eq!(model.log_view_state.cursor(), 0);
+        assert_eq!(model.log_view_state.cursor_line(), 0);
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
         let effect = run_command(&mut model, "2");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor(), 1);
+        assert_eq!(model.log_view_state.cursor_line(), 1);
         assert_eq!(command_line_text(&model), None);
     }
 
@@ -245,7 +245,7 @@ mod tests {
 
         run_command(&mut model, "99");
 
-        assert_eq!(model.log_view_state.cursor(), 2);
+        assert_eq!(model.log_view_state.cursor_line(), 2);
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
 
         run_command(&mut model, "0");
 
-        assert_eq!(model.log_view_state.cursor(), 0);
+        assert_eq!(model.log_view_state.cursor_line(), 0);
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         model.type_keys("j");
 
         assert_eq!(model.status_message.as_ref(), None);
-        assert_eq!(model.log_view_state.cursor(), 1);
+        assert_eq!(model.log_view_state.cursor_line(), 1);
     }
 
     #[test]
@@ -338,7 +338,7 @@ mod tests {
         let effect = model.type_keys("j");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor(), 1);
+        assert_eq!(model.log_view_state.cursor_line(), 1);
     }
 
     #[test]
@@ -348,7 +348,7 @@ mod tests {
 
         model.type_keys("k");
 
-        assert_eq!(model.log_view_state.cursor(), 0);
+        assert_eq!(model.log_view_state.cursor_line(), 0);
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod tests {
         let effect = model.type_keys("2");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor(), 0);
+        assert_eq!(model.log_view_state.cursor_line(), 0);
     }
 
     #[test]
@@ -368,7 +368,7 @@ mod tests {
 
         model.type_keys("j");
 
-        assert_eq!(model.log_view_state.cursor(), 2);
+        assert_eq!(model.log_view_state.cursor_line(), 2);
     }
 
     #[test]
@@ -378,7 +378,7 @@ mod tests {
 
         model.type_keys("j");
 
-        assert_eq!(model.log_view_state.cursor(), 2);
+        assert_eq!(model.log_view_state.cursor_line(), 2);
     }
 
     #[test]
@@ -396,7 +396,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor(), 2);
+        assert_eq!(model.log_view_state.cursor_line(), 2);
     }
 
     #[test]
@@ -406,7 +406,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor(), 1);
+        assert_eq!(model.log_view_state.cursor_line(), 1);
     }
 
     #[test]
@@ -416,7 +416,7 @@ mod tests {
         let effect = model.press_ctrl('d');
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor(), 1);
+        assert_eq!(model.log_view_state.cursor_line(), 1);
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor(), 2);
+        assert_eq!(model.log_view_state.cursor_line(), 2);
     }
 
     #[test]

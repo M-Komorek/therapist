@@ -7,13 +7,13 @@ const INDEX_CHUNK_SIZE: usize = 1024 * 1024;
 /// Builds a log file's line index on another thread. It reports a copy of the index so far after
 /// the first chunk and each time the indexed percentage grows, then reports the finished index.
 /// It stops early, without the final report, when `on_progress` returns `Break`.
-pub struct Indexer {
+pub struct LogFileIndexer {
     path: PathBuf,
     file: Arc<File>,
     file_size: u64,
 }
 
-impl Indexer {
+impl LogFileIndexer {
     pub(super) fn new(path: PathBuf, file: Arc<File>, file_size: u64) -> Self {
         Self {
             path,
@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn given_unreadable_file_when_indexed_then_it_cannot_be_read() {
         let temp_file = NamedTempFile::new().unwrap();
-        let indexer = Indexer {
+        let indexer = LogFileIndexer {
             path: temp_file.path().to_path_buf(),
             file: Arc::new(File::create(temp_file.path()).unwrap()),
             file_size: 0,

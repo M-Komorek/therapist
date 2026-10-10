@@ -16,13 +16,13 @@ pub(super) enum CommandLineOutcome {
 #[derive(Default)]
 pub struct CommandLine {
     text: String,
-    cursor: usize,
+    cursor_byte_offset: usize,
 }
 
 impl CommandLine {
-    pub(super) fn handle_key(&mut self, key: KeyEvent) -> CommandLineOutcome {
+    pub(super) fn resolve(&mut self, key: KeyEvent) -> CommandLineOutcome {
         match key.code {
-            KeyCode::Enter => submit(&self.text),
+            KeyCode::Enter => submission_outcome(&self.text),
             KeyCode::Esc => CommandLineOutcome::Closed,
             KeyCode::Backspace if self.text.is_empty() => CommandLineOutcome::Closed,
             _ => {
@@ -37,42 +37,44 @@ impl CommandLine {
     }
 
     pub fn text_before_cursor(&self) -> &str {
-        &self.text[..self.cursor]
+        &self.text[..self.cursor_byte_offset]
     }
 
     fn edit(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Backspace => self.delete_before_cursor(),
-            KeyCode::Left => self.cursor = self.previous_char_start(),
-            KeyCode::Right => self.cursor = self.next_char_start(),
-            KeyCode::Home => self.cursor = 0,
-            KeyCode::End => self.cursor = self.text.len(),
-            KeyCode::Char(character) if is_typed(key.modifiers) => self.insert(character),
+            KeyCode::Left => self.cursor_byte_offset = self.previous_char_start(),
+            KeyCode::Right => self.cursor_byte_offset = self.next_char_start(),
+            KeyCode::Home => self.cursor_byte_offset = 0,
+            KeyCode::End => self.cursor_byte_offset = self.text.len(),
+            KeyCode::Char(character) if is_text_input(key.modifiers) => self.insert(character),
             _ => {}
         }
     }
 
     fn insert(&mut self, character: char) {
-        self.text.insert(self.cursor, character);
-        self.cursor += character.len_utf8();
+        self.text.insert(self.cursor_byte_offset, character);
+        self.cursor_byte_offset += character.len_utf8();
     }
 
     fn delete_before_cursor(&mut self) {
         let previous_char_start = self.previous_char_start();
-        self.text.drain(previous_char_start..self.cursor);
-        self.cursor = previous_char_start;
+        self.text
+            .drain(previous_char_start..self.cursor_byte_offset);
+        self.cursor_byte_offset = previous_char_start;
     }
 
     fn previous_char_start(&self) -> usize {
-        self.text.floor_char_boundary(self.cursor.saturating_sub(1))
+        self.text
+            .floor_char_boundary(self.cursor_byte_offset.saturating_sub(1))
     }
 
     fn next_char_start(&self) -> usize {
-        self.text.ceil_char_boundary(self.cursor + 1)
+        self.text.ceil_char_boundary(self.cursor_byte_offset + 1)
     }
 }
 
-fn submit(command_text: &str) -> CommandLineOutcome {
+fn submission_outcome(command_text: &str) -> CommandLineOutcome {
     match parse_command(command_text) {
         Ok(Some(action)) => CommandLineOutcome::Submitted(action),
         Ok(None) => CommandLineOutcome::Closed,
@@ -82,7 +84,7 @@ fn submit(command_text: &str) -> CommandLineOutcome {
     }
 }
 
-fn is_typed(modifiers: KeyModifiers) -> bool {
+fn is_text_input(modifiers: KeyModifiers) -> bool {
     !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
@@ -93,12 +95,12 @@ mod tests {
 
     fn type_text(command_line: &mut CommandLine, typed: &str) {
         for character in typed.chars() {
-            command_line.handle_key(KeyCode::Char(character).into());
+            command_line.resolve(KeyCode::Char(character).into());
         }
     }
 
     fn press(command_line: &mut CommandLine, code: KeyCode) -> CommandLineOutcome {
-        command_line.handle_key(code.into())
+        command_line.resolve(code.into())
     }
 
     fn make_command_line(typed: &str) -> CommandLine {
@@ -204,7 +206,9 @@ mod tests {
 
         assert_eq!(
             outcome,
-            CommandLineOutcome::Submitted(Action::LogView(LogViewAction::GoToLineNumber(5000)))
+            CommandLineOutcome::Submitted(Action::LogView(LogViewAction::MoveCursorToLineNumber(
+                5000
+            )))
         );
     }
 
@@ -246,9 +250,9 @@ mod tests {
     fn given_modified_characters_when_typed_then_only_shifted_ones_are_inserted() {
         let mut command_line = CommandLine::default();
 
-        command_line.handle_key(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT));
-        command_line.handle_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
-        command_line.handle_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
+        command_line.resolve(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT));
+        command_line.resolve(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        command_line.resolve(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT));
 
         assert_eq!(command_line.text(), "A");
     }

@@ -9,13 +9,17 @@ use clap::{
 #[derive(Debug, Parser)]
 #[command(version, about)]
 pub struct Cli {
-    /// The log file to open.
+    /// The log file to browse.
     #[arg(value_name = "FILE", value_parser = PathBufValueParser::new().try_map(readable_file))]
-    pub file: PathBuf,
+    pub browsed_file_path: PathBuf,
 
-    /// Where the app writes its own log.
-    #[arg(long, value_name = "PATH", default_value_os_t = default_log_file())]
-    pub log_file: PathBuf,
+    /// Where therapist writes its own log.
+    #[arg(
+        long = "therapist-log",
+        value_name = "PATH",
+        default_value_os_t = default_therapist_log_path()
+    )]
+    pub therapist_log_path: PathBuf,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,7 +39,7 @@ fn readable_file(path: PathBuf) -> Result<PathBuf, CliError> {
     Ok(path)
 }
 
-fn default_log_file() -> PathBuf {
+fn default_therapist_log_path() -> PathBuf {
     std::env::temp_dir().join("therapist.log")
 }
 
@@ -85,26 +89,29 @@ mod tests {
     }
 
     #[test]
-    fn given_no_log_file_option_when_parsing_then_log_goes_to_temp_dir() {
-        let file = manifest_dir().join("Cargo.toml");
+    fn given_no_therapist_log_option_when_parsing_then_the_therapist_log_goes_to_temp_dir() {
+        let browsed_file_path = manifest_dir().join("Cargo.toml");
 
-        let cli = Cli::try_parse_from([Path::new("therapist"), &file]).unwrap();
+        let cli = Cli::try_parse_from([Path::new("therapist"), &browsed_file_path]).unwrap();
 
-        assert_eq!(cli.log_file, std::env::temp_dir().join("therapist.log"));
+        assert_eq!(
+            cli.therapist_log_path,
+            std::env::temp_dir().join("therapist.log")
+        );
     }
 
     #[test]
-    fn given_log_file_option_when_parsing_then_it_overrides_the_default() {
-        let file = manifest_dir().join("Cargo.toml");
+    fn given_therapist_log_option_when_parsing_then_it_overrides_the_default() {
+        let browsed_file_path = manifest_dir().join("Cargo.toml");
         let arguments = [
             Path::new("therapist"),
-            &file,
-            Path::new("--log-file"),
+            &browsed_file_path,
+            Path::new("--therapist-log"),
             Path::new("/tmp/custom.log"),
         ];
 
         let cli = Cli::try_parse_from(arguments).unwrap();
 
-        assert_eq!(cli.log_file, PathBuf::from("/tmp/custom.log"));
+        assert_eq!(cli.therapist_log_path, PathBuf::from("/tmp/custom.log"));
     }
 }

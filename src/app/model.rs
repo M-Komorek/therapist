@@ -1,5 +1,5 @@
 use crate::{
-    control::Control,
+    control::InputController,
     domain::{log_file::LogFile, log_view_state::LogViewState},
     jobs::{self, JobBoard, JobSlot},
 };
@@ -21,7 +21,7 @@ pub enum LogFileIndexingStatus {
 pub struct Model {
     pub log_file: LogFile,
     pub log_view_state: LogViewState,
-    pub control: Control,
+    pub input_controller: InputController,
     pub status_message: Option<StatusMessage>,
     pub job_board: JobBoard,
     pub log_file_indexing_status: LogFileIndexingStatus,
@@ -38,7 +38,7 @@ impl Model {
         Self {
             log_file,
             log_view_state: LogViewState::default(),
-            control: Control::default(),
+            input_controller: InputController::default(),
             status_message: None,
             job_board,
             log_file_indexing_status: LogFileIndexingStatus::Running,

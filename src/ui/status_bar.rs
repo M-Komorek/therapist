@@ -14,13 +14,13 @@ pub fn render(
     last_keys: &str,
     status_message: Option<&StatusMessage>,
 ) {
-    let position = position_text(
-        log_view_state.cursor(),
+    let position_text = position_text(
+        log_view_state.cursor_line(),
         log_file.line_count(),
         log_file_indexing_status,
     );
-    let indexing_progress = indexing_text(log_file_indexing_status, log_file.percent_indexed());
-    let right_text = right_text(last_keys, position, indexing_progress);
+    let indexing_text = indexing_text(log_file_indexing_status, log_file.percent_indexed());
+    let right_text = right_text(last_keys, position_text, indexing_text);
     frame.render_widget(left_line(log_file, status_message), area);
     frame.render_widget(Line::raw(right_text).right_aligned(), area);
 }
@@ -32,22 +32,22 @@ fn left_line<'a>(log_file: &'a LogFile, status_message: Option<&'a StatusMessage
     }
 }
 
-fn right_text(last_keys: &str, position: String, indexing_progress: Option<String>) -> String {
+fn right_text(last_keys: &str, position_text: String, indexing_text: Option<String>) -> String {
     let mut segments = Vec::new();
     if !last_keys.is_empty() {
         segments.push(last_keys.to_owned());
     }
-    segments.push(position);
-    segments.extend(indexing_progress);
+    segments.push(position_text);
+    segments.extend(indexing_text);
     segments.join(" | ")
 }
 
 fn position_text(
-    cursor: usize,
+    cursor_line: usize,
     line_count: usize,
     log_file_indexing_status: LogFileIndexingStatus,
 ) -> String {
-    let line_number = if line_count == 0 { 0 } else { cursor + 1 };
+    let line_number = if line_count == 0 { 0 } else { cursor_line + 1 };
     let position = format!("{line_number}/{line_count}");
     match log_file_indexing_status {
         LogFileIndexingStatus::Running | LogFileIndexingStatus::Failed => format!("{position}+"),
@@ -76,10 +76,10 @@ mod tests {
     use super::*;
     use crate::ui::tests::{render_to_buffer, rendered_rows};
 
-    fn render_status(text: &str, cursor: usize, last_keys: &str) -> String {
+    fn render_status(text: &str, cursor_line: usize, last_keys: &str) -> String {
         let log_file = LogFile::from_text(text);
         let mut log_view_state = LogViewState::default();
-        log_view_state.move_down(cursor, log_file.line_count());
+        log_view_state.move_cursor_down(cursor_line, log_file.line_count());
         rendered_rows(&render_status_buffer(
             &log_file,
             LogFileIndexingStatus::Done,

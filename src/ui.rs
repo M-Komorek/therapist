@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
         &model.log_file,
         &model.log_view_state,
     );
-    match model.control.mode() {
+    match model.input_controller.mode() {
         Mode::CommandLine(command_line) => command_line::render(
             frame,
             screen_areas.bottom_row,
@@ -32,7 +32,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
             &model.log_file,
             model.log_file_indexing_status,
             &model.log_view_state,
-            &model.control.last_keys_text(),
+            &model.input_controller.last_keys_text(),
             model.status_message.as_ref(),
         ),
     }

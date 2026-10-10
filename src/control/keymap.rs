@@ -35,12 +35,12 @@ impl Keymap {
         match find_binding(&self.started_sequence) {
             BindingMatch::Complete(action) => {
                 let action = apply_count(action.clone(), self.count);
-                self.clear();
+                self.clear_pending();
                 Some(action)
             }
-            BindingMatch::Prefix => None,
+            BindingMatch::Partial => None,
             BindingMatch::NotBound => {
-                self.clear();
+                self.clear_pending();
                 None
             }
         }
@@ -51,7 +51,7 @@ impl Keymap {
     }
 
     pub(super) fn reset(&mut self) {
-        self.clear();
+        self.clear_pending();
         self.last_keys.clear();
     }
 
@@ -95,7 +95,7 @@ impl Keymap {
         self.count.is_some() || !self.started_sequence.is_empty()
     }
 
-    fn clear(&mut self) {
+    fn clear_pending(&mut self) {
         self.count = None;
         self.started_sequence.clear();
     }
@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(keymap.last_keys_text(), "");
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_log_view(LogViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
         );
     }
 
@@ -192,25 +192,31 @@ mod tests {
 
     #[test]
     fn given_j_or_down_arrow_when_resolving_then_cursor_moves_down_one_line() {
-        let move_down = resolved_log_view(LogViewAction::MoveDown(1));
+        let move_cursor_down = resolved_log_view(LogViewAction::MoveCursorDown(1));
 
-        assert_eq!(resolve_fresh("j"), move_down);
-        assert_eq!(Keymap::default().resolve(plain(KeyCode::Down)), move_down);
+        assert_eq!(resolve_fresh("j"), move_cursor_down);
+        assert_eq!(
+            Keymap::default().resolve(plain(KeyCode::Down)),
+            move_cursor_down
+        );
     }
 
     #[test]
     fn given_k_or_up_arrow_when_resolving_then_cursor_moves_up_one_line() {
-        let move_up = resolved_log_view(LogViewAction::MoveUp(1));
+        let move_cursor_up = resolved_log_view(LogViewAction::MoveCursorUp(1));
 
-        assert_eq!(resolve_fresh("k"), move_up);
-        assert_eq!(Keymap::default().resolve(plain(KeyCode::Up)), move_up);
+        assert_eq!(resolve_fresh("k"), move_cursor_up);
+        assert_eq!(
+            Keymap::default().resolve(plain(KeyCode::Up)),
+            move_cursor_up
+        );
     }
 
     #[test]
     fn given_count_when_j_is_pressed_then_cursor_moves_that_many_lines() {
         assert_eq!(
             resolve_fresh("5j"),
-            resolved_log_view(LogViewAction::MoveDown(5))
+            resolved_log_view(LogViewAction::MoveCursorDown(5))
         );
     }
 
@@ -245,7 +251,7 @@ mod tests {
     {
         assert_eq!(
             resolve_fresh("5jj"),
-            resolved_log_view(LogViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
         );
     }
 
@@ -253,7 +259,7 @@ mod tests {
     fn given_g_pressed_twice_when_resolving_then_cursor_goes_to_first_line() {
         assert_eq!(
             resolve_fresh("gg"),
-            resolved_log_view(LogViewAction::GoToLineNumber(1))
+            resolved_log_view(LogViewAction::MoveCursorToLineNumber(1))
         );
     }
 
@@ -261,7 +267,7 @@ mod tests {
     fn given_count_when_gg_is_pressed_then_cursor_goes_to_that_line() {
         assert_eq!(
             resolve_fresh("5gg"),
-            resolved_log_view(LogViewAction::GoToLineNumber(5))
+            resolved_log_view(LogViewAction::MoveCursorToLineNumber(5))
         );
     }
 
@@ -269,7 +275,7 @@ mod tests {
     fn given_no_count_when_capital_g_is_pressed_then_cursor_goes_to_last_line() {
         assert_eq!(
             resolve_fresh("G"),
-            resolved_log_view(LogViewAction::GoToLastLine)
+            resolved_log_view(LogViewAction::MoveCursorToLastLine)
         );
     }
 
@@ -277,7 +283,7 @@ mod tests {
     fn given_count_when_capital_g_is_pressed_then_cursor_goes_to_that_line() {
         assert_eq!(
             resolve_fresh("5G"),
-            resolved_log_view(LogViewAction::GoToLineNumber(5))
+            resolved_log_view(LogViewAction::MoveCursorToLineNumber(5))
         );
     }
 
@@ -287,7 +293,7 @@ mod tests {
 
         assert_eq!(
             Keymap::default().resolve(shift_g),
-            resolved_log_view(LogViewAction::GoToLastLine)
+            resolved_log_view(LogViewAction::MoveCursorToLastLine)
         );
     }
 
@@ -297,24 +303,30 @@ mod tests {
 
         assert_eq!(
             resolve(ctrl('d')),
-            resolved_log_view(LogViewAction::HalfPageDown)
+            resolved_log_view(LogViewAction::ScrollHalfPageDown)
         );
         assert_eq!(
             resolve(ctrl('u')),
-            resolved_log_view(LogViewAction::HalfPageUp)
+            resolved_log_view(LogViewAction::ScrollHalfPageUp)
         );
         assert_eq!(
             resolve(ctrl('f')),
-            resolved_log_view(LogViewAction::PageDown)
+            resolved_log_view(LogViewAction::ScrollPageDown)
         );
-        assert_eq!(resolve(ctrl('b')), resolved_log_view(LogViewAction::PageUp));
+        assert_eq!(
+            resolve(ctrl('b')),
+            resolved_log_view(LogViewAction::ScrollPageUp)
+        );
     }
 
     #[test]
     fn given_count_when_page_key_is_pressed_then_count_is_ignored() {
         let resolution = resolve_keys(&mut Keymap::default(), &[char_key('5'), ctrl('d')]);
 
-        assert_eq!(resolution, resolved_log_view(LogViewAction::HalfPageDown));
+        assert_eq!(
+            resolution,
+            resolved_log_view(LogViewAction::ScrollHalfPageDown)
+        );
     }
 
     #[test]
@@ -341,7 +353,7 @@ mod tests {
     fn given_count_digit_when_0_is_pressed_then_it_extends_the_count() {
         assert_eq!(
             resolve_fresh("10k"),
-            resolved_log_view(LogViewAction::MoveUp(10))
+            resolved_log_view(LogViewAction::MoveCursorUp(10))
         );
     }
 
@@ -349,7 +361,7 @@ mod tests {
     fn given_huge_count_when_j_is_pressed_then_count_saturates() {
         assert_eq!(
             resolve_fresh("99999999999999999999999j"),
-            resolved_log_view(LogViewAction::MoveDown(usize::MAX))
+            resolved_log_view(LogViewAction::MoveCursorDown(usize::MAX))
         );
     }
 
@@ -357,7 +369,7 @@ mod tests {
     fn given_started_g_when_j_is_pressed_then_cursor_moves_down() {
         assert_eq!(
             resolve_fresh("gj"),
-            resolved_log_view(LogViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
         );
     }
 
@@ -365,7 +377,7 @@ mod tests {
     fn given_count_and_started_g_when_j_is_pressed_then_count_still_applies() {
         assert_eq!(
             resolve_fresh("3gj"),
-            resolved_log_view(LogViewAction::MoveDown(3))
+            resolved_log_view(LogViewAction::MoveCursorDown(3))
         );
     }
 
@@ -373,7 +385,7 @@ mod tests {
     fn given_started_g_when_digit_is_pressed_then_g_is_dropped_and_digit_starts_a_count() {
         assert_eq!(
             resolve_fresh("g5j"),
-            resolved_log_view(LogViewAction::MoveDown(5))
+            resolved_log_view(LogViewAction::MoveCursorDown(5))
         );
     }
 
@@ -384,7 +396,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "gg"),
-            resolved_log_view(LogViewAction::GoToLineNumber(1))
+            resolved_log_view(LogViewAction::MoveCursorToLineNumber(1))
         );
     }
 
@@ -403,7 +415,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_log_view(LogViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
         );
     }
 
@@ -424,7 +436,7 @@ mod tests {
 
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
-            resolved_log_view(LogViewAction::MoveDown(1))
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
         );
     }
 

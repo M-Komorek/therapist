@@ -12,24 +12,30 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     (&[ctrl('z')], app(AppAction::Suspend)),
     (&[char_key(':')], app(AppAction::OpenCommandLine)),
     // Moving by lines
-    (&[char_key('j')], log_view(LogViewAction::MoveDown(1))),
+    (&[char_key('j')], log_view(LogViewAction::MoveCursorDown(1))),
     (
         &[plain(KeyCode::Down)],
-        log_view(LogViewAction::MoveDown(1)),
+        log_view(LogViewAction::MoveCursorDown(1)),
     ),
-    (&[char_key('k')], log_view(LogViewAction::MoveUp(1))),
-    (&[plain(KeyCode::Up)], log_view(LogViewAction::MoveUp(1))),
+    (&[char_key('k')], log_view(LogViewAction::MoveCursorUp(1))),
+    (
+        &[plain(KeyCode::Up)],
+        log_view(LogViewAction::MoveCursorUp(1)),
+    ),
     // Jumping to a line
     (
         &[char_key('g'), char_key('g')],
-        log_view(LogViewAction::GoToLineNumber(1)),
+        log_view(LogViewAction::MoveCursorToLineNumber(1)),
     ),
-    (&[char_key('G')], log_view(LogViewAction::GoToLastLine)),
+    (
+        &[char_key('G')],
+        log_view(LogViewAction::MoveCursorToLastLine),
+    ),
     // Moving by pages
-    (&[ctrl('d')], log_view(LogViewAction::HalfPageDown)),
-    (&[ctrl('u')], log_view(LogViewAction::HalfPageUp)),
-    (&[ctrl('f')], log_view(LogViewAction::PageDown)),
-    (&[ctrl('b')], log_view(LogViewAction::PageUp)),
+    (&[ctrl('d')], log_view(LogViewAction::ScrollHalfPageDown)),
+    (&[ctrl('u')], log_view(LogViewAction::ScrollHalfPageUp)),
+    (&[ctrl('f')], log_view(LogViewAction::ScrollPageDown)),
+    (&[ctrl('b')], log_view(LogViewAction::ScrollPageUp)),
     // Scrolling sideways
     (&[char_key('h')], log_view(LogViewAction::ScrollLeft(1))),
     (
@@ -51,7 +57,7 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
 
 pub(super) enum BindingMatch {
     Complete(&'static Action),
-    Prefix,
+    Partial,
     NotBound,
 }
 
@@ -66,7 +72,7 @@ pub(super) fn find_binding(keys: &[KeyEvent]) -> BindingMatch {
         .iter()
         .any(|(binding_keys, _)| binding_keys.starts_with(keys));
     if is_prefix {
-        BindingMatch::Prefix
+        BindingMatch::Partial
     } else {
         BindingMatch::NotBound
     }
@@ -77,15 +83,19 @@ pub(super) fn apply_count(action: Action, count: Option<usize>) -> Action {
         return action;
     };
     match action {
-        Action::LogView(LogViewAction::MoveDown(_)) => log_view(LogViewAction::MoveDown(count)),
-        Action::LogView(LogViewAction::MoveUp(_)) => log_view(LogViewAction::MoveUp(count)),
+        Action::LogView(LogViewAction::MoveCursorDown(_)) => {
+            log_view(LogViewAction::MoveCursorDown(count))
+        }
+        Action::LogView(LogViewAction::MoveCursorUp(_)) => {
+            log_view(LogViewAction::MoveCursorUp(count))
+        }
         Action::LogView(LogViewAction::ScrollLeft(_)) => log_view(LogViewAction::ScrollLeft(count)),
         Action::LogView(LogViewAction::ScrollRight(_)) => {
             log_view(LogViewAction::ScrollRight(count))
         }
-        Action::LogView(LogViewAction::GoToLineNumber(_) | LogViewAction::GoToLastLine) => {
-            log_view(LogViewAction::GoToLineNumber(count))
-        }
+        Action::LogView(
+            LogViewAction::MoveCursorToLineNumber(_) | LogViewAction::MoveCursorToLastLine,
+        ) => log_view(LogViewAction::MoveCursorToLineNumber(count)),
         _ => action,
     }
 }

@@ -2,7 +2,7 @@ const WIDE_SCROLL_PERCENT: usize = 20;
 
 #[derive(Default)]
 pub struct LogViewState {
-    cursor: usize,
+    cursor_line: usize,
     top_line: usize,
     left_column: usize,
     height: usize,
@@ -10,8 +10,8 @@ pub struct LogViewState {
 }
 
 impl LogViewState {
-    pub fn cursor(&self) -> usize {
-        self.cursor
+    pub fn cursor_line(&self) -> usize {
+        self.cursor_line
     }
 
     pub fn top_line(&self) -> usize {
@@ -22,36 +22,36 @@ impl LogViewState {
         self.left_column
     }
 
-    pub fn move_up(&mut self, lines_to_move: usize) {
-        self.cursor = self.cursor.saturating_sub(lines_to_move);
+    pub fn move_cursor_up(&mut self, lines_to_move: usize) {
+        self.cursor_line = self.cursor_line.saturating_sub(lines_to_move);
         self.keep_cursor_visible();
     }
 
-    pub fn move_down(&mut self, lines_to_move: usize, line_count: usize) {
-        self.go_to_line(self.cursor.saturating_add(lines_to_move), line_count);
+    pub fn move_cursor_down(&mut self, lines_to_move: usize, line_count: usize) {
+        self.move_cursor_to_line(self.cursor_line.saturating_add(lines_to_move), line_count);
     }
 
-    pub fn go_to_line_number(&mut self, line_number: usize, line_count: usize) {
-        self.go_to_line(line_number.saturating_sub(1), line_count);
+    pub fn move_cursor_to_line_number(&mut self, line_number: usize, line_count: usize) {
+        self.move_cursor_to_line(line_number.saturating_sub(1), line_count);
     }
 
-    pub fn go_to_last_line(&mut self, line_count: usize) {
-        self.go_to_line(last_line(line_count), line_count);
+    pub fn move_cursor_to_last_line(&mut self, line_count: usize) {
+        self.move_cursor_to_line(last_line(line_count), line_count);
     }
 
-    pub fn half_page_up(&mut self) {
+    pub fn scroll_half_page_up(&mut self) {
         self.scroll_up_with_cursor(self.half_page());
     }
 
-    pub fn half_page_down(&mut self, line_count: usize) {
+    pub fn scroll_half_page_down(&mut self, line_count: usize) {
         self.scroll_down_with_cursor(self.half_page(), line_count);
     }
 
-    pub fn page_up(&mut self) {
+    pub fn scroll_page_up(&mut self) {
         self.scroll_up_with_cursor(self.full_page());
     }
 
-    pub fn page_down(&mut self, line_count: usize) {
+    pub fn scroll_page_down(&mut self, line_count: usize) {
         self.scroll_down_with_cursor(self.full_page(), line_count);
     }
 
@@ -84,19 +84,19 @@ impl LogViewState {
         self.width = width;
     }
 
-    fn go_to_line(&mut self, line: usize, line_count: usize) {
-        self.cursor = line.min(last_line(line_count));
+    fn move_cursor_to_line(&mut self, line: usize, line_count: usize) {
+        self.cursor_line = line.min(last_line(line_count));
         self.keep_cursor_visible();
     }
 
     fn scroll_up_with_cursor(&mut self, lines_to_scroll: usize) {
         self.scroll_top_line_up(lines_to_scroll);
-        self.move_up(lines_to_scroll);
+        self.move_cursor_up(lines_to_scroll);
     }
 
     fn scroll_down_with_cursor(&mut self, lines_to_scroll: usize, line_count: usize) {
         self.scroll_top_line_down(lines_to_scroll, line_count);
-        self.move_down(lines_to_scroll, line_count);
+        self.move_cursor_down(lines_to_scroll, line_count);
     }
 
     fn scroll_top_line_up(&mut self, lines_to_scroll: usize) {
@@ -114,10 +114,10 @@ impl LogViewState {
     }
 
     fn keep_cursor_visible(&mut self) {
-        if self.cursor < self.top_line || self.height == 0 {
-            self.top_line = self.cursor;
-        } else if self.cursor >= self.top_line + self.height {
-            self.top_line = self.cursor + 1 - self.height;
+        if self.cursor_line < self.top_line || self.height == 0 {
+            self.top_line = self.cursor_line;
+        } else if self.cursor_line >= self.top_line + self.height {
+            self.top_line = self.cursor_line + 1 - self.height;
         }
     }
 
@@ -151,53 +151,53 @@ mod tests {
     #[test]
     fn given_count_past_the_start_when_moving_up_then_cursor_stops_at_first_line() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(5, 10);
+        log_view_state.move_cursor_down(5, 10);
 
-        log_view_state.move_up(usize::MAX);
+        log_view_state.move_cursor_up(usize::MAX);
 
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
     }
 
     #[test]
     fn given_count_past_the_end_when_moving_down_then_cursor_stops_at_last_line() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.move_down(usize::MAX, 5);
+        log_view_state.move_cursor_down(usize::MAX, 5);
 
-        assert_eq!(log_view_state.cursor(), 4);
+        assert_eq!(log_view_state.cursor_line(), 4);
     }
 
     #[test]
     fn given_empty_file_when_moving_down_then_cursor_stays_on_first_line() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.move_down(1, 0);
+        log_view_state.move_cursor_down(1, 0);
 
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
         assert_eq!(log_view_state.top_line(), 0);
     }
 
     #[test]
     fn given_cursor_on_last_visible_line_when_moving_down_then_view_scrolls_one_line() {
         let mut log_view_state = make_log_view_state(3);
-        log_view_state.move_down(2, 10);
+        log_view_state.move_cursor_down(2, 10);
         assert_eq!(log_view_state.top_line(), 0);
 
-        log_view_state.move_down(1, 10);
+        log_view_state.move_cursor_down(1, 10);
 
-        assert_eq!(log_view_state.cursor(), 3);
+        assert_eq!(log_view_state.cursor_line(), 3);
         assert_eq!(log_view_state.top_line(), 1);
     }
 
     #[test]
     fn given_cursor_moving_above_the_view_when_moving_up_then_view_starts_at_cursor() {
         let mut log_view_state = make_log_view_state(3);
-        log_view_state.move_down(5, 10);
+        log_view_state.move_cursor_down(5, 10);
         assert_eq!(log_view_state.top_line(), 3);
 
-        log_view_state.move_up(3);
+        log_view_state.move_cursor_up(3);
 
-        assert_eq!(log_view_state.cursor(), 2);
+        assert_eq!(log_view_state.cursor_line(), 2);
         assert_eq!(log_view_state.top_line(), 2);
     }
 
@@ -205,7 +205,7 @@ mod tests {
     fn given_zero_height_viewport_when_moving_then_view_starts_at_cursor() {
         let mut log_view_state = make_log_view_state(0);
 
-        log_view_state.move_down(4, 10);
+        log_view_state.move_cursor_down(4, 10);
 
         assert_eq!(log_view_state.top_line(), 4);
     }
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn given_cursor_near_the_bottom_when_viewport_shrinks_then_cursor_stays_visible() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(8, 20);
+        log_view_state.move_cursor_down(8, 20);
 
         log_view_state.set_height(5);
 
@@ -224,9 +224,9 @@ mod tests {
     fn given_line_below_the_view_when_going_to_its_number_then_it_becomes_the_bottom_row() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.go_to_line_number(50, 100);
+        log_view_state.move_cursor_to_line_number(50, 100);
 
-        assert_eq!(log_view_state.cursor(), 49);
+        assert_eq!(log_view_state.cursor_line(), 49);
         assert_eq!(log_view_state.top_line(), 40);
     }
 
@@ -234,28 +234,28 @@ mod tests {
     fn given_line_number_past_the_end_when_going_to_it_then_cursor_stops_at_last_line() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.go_to_line_number(500, 100);
+        log_view_state.move_cursor_to_line_number(500, 100);
 
-        assert_eq!(log_view_state.cursor(), 99);
+        assert_eq!(log_view_state.cursor_line(), 99);
     }
 
     #[test]
     fn given_line_number_zero_when_going_to_it_then_cursor_goes_to_first_line() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(5, 100);
+        log_view_state.move_cursor_down(5, 100);
 
-        log_view_state.go_to_line_number(0, 100);
+        log_view_state.move_cursor_to_line_number(0, 100);
 
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
     }
 
     #[test]
     fn given_long_file_when_going_to_last_line_then_it_is_the_bottom_row() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.go_to_last_line(100);
+        log_view_state.move_cursor_to_last_line(100);
 
-        assert_eq!(log_view_state.cursor(), 99);
+        assert_eq!(log_view_state.cursor_line(), 99);
         assert_eq!(log_view_state.top_line(), 90);
     }
 
@@ -263,58 +263,58 @@ mod tests {
     fn given_empty_file_when_going_to_last_line_then_cursor_stays_on_first_line() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.go_to_last_line(0);
+        log_view_state.move_cursor_to_last_line(0);
 
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
         assert_eq!(log_view_state.top_line(), 0);
     }
 
     #[test]
     fn given_cursor_on_third_row_when_half_page_down_then_view_scrolls_and_cursor_keeps_its_row() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(2, 100);
+        log_view_state.move_cursor_down(2, 100);
 
-        log_view_state.half_page_down(100);
+        log_view_state.scroll_half_page_down(100);
 
         assert_eq!(log_view_state.top_line(), 5);
-        assert_eq!(log_view_state.cursor(), 7);
+        assert_eq!(log_view_state.cursor_line(), 7);
     }
 
     #[test]
     fn given_view_near_the_end_when_half_page_down_then_view_stops_at_last_page_and_cursor_moves_on()
      {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(17, 20);
-        log_view_state.move_up(9);
+        log_view_state.move_cursor_down(17, 20);
+        log_view_state.move_cursor_up(9);
         assert_eq!(log_view_state.top_line(), 8);
 
-        log_view_state.half_page_down(20);
+        log_view_state.scroll_half_page_down(20);
 
         assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor(), 13);
+        assert_eq!(log_view_state.cursor_line(), 13);
     }
 
     #[test]
     fn given_last_page_shown_when_half_page_down_then_cursor_stops_at_last_line() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.go_to_last_line(20);
-        log_view_state.move_up(3);
+        log_view_state.move_cursor_to_last_line(20);
+        log_view_state.move_cursor_up(3);
 
-        log_view_state.half_page_down(20);
+        log_view_state.scroll_half_page_down(20);
 
         assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor(), 19);
+        assert_eq!(log_view_state.cursor_line(), 19);
     }
 
     #[test]
     fn given_view_past_the_last_page_after_resize_when_half_page_down_then_view_does_not_move_back()
     {
         let mut log_view_state = make_log_view_state(5);
-        log_view_state.go_to_last_line(20);
+        log_view_state.move_cursor_to_last_line(20);
         log_view_state.set_height(10);
         assert_eq!(log_view_state.top_line(), 15);
 
-        log_view_state.half_page_down(20);
+        log_view_state.scroll_half_page_down(20);
 
         assert_eq!(log_view_state.top_line(), 15);
     }
@@ -322,58 +322,58 @@ mod tests {
     #[test]
     fn given_scrolled_view_when_half_page_up_then_view_scrolls_and_cursor_keeps_its_row() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.go_to_line_number(33, 100);
+        log_view_state.move_cursor_to_line_number(33, 100);
         assert_eq!(log_view_state.top_line(), 23);
 
-        log_view_state.half_page_up();
+        log_view_state.scroll_half_page_up();
 
         assert_eq!(log_view_state.top_line(), 18);
-        assert_eq!(log_view_state.cursor(), 27);
+        assert_eq!(log_view_state.cursor_line(), 27);
     }
 
     #[test]
     fn given_view_at_the_top_when_half_page_up_then_cursor_still_moves_up() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_down(7, 100);
+        log_view_state.move_cursor_down(7, 100);
 
-        log_view_state.half_page_up();
+        log_view_state.scroll_half_page_up();
 
         assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor(), 2);
+        assert_eq!(log_view_state.cursor_line(), 2);
     }
 
     #[test]
     fn given_view_at_the_top_when_paging_down_and_up_then_view_moves_a_full_page_each_time() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.page_down(100);
+        log_view_state.scroll_page_down(100);
         assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor(), 10);
+        assert_eq!(log_view_state.cursor_line(), 10);
 
-        log_view_state.page_up();
+        log_view_state.scroll_page_up();
         assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
     }
 
     #[test]
     fn given_one_row_viewport_when_half_page_down_then_view_moves_one_line() {
         let mut log_view_state = make_log_view_state(1);
 
-        log_view_state.half_page_down(100);
+        log_view_state.scroll_half_page_down(100);
 
         assert_eq!(log_view_state.top_line(), 1);
-        assert_eq!(log_view_state.cursor(), 1);
+        assert_eq!(log_view_state.cursor_line(), 1);
     }
 
     #[test]
     fn given_empty_file_when_paging_down_then_nothing_moves() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.half_page_down(0);
-        log_view_state.page_down(0);
+        log_view_state.scroll_half_page_down(0);
+        log_view_state.scroll_page_down(0);
 
         assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor(), 0);
+        assert_eq!(log_view_state.cursor_line(), 0);
     }
 
     #[test]
@@ -443,7 +443,7 @@ mod tests {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.scroll_right(7);
 
-        log_view_state.move_down(3, 100);
+        log_view_state.move_cursor_down(3, 100);
 
         assert_eq!(log_view_state.left_column(), 7);
     }

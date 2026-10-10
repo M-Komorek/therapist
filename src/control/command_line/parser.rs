@@ -13,9 +13,9 @@ pub(super) fn parse_command(command_text: &str) -> Result<Option<Action>, Comman
     }
     if is_line_number(command_text) {
         let line_number = saturating_line_number(command_text);
-        return Ok(Some(Action::LogView(LogViewAction::GoToLineNumber(
-            line_number,
-        ))));
+        return Ok(Some(Action::LogView(
+            LogViewAction::MoveCursorToLineNumber(line_number),
+        )));
     }
     Err(CommandError::NotACommand(command_text.to_owned()))
 }
@@ -32,31 +32,34 @@ fn saturating_line_number(digits: &str) -> usize {
 mod tests {
     use super::*;
 
-    fn go_to(line_number: usize) -> Result<Option<Action>, CommandError> {
-        Ok(Some(Action::LogView(LogViewAction::GoToLineNumber(
-            line_number,
-        ))))
+    fn move_cursor_to(line_number: usize) -> Result<Option<Action>, CommandError> {
+        Ok(Some(Action::LogView(
+            LogViewAction::MoveCursorToLineNumber(line_number),
+        )))
     }
 
     #[test]
     fn given_line_number_when_parsing_then_it_goes_to_that_line() {
-        assert_eq!(parse_command("5000"), go_to(5000));
-        assert_eq!(parse_command("1"), go_to(1));
+        assert_eq!(parse_command("5000"), move_cursor_to(5000));
+        assert_eq!(parse_command("1"), move_cursor_to(1));
     }
 
     #[test]
     fn given_zero_when_parsing_then_it_goes_to_line_zero_for_the_tab_to_clamp() {
-        assert_eq!(parse_command("0"), go_to(0));
+        assert_eq!(parse_command("0"), move_cursor_to(0));
     }
 
     #[test]
     fn given_number_too_big_for_usize_when_parsing_then_it_goes_to_the_largest_line_number() {
-        assert_eq!(parse_command("99999999999999999999999"), go_to(usize::MAX));
+        assert_eq!(
+            parse_command("99999999999999999999999"),
+            move_cursor_to(usize::MAX)
+        );
     }
 
     #[test]
     fn given_surrounding_spaces_when_parsing_then_they_are_ignored() {
-        assert_eq!(parse_command("  42 "), go_to(42));
+        assert_eq!(parse_command("  42 "), move_cursor_to(42));
     }
 
     #[test]

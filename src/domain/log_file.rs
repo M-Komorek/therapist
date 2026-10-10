@@ -12,11 +12,11 @@ use std::{
     sync::Arc,
 };
 
-pub use indexer::Indexer;
+pub use indexer::LogFileIndexer;
 use line_collector::LineCollector;
 pub use line_index::LineIndex;
 
-const READ_BUFFER_SIZE: usize = 64 * 1024;
+const READ_LINES_CHUNK_SIZE: usize = 64 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LogFileError {
@@ -51,8 +51,8 @@ impl LogFile {
         })
     }
 
-    pub fn indexer(&self) -> Indexer {
-        Indexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
+    pub fn indexer(&self) -> LogFileIndexer {
+        LogFileIndexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
     }
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {
@@ -85,7 +85,7 @@ impl LogFile {
         read_chunks(
             &self.file,
             checkpoint.byte_offset,
-            READ_BUFFER_SIZE,
+            READ_LINES_CHUNK_SIZE,
             |chunk| line_collector.add_chunk(chunk),
         )
         .map_err(|source| LogFileError::CannotRead {
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn given_line_longer_than_read_buffer_when_reading_then_it_comes_back_whole() {
-        let long_line = "x".repeat(READ_BUFFER_SIZE * 2 + 1);
+        let long_line = "x".repeat(READ_LINES_CHUNK_SIZE * 2 + 1);
         let (_temp_file, log_file) = open_with(format!("short\n{long_line}\nafter").as_bytes());
 
         assert_eq!(
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn given_skipped_line_longer_than_read_buffer_when_reading_then_the_next_line_comes_back_whole()
     {
-        let long_line = "x".repeat(READ_BUFFER_SIZE * 2 + 1);
+        let long_line = "x".repeat(READ_LINES_CHUNK_SIZE * 2 + 1);
         let (_temp_file, log_file) = open_with(format!("{long_line}\nafter\nlast").as_bytes());
 
         assert_eq!(log_file.read_lines(1..3).unwrap(), ["after", "last"]);

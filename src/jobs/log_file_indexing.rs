@@ -1,11 +1,11 @@
 use std::ops::ControlFlow;
 
 use super::{JobContext, JobStatus, JobWork};
-use crate::domain::log_file::Indexer;
+use crate::domain::log_file::LogFileIndexer;
 
-pub fn log_file_indexing_work(indexer: Indexer) -> JobWork {
+pub fn log_file_indexing_work(log_file_indexer: LogFileIndexer) -> JobWork {
     Box::new(move |job_context: &JobContext| {
-        indexer.run(|line_index| {
+        log_file_indexer.run(|line_index| {
             job_context.notify(JobStatus::LogFileIndexing(line_index));
             if job_context.is_cancelled() {
                 ControlFlow::Break(())

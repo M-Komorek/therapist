@@ -17,21 +17,23 @@ const FILTER_VARIABLE: &str = "THERAPIST_LOG";
 pub enum LoggingError {
     #[error("invalid {FILTER_VARIABLE}: {0}")]
     InvalidFilter(#[from] ParseError),
-    #[error("cannot create the log file {}: {source}", path.display())]
+    #[error("cannot create the therapist log {}: {source}", path.display())]
     CannotCreateFile { path: PathBuf, source: io::Error },
     #[error("cannot install the logger: {0}")]
     CannotInstall(#[from] SetGlobalDefaultError),
 }
 
-/// Sends tracing events to `log_path`, filtered by `THERAPIST_LOG` (EnvFilter syntax, `info` by default).
-pub fn init(log_path: &Path) -> Result<(), LoggingError> {
+/// Sends tracing events to `therapist_log_path`, filtered by `THERAPIST_LOG` (EnvFilter syntax,
+/// `info` by default).
+pub fn init(therapist_log_path: &Path) -> Result<(), LoggingError> {
     let filter = parse_filter(&std::env::var(FILTER_VARIABLE).unwrap_or_default())?;
-    let log_file = File::create(log_path).map_err(|source| LoggingError::CannotCreateFile {
-        path: log_path.to_path_buf(),
-        source,
-    })?;
+    let therapist_log_file =
+        File::create(therapist_log_path).map_err(|source| LoggingError::CannotCreateFile {
+            path: therapist_log_path.to_path_buf(),
+            source,
+        })?;
     let subscriber = tracing_subscriber::fmt()
-        .with_writer(Mutex::new(log_file))
+        .with_writer(Mutex::new(therapist_log_file))
         .with_ansi(false)
         .with_env_filter(filter)
         .finish();

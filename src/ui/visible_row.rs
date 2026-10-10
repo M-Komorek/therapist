@@ -9,7 +9,7 @@ const TAB_STOP: usize = 8;
 pub(super) fn visible_spans(text: &str, visible_columns: Range<usize>) -> Vec<Span<'static>> {
     let bytes_before_visible_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
     if is_printable_ascii(bytes_before_visible_end) {
-        return vec![Span::raw(visible_ascii_slice(text, visible_columns))];
+        return vec![Span::raw(visible_ascii_text(text, visible_columns))];
     }
     let mut row = VisibleRow::new(visible_columns);
     let mut plain_text_start = 0;
@@ -30,7 +30,7 @@ fn is_printable_ascii(bytes: &[u8]) -> bool {
 }
 
 /// Printable ASCII takes one column per byte, so the visible part is a plain slice.
-fn visible_ascii_slice(text: &str, visible_columns: Range<usize>) -> String {
+fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
     let visible_start = visible_columns.start.min(text.len());
     let visible_end = visible_columns.end.min(text.len());
     text[visible_start..visible_end].to_owned()
