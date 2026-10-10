@@ -2,7 +2,6 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::action::{Action, AppAction, LogViewAction};
 
-/// What each key sequence does when no count is typed before it.
 const BINDINGS: &[(&[KeyEvent], Action)] = &[
     // App
     #[cfg(debug_assertions)]

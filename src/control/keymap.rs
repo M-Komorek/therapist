@@ -6,9 +6,9 @@ use crate::action::Action;
 
 use bindings::{BindingMatch, apply_count, find_binding, plain};
 
-/// Turns key presses into actions. Between presses it keeps the count typed so far (`5` in
-/// `5j`) and the keys of a started sequence (the first `g` of `gg`). It also remembers the keys
-/// of the current or last command, so they can be shown until the next key.
+/// Turns normal-mode keys into actions. It remembers a count typed so far (`5` in `5j`), which
+/// replaces the number in the bound action, and the start of a key sequence (the first `g` of
+/// `gg`). It also keeps the last command's keys, which the status bar shows.
 #[derive(Default)]
 pub(super) struct Keymap {
     count: Option<usize>,

@@ -15,9 +15,6 @@ pub type JobWork = Box<dyn FnOnce(&JobContext) -> Result<(), JobError> + Send>;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct JobId(pub(super) u64);
 
-/// What a job thread sends to the run loop. Every job ends with exactly one `Done` or `Failed`.
-/// Sending fails only once the run loop has stopped, which means the app is quitting, so jobs
-/// ignore send errors.
 #[derive(Debug)]
 pub struct JobNotification {
     pub job_id: JobId,
@@ -39,7 +36,6 @@ pub enum JobError {
     Panicked,
 }
 
-/// What a job's work receives: it notifies the app through it, and checks it for cancelling.
 pub struct JobContext {
     job_id: JobId,
     job_sender: Sender<JobNotification>,
@@ -52,8 +48,6 @@ pub(super) struct Job {
     job_work: JobWork,
 }
 
-/// Dropping it cancels its job. The job sees that at its next check, so it may still send a few
-/// notifications.
 pub(super) struct JobHandle {
     job_id: JobId,
     cancel_flag: Arc<AtomicBool>,

@@ -32,9 +32,6 @@ pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
     }
 }
 
-/// Handles the next event and every event already waiting behind it, so keys that arrive faster
-/// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws. While a
-/// job runs, waiting for a key times out, so that job notifications are handled in between.
 fn handle_next_batch(
     terminal: &Terminal,
     model: &mut Model,

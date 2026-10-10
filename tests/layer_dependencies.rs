@@ -3,10 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The crate modules each layer may use besides itself: every layer to its left in
-/// `domain, action → control, jobs → app → ui → runtime → main`, and `platform` only in the
-/// runtime.
-/// `main` may use anything, so it isn't listed.
+/// The crate modules each layer may use besides itself. `main` may use anything, so it isn't
+/// listed.
 const MAY_USE: &[(&str, &[&str])] = &[
     ("domain", &[]),
     ("action", &[]),

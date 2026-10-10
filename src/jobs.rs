@@ -7,14 +7,15 @@ use job::{Job, JobHandle};
 pub use job::{JobContext, JobError, JobId, JobNotification, JobStatus, JobWork};
 pub use log_file_indexing::log_file_indexing_work;
 
-/// What a job is for. A slot holds at most one job, so scheduling a new one cancels the old one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobSlot {
     LogFileIndexing,
 }
 
-/// Every scheduled or running job, at most one per slot. It schedules, replaces and cancels jobs,
-/// and drops notifications from jobs that are no longer on the board.
+/// Every scheduled or running job, at most one per `JobSlot`. Scheduling a job cancels the one
+/// already in its slot. A cancelled job stops at its next check, and the board drops whatever it
+/// still sends. Every job ends with one `Done` or `Failed`, which takes it off the board. Only the
+/// runtime spawns jobs, so `update` never starts threads.
 #[derive(Default)]
 pub struct JobBoard {
     job_handles: Vec<(JobSlot, JobHandle)>,
@@ -30,8 +31,6 @@ impl JobBoard {
         self.scheduled_jobs.push(job);
     }
 
-    /// A scheduled job never runs. A running one is asked to stop at its next check, and its late
-    /// notifications are dropped.
     pub fn cancel(&mut self, job_slot: JobSlot) {
         let Some(job_handle) = self.take_job_off_board(job_slot) else {
             return;
@@ -45,15 +44,12 @@ impl JobBoard {
         self.job_handles.is_empty()
     }
 
-    /// Only the runtime calls this, so `update` never starts threads.
     pub fn spawn_scheduled_jobs(&mut self, job_sender: &Sender<JobNotification>) {
         for job in self.scheduled_jobs.drain(..) {
             job.spawn(job_sender.clone());
         }
     }
 
-    /// The slot and status the app acts on, or `None` when the job is no longer on the board. A
-    /// final status takes the job off the board.
     pub fn resolve(&mut self, job_notification: JobNotification) -> Option<(JobSlot, JobStatus)> {
         let JobNotification { job_id, job_status } = job_notification;
         let job_slot = self.slot_of(job_id)?;

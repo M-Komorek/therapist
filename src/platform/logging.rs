@@ -23,8 +23,6 @@ pub enum LoggingError {
     CannotInstall(#[from] SetGlobalDefaultError),
 }
 
-/// Sends tracing events to `therapist_log_path`, filtered by `THERAPIST_LOG` (EnvFilter syntax,
-/// `info` by default).
 pub fn init(therapist_log_path: &Path) -> Result<(), LoggingError> {
     let filter = parse_filter(&std::env::var(FILTER_VARIABLE).unwrap_or_default())?;
     let therapist_log_file =

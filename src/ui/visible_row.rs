@@ -4,8 +4,6 @@ use ratatui::{buffer::CellWidth, style::Style, text::Span};
 
 const TAB_STOP: usize = 8;
 
-/// Turns a log line into the spans shown inside the `visible_columns`. Tabs expand to spaces up to
-/// the next stop, and ASCII control characters show dimmed in caret notation.
 pub(super) fn visible_spans(text: &str, visible_columns: Range<usize>) -> Vec<Span<'static>> {
     let bytes_before_visible_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
     if is_printable_ascii(bytes_before_visible_end) {
@@ -29,15 +27,16 @@ fn is_printable_ascii(bytes: &[u8]) -> bool {
     bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
 }
 
-/// Printable ASCII takes one column per byte, so the visible part is a plain slice.
 fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
     let visible_start = visible_columns.start.min(text.len());
     let visible_end = visible_columns.end.min(text.len());
     text[visible_start..visible_end].to_owned()
 }
 
-/// A display row cut to the visible columns, built from the left one symbol at a time. A symbol cut
-/// in half by the left edge becomes spaces, so the rest of the row keeps its columns.
+/// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ASCII
+/// control characters show dimmed in caret notation (`^[`), and other control characters are
+/// dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
+/// columns.
 struct VisibleRow {
     visible_columns: Range<usize>,
     current_column: usize,
@@ -72,7 +71,6 @@ impl VisibleRow {
         } else if control.is_ascii_control() {
             self.push_symbol(&caret_notation(control), 2, Style::new().dim());
         }
-        // Other control characters (C1) are dropped, as ratatui would draw nothing for them.
     }
 
     fn push_symbol(&mut self, symbol: &str, symbol_width: usize, style: Style) {

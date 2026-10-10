@@ -26,8 +26,8 @@ pub enum LogFileError {
     CannotRead { path: PathBuf, source: io::Error },
 }
 
-/// A log file read with `read_at` instead of mmap, so a file truncated by another process gives
-/// fewer lines instead of a SIGBUS crash.
+/// The browsed log file. It is read with `read_at`, so if another process truncates the file,
+/// reading returns fewer lines instead of crashing.
 pub struct LogFile {
     path: PathBuf,
     file: Arc<File>,

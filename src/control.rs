@@ -16,7 +16,6 @@ pub enum Mode {
     CommandLine(CommandLine),
 }
 
-/// Sends each key press to the keymap in normal mode, or to the command line while it is open.
 #[derive(Default)]
 pub struct InputController {
     keymap: Keymap,

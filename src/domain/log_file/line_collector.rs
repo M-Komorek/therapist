@@ -1,7 +1,5 @@
 use std::ops::ControlFlow;
 
-/// Splits consecutive chunks into lines, skipping the first `lines_to_skip` and keeping the next
-/// `lines_to_keep`.
 pub(super) struct LineCollector {
     lines_to_skip: usize,
     lines_to_keep: usize,

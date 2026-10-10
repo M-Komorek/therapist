@@ -1,9 +1,9 @@
 const LINES_PER_CHECKPOINT: usize = 1000;
 const BYTES_PER_CHECKPOINT: u64 = 64 * 1024;
 
-/// Checkpoints (line starts) built from consecutive chunks of a file. A new checkpoint is the
-/// first line start `lines_per_checkpoint` lines or `bytes_per_checkpoint` bytes past the previous
-/// one, whichever comes first.
+/// Remembers where some lines of the file start, so that any line can be found without reading the
+/// file from the beginning. It remembers one line start (a checkpoint) every 1000 lines, or sooner
+/// when the lines are long. Reading a line starts at the checkpoint before it.
 #[derive(Debug, PartialEq, Clone)]
 pub struct LineIndex {
     lines_per_checkpoint: usize,

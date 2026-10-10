@@ -28,8 +28,8 @@ pub enum TerminalEvent {
     Resize(Size),
 }
 
-/// The full-screen terminal. Creating it enters raw mode and the alternate screen. Dropping it
-/// restores the terminal.
+/// The full-screen terminal. Creating it switches to raw mode and the alternate screen, and
+/// dropping it switches back.
 pub struct Terminal {
     screen: ratatui::Terminal<CrosstermBackend<BufWriter<Stdout>>>,
 }
@@ -46,7 +46,6 @@ impl Terminal {
         Ok(terminal)
     }
 
-    /// Draws a frame as one synchronized update, so the terminal never shows it half-drawn.
     pub fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()> {
         let draw_start = Instant::now();
         queue!(self.screen.backend_mut(), BeginSynchronizedUpdate)?;
@@ -90,7 +89,6 @@ impl Terminal {
         event::poll(Duration::ZERO)
     }
 
-    /// Suspends the app like Ctrl-z in a shell, and returns after `fg`.
     pub fn suspend(&mut self) -> io::Result<()> {
         leave_tui_mode()?;
         kill_current_process_group(Signal::TSTP)?;
@@ -105,8 +103,6 @@ impl Drop for Terminal {
     }
 }
 
-/// Restores the terminal when the main thread panics. A panic on another thread is only logged,
-/// because the app keeps running and the default hook would write over the screen.
 pub fn install_panic_hook() {
     let main_thread = thread::current().id();
     let previous_hook = panic::take_hook();

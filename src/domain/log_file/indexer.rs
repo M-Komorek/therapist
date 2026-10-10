@@ -4,9 +4,9 @@ use super::{LineIndex, LogFileError, read_chunks};
 
 const INDEX_CHUNK_SIZE: usize = 1024 * 1024;
 
-/// Builds a log file's line index on another thread. It reports a copy of the index so far after
-/// the first chunk and each time the indexed percentage grows, then reports the finished index.
-/// It stops early, without the final report, when `on_progress` returns `Break`.
+/// Builds the file's `LineIndex`. Each time another percent of the file is indexed, it reports a
+/// copy of the index so far, and at the end the finished index. If the report callback returns
+/// `Break`, it stops without the finished index.
 pub struct LogFileIndexer {
     path: PathBuf,
     file: Arc<File>,
