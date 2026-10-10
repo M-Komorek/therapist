@@ -74,18 +74,18 @@ mod tests {
 
     fn make_model() -> Model {
         let mut model =
-            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(30, 3));
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(50, 3));
         let job_notifications = model.job_board.run_scheduled_jobs();
         model.handle_job_notifications(job_notifications);
         model
     }
 
     fn render_model(model: &Model) -> Vec<String> {
-        rendered_rows(&render_to_buffer(30, 3, |frame| render(frame, model)))
+        rendered_rows(&render_to_buffer(50, 3, |frame| render(frame, model)))
     }
 
     fn cursor_position_after_render(model: &Model) -> Position {
-        let mut terminal = Terminal::new(TestBackend::new(30, 3)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(50, 3)).unwrap();
         terminal.draw(|frame| render(frame, model)).unwrap();
         terminal.get_cursor_position().unwrap()
     }
@@ -115,11 +115,17 @@ mod tests {
         let mut model = make_model();
         model.type_keys(":abc");
         model.press(KeyCode::Enter);
-        assert_eq!(render_model(&model)[2], "Not a command: abc   1/2 (50%)");
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log    Not a command: abc │ 1/2 (50%) │ 13 B"
+        );
 
         model.press(KeyCode::Esc);
 
-        assert_eq!(render_model(&model)[2], "app.log              1/2 (50%)");
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log                         1/2 (50%) │ 13 B"
+        );
     }
 
     #[test]
@@ -131,7 +137,7 @@ mod tests {
             [
                 " 1 │ first",
                 " 2 │ second",
-                "app.log              1/2 (50%)"
+                " app.log                         1/2 (50%) │ 13 B"
             ]
         );
     }
@@ -142,6 +148,9 @@ mod tests {
 
         model.type_keys("5");
 
-        assert_eq!(render_model(&model)[2], "app.log          5 | 1/2 (50%)");
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log                     5 │ 1/2 (50%) │ 13 B"
+        );
     }
 }
