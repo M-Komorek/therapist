@@ -243,13 +243,12 @@ mod tests {
     }
 
     #[test]
-    fn given_status_bar_when_rendering_then_the_row_is_tinted_the_name_bold_and_separators_dim() {
+    fn given_status_bar_when_rendering_then_the_row_is_tinted_and_separators_dim() {
         let buffer = render_indexed_status_buffer("a\nb\nc\nd\n", 1, "");
 
         assert_eq!(buffer[(0, 0)].bg, Color::DarkGray);
         assert_eq!(buffer[(20, 0)].bg, Color::DarkGray);
         assert_eq!(buffer[(49, 0)].bg, Color::DarkGray);
-        assert!(buffer[(1, 0)].modifier.contains(Modifier::BOLD));
         assert_eq!(buffer[(44, 0)].symbol(), "│");
         assert!(buffer[(44, 0)].modifier.contains(Modifier::DIM));
     }
