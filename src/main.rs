@@ -2,6 +2,7 @@ mod action;
 mod app;
 mod control;
 mod domain;
+mod jobs;
 mod platform;
 mod runtime;
 mod ui;

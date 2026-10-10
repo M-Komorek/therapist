@@ -30,6 +30,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
             frame,
             screen_areas.bottom_row,
             &model.log_file,
+            model.log_file_indexing_status,
             &model.log_view_state,
             &model.control.last_keys_text(),
             model.status_message.as_ref(),
@@ -72,7 +73,11 @@ mod tests {
     }
 
     fn make_model() -> Model {
-        Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(30, 3))
+        let mut model =
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(30, 3));
+        let job_notifications = model.job_board.run_scheduled_jobs();
+        model.handle_job_notifications(job_notifications);
+        model
     }
 
     fn render_model(model: &Model) -> Vec<String> {

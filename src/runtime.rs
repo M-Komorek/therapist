@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
-    app::{self, Effect, JobMessage, Model},
-    domain::log_file::Indexing,
+    app::{self, Effect, Model},
+    jobs::JobNotification,
     platform::terminal::{Event, Terminal},
     ui,
 };
@@ -15,11 +15,11 @@ const JOB_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 
 pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
     let (job_sender, job_receiver) = mpsc::channel();
-    app::spawn_indexer(job_sender, model.log_file.indexer());
     app::resize_log_view(&mut model, terminal.size()?);
     draw(terminal, &model)?;
 
     loop {
+        model.job_board.spawn_scheduled_jobs(&job_sender);
         match handle_waiting_events(terminal, &mut model, &job_receiver)? {
             Effect::Nothing => {}
             Effect::Redraw => draw(terminal, &model)?,
@@ -34,11 +34,11 @@ pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
 
 /// Handles the next event and every event already waiting behind it, so keys that arrive faster
 /// than the screen is drawn (a held-down key) cost one draw instead of a backlog of draws. While a
-/// job runs, waiting for a key times out, so that job messages are handled in between.
+/// job runs, waiting for a key times out, so that job notifications are handled in between.
 fn handle_waiting_events(
     terminal: &Terminal,
     model: &mut Model,
-    job_receiver: &Receiver<JobMessage>,
+    job_receiver: &Receiver<JobNotification>,
 ) -> io::Result<Effect> {
     let input_timeout = has_running_jobs(model).then_some(JOB_POLL_TIMEOUT);
     let mut batch_effect = Effect::Nothing;
@@ -52,8 +52,8 @@ fn handle_waiting_events(
             Effect::Redraw => batch_effect = Effect::Redraw,
             Effect::Suspend | Effect::Quit => return Ok(effect),
         }
-        for job_message in job_receiver.try_iter() {
-            if app::handle_job_message(model, job_message) == Effect::Redraw {
+        for job_notification in job_receiver.try_iter() {
+            if app::handle_job_notification(model, job_notification) == Effect::Redraw {
                 batch_effect = Effect::Redraw;
             }
         }
@@ -71,7 +71,7 @@ fn handle_event(model: &mut Model, event: Event) -> Effect {
 }
 
 fn has_running_jobs(model: &Model) -> bool {
-    model.log_file.indexing() == Indexing::Running
+    !model.job_board.is_empty()
 }
 
 fn draw(terminal: &mut Terminal, model: &Model) -> io::Result<()> {

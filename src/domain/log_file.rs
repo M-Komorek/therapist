@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-pub use indexer::{Indexer, Indexing};
+pub use indexer::Indexer;
 use line_collector::LineCollector;
 pub use line_index::LineIndex;
 
@@ -33,7 +33,6 @@ pub struct LogFile {
     file: Arc<File>,
     file_size: u64,
     line_index: LineIndex,
-    indexing: Indexing,
 }
 
 impl LogFile {
@@ -49,7 +48,6 @@ impl LogFile {
             file: Arc::new(file),
             file_size,
             line_index: LineIndex::default(),
-            indexing: Indexing::Running,
         })
     }
 
@@ -61,16 +59,8 @@ impl LogFile {
         self.line_index = line_index;
     }
 
-    pub fn indexing(&self) -> Indexing {
-        self.indexing
-    }
-
     pub fn percent_indexed(&self) -> u64 {
         self.line_index.percent_indexed(self.file_size)
-    }
-
-    pub fn set_indexing(&mut self, indexing: Indexing) {
-        self.indexing = indexing;
     }
 
     pub fn file_name(&self) -> Cow<'_, str> {
@@ -139,9 +129,10 @@ impl LogFile {
     }
 
     pub fn index_synchronously(&mut self) -> Result<(), LogFileError> {
-        self.indexer()
-            .run(|line_index| self.line_index = line_index)?;
-        self.indexing = Indexing::Done;
+        self.indexer().run(|line_index| {
+            self.line_index = line_index;
+            ControlFlow::Continue(())
+        })?;
         Ok(())
     }
 }
@@ -168,12 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn given_opened_file_when_not_indexed_yet_then_it_has_no_lines_and_indexing_runs() {
+    fn given_opened_file_when_not_indexed_yet_then_it_has_no_lines() {
         let (_temp_file, log_file) = open_unindexed_with(b"a\nb\n");
 
         assert_eq!(log_file.line_count(), 0);
         assert!(log_file.read_lines(0..2).unwrap().is_empty());
-        assert_eq!(log_file.indexing(), Indexing::Running);
     }
 
     #[test]

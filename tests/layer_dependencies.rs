@@ -4,18 +4,22 @@ use std::{
 };
 
 /// The crate modules each layer may use besides itself: every layer to its left in
-/// `domain, action → control → app → ui → runtime → main`, and `platform` only in the runtime.
+/// `domain, action → control, jobs → app → ui → runtime → main`, and `platform` only in the
+/// runtime.
 /// `main` may use anything, so it isn't listed.
 const MAY_USE: &[(&str, &[&str])] = &[
     ("domain", &[]),
     ("action", &[]),
     ("platform", &[]),
     ("control", &["domain", "action"]),
-    ("app", &["domain", "action", "control"]),
-    ("ui", &["domain", "action", "control", "app"]),
+    ("jobs", &["domain", "action"]),
+    ("app", &["domain", "action", "control", "jobs"]),
+    ("ui", &["domain", "action", "control", "jobs", "app"]),
     (
         "runtime",
-        &["domain", "action", "control", "app", "ui", "platform"],
+        &[
+            "domain", "action", "control", "jobs", "app", "ui", "platform",
+        ],
     ),
 ];
 

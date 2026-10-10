@@ -1,24 +1,25 @@
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use crate::{
-    app::StatusMessage,
-    domain::{
-        log_file::{Indexing, LogFile},
-        log_view_state::LogViewState,
-    },
+    app::{LogFileIndexingStatus, StatusMessage},
+    domain::{log_file::LogFile, log_view_state::LogViewState},
 };
 
 pub fn render(
     frame: &mut Frame,
     area: Rect,
     log_file: &LogFile,
+    log_file_indexing_status: LogFileIndexingStatus,
     log_view_state: &LogViewState,
     last_keys: &str,
     status_message: Option<&StatusMessage>,
 ) {
-    let indexing = log_file.indexing();
-    let position = position_text(log_view_state.cursor(), log_file.line_count(), indexing);
-    let indexing_progress = indexing_text(indexing, log_file.percent_indexed());
+    let position = position_text(
+        log_view_state.cursor(),
+        log_file.line_count(),
+        log_file_indexing_status,
+    );
+    let indexing_progress = indexing_text(log_file_indexing_status, log_file.percent_indexed());
     let right_text = right_text(last_keys, position, indexing_progress);
     frame.render_widget(left_line(log_file, status_message), area);
     frame.render_widget(Line::raw(right_text).right_aligned(), area);
@@ -41,21 +42,30 @@ fn right_text(last_keys: &str, position: String, indexing_progress: Option<Strin
     segments.join(" | ")
 }
 
-fn position_text(cursor: usize, line_count: usize, indexing: Indexing) -> String {
+fn position_text(
+    cursor: usize,
+    line_count: usize,
+    log_file_indexing_status: LogFileIndexingStatus,
+) -> String {
     let line_number = if line_count == 0 { 0 } else { cursor + 1 };
     let position = format!("{line_number}/{line_count}");
-    match indexing {
-        Indexing::Running | Indexing::Failed => format!("{position}+"),
-        Indexing::Done if line_count == 0 => position,
-        Indexing::Done => format!("{position} ({}%)", line_number * 100 / line_count),
+    match log_file_indexing_status {
+        LogFileIndexingStatus::Running | LogFileIndexingStatus::Failed => format!("{position}+"),
+        LogFileIndexingStatus::Done if line_count == 0 => position,
+        LogFileIndexingStatus::Done => {
+            format!("{position} ({}%)", line_number * 100 / line_count)
+        }
     }
 }
 
-fn indexing_text(indexing: Indexing, percent_indexed: u64) -> Option<String> {
-    match indexing {
-        Indexing::Running => Some(format!("indexing {percent_indexed}%")),
-        Indexing::Failed => Some("indexing failed".to_owned()),
-        Indexing::Done => None,
+fn indexing_text(
+    log_file_indexing_status: LogFileIndexingStatus,
+    percent_indexed: u64,
+) -> Option<String> {
+    match log_file_indexing_status {
+        LogFileIndexingStatus::Running => Some(format!("indexing {percent_indexed}%")),
+        LogFileIndexingStatus::Failed => Some("indexing failed".to_owned()),
+        LogFileIndexingStatus::Done => None,
     }
 }
 
@@ -72,6 +82,7 @@ mod tests {
         log_view_state.move_down(cursor, log_file.line_count());
         rendered_rows(&render_status_buffer(
             &log_file,
+            LogFileIndexingStatus::Done,
             &log_view_state,
             last_keys,
             None,
@@ -79,9 +90,13 @@ mod tests {
         .remove(0)
     }
 
-    fn render_log_file_status(log_file: &LogFile) -> String {
+    fn render_status_with_indexing(
+        log_file: &LogFile,
+        log_file_indexing_status: LogFileIndexingStatus,
+    ) -> String {
         rendered_rows(&render_status_buffer(
             log_file,
+            log_file_indexing_status,
             &LogViewState::default(),
             "",
             None,
@@ -91,6 +106,7 @@ mod tests {
 
     fn render_status_buffer(
         log_file: &LogFile,
+        log_file_indexing_status: LogFileIndexingStatus,
         log_view_state: &LogViewState,
         last_keys: &str,
         status_message: Option<&StatusMessage>,
@@ -100,6 +116,7 @@ mod tests {
                 frame,
                 frame.area(),
                 log_file,
+                log_file_indexing_status,
                 log_view_state,
                 last_keys,
                 status_message,
@@ -114,6 +131,7 @@ mod tests {
 
         let buffer = render_status_buffer(
             &log_file,
+            LogFileIndexingStatus::Done,
             &LogViewState::default(),
             "",
             Some(&error_message),
@@ -149,7 +167,7 @@ mod tests {
     #[test]
     fn given_large_file_when_formatting_position_then_percent_is_rounded_down() {
         assert_eq!(
-            position_text(1203, 88213, Indexing::Done),
+            position_text(1203, 88213, LogFileIndexingStatus::Done),
             "1204/88213 (1%)"
         );
     }
@@ -159,37 +177,39 @@ mod tests {
         let log_file = LogFile::unindexed_from_text("a\nb\n");
 
         assert_eq!(
-            render_log_file_status(&log_file),
+            render_status_with_indexing(&log_file, LogFileIndexingStatus::Running),
             "app.log     0/0+ | indexing 0%"
         );
     }
 
     #[test]
     fn given_indexing_failed_when_rendering_then_total_has_a_plus_and_failure_is_shown() {
-        let mut log_file = LogFile::from_text("a\nb\nc\nd\n");
-        log_file.set_indexing(Indexing::Failed);
+        let log_file = LogFile::from_text("a\nb\nc\nd\n");
 
         assert_eq!(
-            render_log_file_status(&log_file),
+            render_status_with_indexing(&log_file, LogFileIndexingStatus::Failed),
             "app.log 1/4+ | indexing failed"
         );
     }
 
     #[test]
     fn given_file_still_indexing_when_formatting_position_then_there_is_no_percent() {
-        assert_eq!(position_text(1203, 88213, Indexing::Running), "1204/88213+");
+        assert_eq!(
+            position_text(1203, 88213, LogFileIndexingStatus::Running),
+            "1204/88213+"
+        );
     }
 
     #[test]
     fn given_indexing_running_when_formatting_progress_then_percent_is_shown() {
         assert_eq!(
-            indexing_text(Indexing::Running, 45),
+            indexing_text(LogFileIndexingStatus::Running, 45),
             Some("indexing 45%".to_owned())
         );
     }
 
     #[test]
     fn given_indexing_done_when_formatting_progress_then_nothing_is_shown() {
-        assert_eq!(indexing_text(Indexing::Done, 100), None);
+        assert_eq!(indexing_text(LogFileIndexingStatus::Done, 100), None);
     }
 }

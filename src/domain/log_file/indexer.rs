@@ -4,15 +4,9 @@ use super::{LineIndex, LogFileError, read_chunks};
 
 const INDEX_CHUNK_SIZE: usize = 1024 * 1024;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Indexing {
-    Running,
-    Done,
-    Failed,
-}
-
 /// Builds a log file's line index on another thread. It reports a copy of the index so far after
 /// the first chunk and each time the indexed percentage grows, then reports the finished index.
+/// It stops early, without the final report, when `on_progress` returns `Break`.
 pub struct Indexer {
     path: PathBuf,
     file: Arc<File>,
@@ -28,31 +22,38 @@ impl Indexer {
         }
     }
 
-    pub fn run(&self, on_progress: impl FnMut(LineIndex)) -> Result<(), LogFileError> {
+    pub fn run(
+        &self,
+        on_progress: impl FnMut(LineIndex) -> ControlFlow<()>,
+    ) -> Result<(), LogFileError> {
         self.run_in_chunks(INDEX_CHUNK_SIZE, on_progress)
     }
 
     fn run_in_chunks(
         &self,
         chunk_size: usize,
-        mut on_progress: impl FnMut(LineIndex),
+        mut on_progress: impl FnMut(LineIndex) -> ControlFlow<()>,
     ) -> Result<(), LogFileError> {
         let mut line_index = LineIndex::default();
         let mut reported_percent = None;
+        let mut progress_flow = ControlFlow::Continue(());
+
         read_chunks(&self.file, 0, chunk_size, |chunk| {
             line_index.add_chunk(chunk);
             let percent = line_index.percent_indexed(self.file_size);
             if reported_percent != Some(percent) {
                 reported_percent = Some(percent);
-                on_progress(line_index.clone());
+                progress_flow = on_progress(line_index.clone());
             }
-            ControlFlow::Continue(())
+            progress_flow
         })
         .map_err(|source| LogFileError::CannotRead {
             path: self.path.clone(),
             source,
         })?;
-        on_progress(line_index);
+        if progress_flow.is_continue() {
+            let _ = on_progress(line_index);
+        }
         Ok(())
     }
 }
@@ -71,7 +72,10 @@ mod tests {
         let mut reported_indexes = Vec::new();
         log_file
             .indexer()
-            .run_in_chunks(chunk_size, |line_index| reported_indexes.push(line_index))
+            .run_in_chunks(chunk_size, |line_index| {
+                reported_indexes.push(line_index);
+                ControlFlow::Continue(())
+            })
             .unwrap();
         reported_indexes
     }
@@ -129,6 +133,22 @@ mod tests {
     }
 
     #[test]
+    fn given_progress_callback_that_breaks_when_indexing_then_it_stops_without_the_final_report() {
+        let (_temp_file, log_file) = open_unindexed_with("x\n".repeat(500).as_bytes());
+        let mut report_count = 0;
+
+        log_file
+            .indexer()
+            .run_in_chunks(1, |_line_index| {
+                report_count += 1;
+                ControlFlow::Break(())
+            })
+            .unwrap();
+
+        assert_eq!(report_count, 1);
+    }
+
+    #[test]
     fn given_empty_file_when_indexed_then_only_the_final_index_is_reported() {
         let (_temp_file, log_file) = open_unindexed_with(b"");
 
@@ -147,7 +167,7 @@ mod tests {
             file_size: 0,
         };
 
-        let result = indexer.run(|_line_index| {});
+        let result = indexer.run(|_line_index| ControlFlow::Continue(()));
 
         assert!(matches!(result, Err(LogFileError::CannotRead { .. })));
     }

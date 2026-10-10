@@ -3,10 +3,10 @@ use ratatui::{
     layout::{Rect, Size},
 };
 
-use super::{Model, ScreenAreas, StatusMessage, jobs::JobMessage};
+use super::{LogFileIndexingStatus, Model, ScreenAreas, StatusMessage};
 use crate::{
     action::{Action, AppAction, LogViewAction},
-    domain::log_file::Indexing,
+    jobs::{JobError, JobNotification, JobSlot, JobStatus},
 };
 
 #[derive(Debug, PartialEq)]
@@ -17,18 +17,15 @@ pub enum Effect {
     Quit,
 }
 
-pub fn handle_job_message(model: &mut Model, job_message: JobMessage) -> Effect {
-    let log_file = &mut model.log_file;
-    match job_message {
-        JobMessage::IndexProgress(line_index) => log_file.set_line_index(line_index),
-        JobMessage::Done => {
-            tracing::info!(line_count = log_file.line_count(), "file indexed");
-            log_file.set_indexing(Indexing::Done);
-        }
-        JobMessage::Failed(error) => {
-            tracing::error!(%error, "indexing failed");
-            log_file.set_indexing(Indexing::Failed);
-        }
+pub fn handle_job_notification(model: &mut Model, job_notification: JobNotification) -> Effect {
+    let Some((job_slot, job_status)) = model.job_board.resolve(job_notification) else {
+        return Effect::Nothing;
+    };
+
+    match job_status {
+        JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
+        JobStatus::Done => mark_job_done(model, job_slot),
+        JobStatus::Failed(job_error) => mark_job_failed(model, job_slot, job_error),
     }
     Effect::Redraw
 }
@@ -47,6 +44,24 @@ pub fn resize_log_view(model: &mut Model, screen_size: Size) -> Effect {
     log_view_state.set_height(usize::from(log_view_area.height));
     log_view_state.set_width(usize::from(log_view_area.width));
     Effect::Redraw
+}
+
+fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
+    match job_slot {
+        JobSlot::LogFileIndexing => {
+            tracing::info!(line_count = model.log_file.line_count(), "file indexed");
+            model.log_file_indexing_status = LogFileIndexingStatus::Done;
+        }
+    }
+}
+
+fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
+    match job_slot {
+        JobSlot::LogFileIndexing => {
+            tracing::error!(error = %job_error, "indexing failed");
+            model.log_file_indexing_status = LogFileIndexingStatus::Failed;
+        }
+    }
 }
 
 fn dispatch(model: &mut Model, action: Action) -> Effect {
@@ -113,14 +128,20 @@ mod test_helpers {
         layout::Size,
     };
 
-    use super::{Effect, handle_key, resize_log_view};
-    use crate::{app::Model, domain::log_file::LogFile};
+    use super::{Effect, handle_job_notification, handle_key, resize_log_view};
+    use crate::{app::Model, domain::log_file::LogFile, jobs::JobNotification};
 
     impl Model {
         pub fn with_screen_size(log_file: LogFile, screen_size: Size) -> Self {
             let mut model = Self::new(log_file);
             resize_log_view(&mut model, screen_size);
             model
+        }
+
+        pub fn handle_job_notifications(&mut self, job_notifications: Vec<JobNotification>) {
+            for job_notification in job_notifications {
+                handle_job_notification(self, job_notification);
+            }
         }
 
         pub fn type_keys(&mut self, typed: &str) -> Effect {
@@ -155,36 +176,23 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     use super::*;
-    use crate::{
-        app::jobs::JobError,
-        control::Mode,
-        domain::log_file::{LineIndex, LogFile},
-    };
+    use crate::{control::Mode, domain::log_file::LogFile};
 
     fn make_model() -> Model {
-        Model::with_screen_size(
+        let mut model = Model::with_screen_size(
             LogFile::from_text("first\nsecond\nthird\n"),
             Size::new(20, 4),
-        )
+        );
+        let job_notifications = model.job_board.run_scheduled_jobs();
+        model.handle_job_notifications(job_notifications);
+        model
     }
 
-    fn make_indexing_model(text: &str) -> (Model, Vec<LineIndex>) {
-        let log_file = LogFile::unindexed_from_text(text);
-        let mut reported_indexes = Vec::new();
-        log_file
-            .indexer()
-            .run(|line_index| reported_indexes.push(line_index))
-            .unwrap();
-        (
-            Model::with_screen_size(log_file, Size::new(20, 4)),
-            reported_indexes,
-        )
-    }
-
-    fn deliver(model: &mut Model, reported_indexes: Vec<LineIndex>) {
-        for line_index in reported_indexes {
-            handle_job_message(model, JobMessage::IndexProgress(line_index));
-        }
+    fn make_indexing_model(text: &str) -> (Model, Vec<JobNotification>) {
+        let mut model =
+            Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(20, 4));
+        let job_notifications = model.job_board.run_scheduled_jobs();
+        (model, job_notifications)
     }
 
     fn command_line_text(model: &Model) -> Option<&str> {
@@ -454,27 +462,29 @@ mod tests {
 
     #[test]
     fn given_unindexed_file_when_app_starts_then_indexing_runs() {
-        let (model, _reported_indexes) = make_indexing_model("a\nb\n");
+        let model = Model::new(LogFile::unindexed_from_text("a\nb\n"));
 
-        assert_eq!(model.log_file.indexing(), Indexing::Running);
+        assert_eq!(
+            model.log_file_indexing_status,
+            LogFileIndexingStatus::Running
+        );
+        assert!(!model.job_board.is_empty());
     }
 
     #[test]
     fn given_indexing_app_when_progress_arrives_then_the_screen_is_redrawn() {
-        let (mut model, mut reported_indexes) = make_indexing_model("a\nb\n");
+        let (mut model, mut job_notifications) = make_indexing_model("a\nb\n");
 
-        let effect = handle_job_message(
-            &mut model,
-            JobMessage::IndexProgress(reported_indexes.remove(0)),
-        );
+        let effect = handle_job_notification(&mut model, job_notifications.remove(0));
 
         assert_eq!(effect, Effect::Redraw);
     }
 
     #[test]
     fn given_progress_delivered_when_capital_g_is_pressed_then_cursor_goes_to_last_indexed_line() {
-        let (mut model, reported_indexes) = make_indexing_model("first\nsecond\nthird\n");
-        deliver(&mut model, reported_indexes);
+        let (mut model, mut job_notifications) = make_indexing_model("first\nsecond\nthird\n");
+        let _done_notification = job_notifications.pop();
+        model.handle_job_notifications(job_notifications);
 
         model.type_keys("G");
 
@@ -482,24 +492,53 @@ mod tests {
     }
 
     #[test]
-    fn given_indexing_app_when_done_arrives_then_indexing_is_done() {
-        let (mut model, reported_indexes) = make_indexing_model("a\nb\n");
-        deliver(&mut model, reported_indexes);
+    fn given_indexing_app_when_done_arrives_then_indexing_is_done_and_no_job_is_left() {
+        let (mut model, job_notifications) = make_indexing_model("a\nb\n");
 
-        handle_job_message(&mut model, JobMessage::Done);
+        model.handle_job_notifications(job_notifications);
 
-        assert_eq!(model.log_file.indexing(), Indexing::Done);
+        assert_eq!(model.log_file_indexing_status, LogFileIndexingStatus::Done);
+        assert!(model.job_board.is_empty());
     }
 
     #[test]
     fn given_indexing_app_when_indexing_fails_then_it_is_marked_failed_and_indexed_lines_stay() {
-        let (mut model, reported_indexes) = make_indexing_model("a\nb\n");
-        deliver(&mut model, reported_indexes);
+        let (mut model, mut job_notifications) = make_indexing_model("a\nb\n");
+        let done_notification = job_notifications.pop().unwrap();
+        model.handle_job_notifications(job_notifications);
 
-        handle_job_message(&mut model, JobMessage::Failed(JobError::Panicked));
+        handle_job_notification(
+            &mut model,
+            JobNotification {
+                job_id: done_notification.job_id,
+                job_status: JobStatus::Failed(JobError::Panicked),
+            },
+        );
 
-        assert_eq!(model.log_file.indexing(), Indexing::Failed);
+        assert_eq!(
+            model.log_file_indexing_status,
+            LogFileIndexingStatus::Failed
+        );
         assert_eq!(model.log_file.line_count(), 2);
+    }
+
+    #[test]
+    fn given_finished_indexing_when_a_late_notification_arrives_then_it_is_ignored_without_a_redraw()
+     {
+        let (mut model, job_notifications) = make_indexing_model("a\nb\n");
+        let job_id = job_notifications[0].job_id;
+        model.handle_job_notifications(job_notifications);
+
+        let effect = handle_job_notification(
+            &mut model,
+            JobNotification {
+                job_id,
+                job_status: JobStatus::Failed(JobError::Panicked),
+            },
+        );
+
+        assert_eq!(effect, Effect::Nothing);
+        assert_eq!(model.log_file_indexing_status, LogFileIndexingStatus::Done);
     }
 
     #[cfg(debug_assertions)]
