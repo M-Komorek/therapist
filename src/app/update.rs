@@ -49,7 +49,11 @@ pub fn resize_log_view(model: &mut Model, screen_size: Size) -> Effect {
 fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
     match job_slot {
         JobSlot::LogFileIndexing => {
-            tracing::info!(line_count = model.log_file.line_count(), "file indexed");
+            tracing::info!(
+                line_count = model.log_file.line_count(),
+                file_size = model.log_file.file_size(),
+                "file indexed"
+            );
             model.log_file_indexing_status = LogFileIndexingStatus::Done;
         }
     }

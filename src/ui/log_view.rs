@@ -8,6 +8,7 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state:
     let line_texts = match log_file.read_lines(top_line..top_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
         Err(error) => {
+            tracing::error!(%error, "reading visible lines failed");
             frame.render_widget(Line::raw(error.to_string()), area);
             return;
         }

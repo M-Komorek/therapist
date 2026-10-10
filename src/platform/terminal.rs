@@ -99,7 +99,9 @@ impl Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
-        let _ = leave_tui_mode();
+        if let Err(error) = leave_tui_mode() {
+            tracing::error!(%error, "restoring the terminal failed");
+        }
     }
 }
 

@@ -63,6 +63,10 @@ impl LogFile {
         self.line_index.percent_indexed(self.file_size)
     }
 
+    pub fn file_size(&self) -> u64 {
+        self.file_size
+    }
+
     pub fn file_name(&self) -> Cow<'_, str> {
         let file_name = self.path.file_name().unwrap_or(self.path.as_os_str());
         file_name.to_string_lossy()

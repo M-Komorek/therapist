@@ -6,6 +6,7 @@ use std::{
         mpsc::Sender,
     },
     thread,
+    time::Instant,
 };
 
 use crate::domain::log_file::{LineIndex, LogFileError};
@@ -96,13 +97,21 @@ impl Job {
 
     pub(super) fn spawn(self, job_sender: Sender<JobNotification>) {
         thread::spawn(move || {
+            let job_start = Instant::now();
             let job_context = JobContext {
                 job_id: self.job_id,
                 job_sender,
                 cancel_flag: self.cancel_flag,
             };
             let outcome = panic::catch_unwind(AssertUnwindSafe(|| (self.job_work)(&job_context)));
-            job_context.notify(final_status(outcome));
+            let job_status = final_status(outcome);
+            tracing::debug!(
+                job_id = self.job_id.0,
+                elapsed_ms = job_start.elapsed().as_millis(),
+                ?job_status,
+                "job finished"
+            );
+            job_context.notify(job_status);
         });
     }
 }

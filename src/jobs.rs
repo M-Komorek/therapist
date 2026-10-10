@@ -26,7 +26,9 @@ pub struct JobBoard {
 impl JobBoard {
     pub fn schedule(&mut self, job_slot: JobSlot, job_work: JobWork) {
         self.cancel(job_slot);
-        let (job, job_handle) = Job::new(self.take_unused_job_id(), job_work);
+        let job_id = self.take_unused_job_id();
+        tracing::debug!(job_id = job_id.0, ?job_slot, "job scheduled");
+        let (job, job_handle) = Job::new(job_id, job_work);
         self.job_handles.push((job_slot, job_handle));
         self.scheduled_jobs.push(job);
     }
@@ -36,6 +38,7 @@ impl JobBoard {
             return;
         };
 
+        tracing::debug!(job_id = job_handle.job_id().0, ?job_slot, "job cancelled");
         self.scheduled_jobs
             .retain(|job| job.job_id() != job_handle.job_id());
     }
