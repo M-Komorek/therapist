@@ -7,13 +7,13 @@ const INDEX_CHUNK_SIZE: usize = 1024 * 1024;
 /// Builds the file's `LineIndex`. Each time another percent of the file is indexed, it reports a
 /// copy of the index so far, and at the end the finished index. If the report callback returns
 /// `Break`, it stops without the finished index.
-pub struct LogFileIndexer {
+pub struct LineIndexer {
     path: PathBuf,
     file: Arc<File>,
     file_size: u64,
 }
 
-impl LogFileIndexer {
+impl LineIndexer {
     pub(super) fn new(path: PathBuf, file: Arc<File>, file_size: u64) -> Self {
         Self {
             path,
@@ -71,7 +71,7 @@ mod tests {
     fn progress_in_chunks_of(log_file: &LogFile, chunk_size: usize) -> Vec<LineIndex> {
         let mut reported_indexes = Vec::new();
         log_file
-            .indexer()
+            .line_indexer()
             .run_in_chunks(chunk_size, |line_index| {
                 reported_indexes.push(line_index);
                 ControlFlow::Continue(())
@@ -138,7 +138,7 @@ mod tests {
         let mut report_count = 0;
 
         log_file
-            .indexer()
+            .line_indexer()
             .run_in_chunks(1, |_line_index| {
                 report_count += 1;
                 ControlFlow::Break(())
@@ -161,13 +161,13 @@ mod tests {
     #[test]
     fn given_unreadable_file_when_indexed_then_it_cannot_be_read() {
         let temp_file = NamedTempFile::new().unwrap();
-        let indexer = LogFileIndexer {
+        let line_indexer = LineIndexer {
             path: temp_file.path().to_path_buf(),
             file: Arc::new(File::create(temp_file.path()).unwrap()),
             file_size: 0,
         };
 
-        let result = indexer.run(|_line_index| ControlFlow::Continue(()));
+        let result = line_indexer.run(|_line_index| ControlFlow::Continue(()));
 
         assert!(matches!(result, Err(LogFileError::CannotRead { .. })));
     }

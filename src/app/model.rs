@@ -32,7 +32,7 @@ impl Model {
         let mut job_board = JobBoard::default();
         job_board.schedule(
             JobSlot::LogFileIndexing,
-            jobs::log_file_indexing_work(log_file.indexer()),
+            jobs::log_file_indexing_work(log_file.line_indexer()),
         );
 
         Self {

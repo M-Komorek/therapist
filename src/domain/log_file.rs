@@ -1,6 +1,6 @@
-mod indexer;
 mod line_collector;
 mod line_index;
+mod line_indexer;
 
 use std::{
     borrow::Cow,
@@ -12,9 +12,9 @@ use std::{
     sync::Arc,
 };
 
-pub use indexer::LogFileIndexer;
 use line_collector::LineCollector;
 pub use line_index::LineIndex;
+pub use line_indexer::LineIndexer;
 
 const READ_LINES_CHUNK_SIZE: usize = 64 * 1024;
 
@@ -51,8 +51,8 @@ impl LogFile {
         })
     }
 
-    pub fn indexer(&self) -> LogFileIndexer {
-        LogFileIndexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
+    pub fn line_indexer(&self) -> LineIndexer {
+        LineIndexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
     }
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {
@@ -129,7 +129,7 @@ impl LogFile {
     }
 
     pub fn index_synchronously(&mut self) -> Result<(), LogFileError> {
-        self.indexer().run(|line_index| {
+        self.line_indexer().run(|line_index| {
             self.line_index = line_index;
             ControlFlow::Continue(())
         })?;
