@@ -21,13 +21,13 @@ pub enum LogFileIndexingStatus {
 /// public so that `update` can borrow several of them at once.
 pub struct Model {
     // TODO Consider adding a bag for States and a bag for Statuses
+    pub input_controller: InputController,
+    pub job_board: JobBoard,
     pub log_file: LogFile,
     pub log_view_state: LogViewState,
-    pub input_controller: InputController,
-    pub status_message: Option<StatusMessage>,
-    pub job_board: JobBoard,
-    pub log_file_indexing_status: LogFileIndexingStatus,
     pub search_state: SearchState,
+    pub status_message: Option<StatusMessage>,
+    pub log_file_indexing_status: LogFileIndexingStatus,
 }
 
 impl Model {
@@ -39,13 +39,13 @@ impl Model {
         );
 
         Self {
+            input_controller: InputController::default(),
+            job_board,
             log_file,
             log_view_state: LogViewState::default(),
-            input_controller: InputController::default(),
-            status_message: None,
-            job_board,
-            log_file_indexing_status: LogFileIndexingStatus::Running,
             search_state: SearchState::default(),
+            status_message: None,
+            log_file_indexing_status: LogFileIndexingStatus::Running,
         }
     }
 }
