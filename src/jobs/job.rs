@@ -25,6 +25,7 @@ pub struct JobNotification {
 #[derive(Debug)]
 pub enum JobStatus {
     LogFileIndexing(LineIndex),
+    Searching(Vec<usize>),
     Done,
     Failed(JobError),
 }

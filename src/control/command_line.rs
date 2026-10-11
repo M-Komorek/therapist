@@ -2,7 +2,10 @@ mod parser;
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, AppAction};
+use crate::{
+    action::{Action, AppAction, CommandLineKind, SearchAction},
+    domain::search::{SearchDirection, SearchQuery},
+};
 
 use parser::parse_command;
 
@@ -13,16 +16,24 @@ pub(super) enum CommandLineOutcome {
     Submitted(Action),
 }
 
-#[derive(Default)]
 pub struct CommandLine {
+    command_line_kind: CommandLineKind,
     text: String,
     cursor_byte_offset: usize,
 }
 
 impl CommandLine {
+    pub(super) fn new(command_line_kind: CommandLineKind) -> Self {
+        Self {
+            command_line_kind,
+            text: String::new(),
+            cursor_byte_offset: 0,
+        }
+    }
+
     pub(super) fn resolve(&mut self, key: KeyEvent) -> CommandLineOutcome {
         match key.code {
-            KeyCode::Enter => submission_outcome(&self.text),
+            KeyCode::Enter => self.submission_outcome(),
             KeyCode::Esc => CommandLineOutcome::Closed,
             KeyCode::Backspace if self.text.is_empty() => CommandLineOutcome::Closed,
             _ => {
@@ -32,12 +43,26 @@ impl CommandLine {
         }
     }
 
+    pub fn prefix(&self) -> char {
+        match self.command_line_kind {
+            CommandLineKind::Command => ':',
+            CommandLineKind::Search(direction) => direction.prefix(),
+        }
+    }
+
     pub fn text(&self) -> &str {
         &self.text
     }
 
     pub fn text_before_cursor(&self) -> &str {
         &self.text[..self.cursor_byte_offset]
+    }
+
+    fn submission_outcome(&self) -> CommandLineOutcome {
+        match self.command_line_kind {
+            CommandLineKind::Command => command_submission_outcome(&self.text),
+            CommandLineKind::Search(direction) => search_submission_outcome(&self.text, direction),
+        }
     }
 
     fn edit(&mut self, key: KeyEvent) {
@@ -74,7 +99,7 @@ impl CommandLine {
     }
 }
 
-fn submission_outcome(command_text: &str) -> CommandLineOutcome {
+fn command_submission_outcome(command_text: &str) -> CommandLineOutcome {
     match parse_command(command_text) {
         Ok(Some(action)) => CommandLineOutcome::Submitted(action),
         Ok(None) => CommandLineOutcome::Closed,
@@ -82,6 +107,19 @@ fn submission_outcome(command_text: &str) -> CommandLineOutcome {
             CommandLineOutcome::Submitted(Action::App(AppAction::ShowError(error.to_string())))
         }
     }
+}
+
+fn search_submission_outcome(phrase: &str, direction: SearchDirection) -> CommandLineOutcome {
+    if phrase.is_empty() {
+        let repeat_last_search = SearchAction::RepeatLast(direction);
+        return CommandLineOutcome::Submitted(Action::Search(repeat_last_search));
+    }
+
+    let search_query = SearchQuery {
+        phrase: phrase.to_owned(),
+        direction,
+    };
+    CommandLineOutcome::Submitted(Action::Search(SearchAction::Start(search_query)))
 }
 
 fn is_text_input(modifiers: KeyModifiers) -> bool {
@@ -104,7 +142,11 @@ mod tests {
     }
 
     fn make_command_line(typed: &str) -> CommandLine {
-        let mut command_line = CommandLine::default();
+        make_command_line_of_kind(CommandLineKind::Command, typed)
+    }
+
+    fn make_command_line_of_kind(command_line_kind: CommandLineKind, typed: &str) -> CommandLine {
+        let mut command_line = CommandLine::new(command_line_kind);
         type_text(&mut command_line, typed);
         command_line
     }
@@ -247,8 +289,52 @@ mod tests {
     }
 
     #[test]
+    fn given_each_kind_when_asking_for_the_prefix_then_it_is_the_key_that_opens_it() {
+        let prefix_of = |command_line_kind| CommandLine::new(command_line_kind).prefix();
+
+        assert_eq!(prefix_of(CommandLineKind::Command), ':');
+        assert_eq!(
+            prefix_of(CommandLineKind::Search(SearchDirection::Forward)),
+            '/'
+        );
+        assert_eq!(
+            prefix_of(CommandLineKind::Search(SearchDirection::Backward)),
+            '?'
+        );
+    }
+
+    #[test]
+    fn given_phrase_on_a_forward_search_line_when_enter_is_pressed_then_the_search_starts_with_it_as_typed()
+     {
+        let mut command_line =
+            make_command_line_of_kind(CommandLineKind::Search(SearchDirection::Forward), " 42 ");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Submitted(Action::Search(SearchAction::Start(SearchQuery {
+                phrase: " 42 ".to_owned(),
+                direction: SearchDirection::Forward,
+            })))
+        );
+    }
+
+    #[test]
+    fn given_empty_backward_search_line_when_enter_is_pressed_then_the_last_search_repeats_backward()
+     {
+        let mut command_line =
+            make_command_line_of_kind(CommandLineKind::Search(SearchDirection::Backward), "");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Submitted(Action::Search(SearchAction::RepeatLast(
+                SearchDirection::Backward
+            )))
+        );
+    }
+
+    #[test]
     fn given_modified_characters_when_typed_then_only_shifted_ones_are_inserted() {
-        let mut command_line = CommandLine::default();
+        let mut command_line = make_command_line("");
 
         command_line.resolve(KeyEvent::new(KeyCode::Char('A'), KeyModifiers::SHIFT));
         command_line.resolve(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));

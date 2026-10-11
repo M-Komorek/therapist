@@ -5,9 +5,12 @@ use ratatui::{
 
 use super::{LogFileIndexingStatus, Model, ScreenAreas, StatusMessage};
 use crate::{
-    action::{Action, AppAction, LogViewAction},
-    jobs::{JobError, JobNotification, JobSlot, JobStatus},
+    action::{Action, AppAction, CommandLineKind, LogViewAction, SearchAction},
+    domain::search::{MatchJump, SearchDirection, SearchError, SearchQuery},
+    jobs::{self, JobError, JobNotification, JobSlot, JobStatus},
 };
+
+// TODO consider split this file, divided by single responsibility or something
 
 #[derive(Debug, PartialEq)]
 pub enum Effect {
@@ -24,6 +27,9 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
 
     match job_status {
         JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
+        JobStatus::Searching(matching_lines) => {
+            model.search_state.add_matching_lines(matching_lines)
+        }
         JobStatus::Done => mark_job_done(model, job_slot),
         JobStatus::Failed(job_error) => mark_job_failed(model, job_slot, job_error),
     }
@@ -56,6 +62,13 @@ fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
             );
             model.log_file_indexing_status = LogFileIndexingStatus::Done;
         }
+        JobSlot::Search => {
+            tracing::debug!(
+                match_count = model.search_state.match_count(),
+                "search done"
+            );
+            jump_to_next_match(model);
+        }
     }
 }
 
@@ -65,6 +78,11 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
             tracing::error!(error = %job_error, "indexing failed");
             model.log_file_indexing_status = LogFileIndexingStatus::Failed;
         }
+        JobSlot::Search => {
+            tracing::error!(error = %job_error, "search failed");
+            clear_search(model);
+            show_error(model, format!("Search failed: {job_error}"));
+        }
     }
 }
 
@@ -72,6 +90,7 @@ fn dispatch(model: &mut Model, action: Action) -> Effect {
     match action {
         Action::App(app_action) => dispatch_app(model, app_action),
         Action::LogView(log_view_action) => dispatch_log_view(model, log_view_action),
+        Action::Search(search_action) => dispatch_search(model, search_action),
     }
 }
 
@@ -108,21 +127,98 @@ fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
     match app_action {
         AppAction::Quit => Effect::Quit,
         AppAction::Suspend => Effect::Suspend,
-        AppAction::OpenCommandLine => open_command_line(model),
-        AppAction::ShowError(error_text) => show_error(model, error_text),
+        AppAction::OpenCommandLine(command_line_kind) => {
+            open_command_line(model, command_line_kind)
+        }
+        AppAction::ShowError(error_text) => {
+            show_error(model, error_text);
+            Effect::Redraw
+        }
         #[cfg(debug_assertions)]
         AppAction::DebugPanic => panic!("Debug panic key pressed"),
     }
 }
 
-fn open_command_line(model: &mut Model) -> Effect {
-    model.input_controller.open_command_line();
+fn open_command_line(model: &mut Model, command_line_kind: CommandLineKind) -> Effect {
+    model.input_controller.open_command_line(command_line_kind);
     Effect::Redraw
 }
 
-fn show_error(model: &mut Model, error_text: String) -> Effect {
-    model.status_message = Some(StatusMessage::Error(error_text));
+fn dispatch_search(model: &mut Model, search_action: SearchAction) -> Effect {
+    match search_action {
+        SearchAction::Start(search_query) => schedule_search(model, search_query),
+        SearchAction::RepeatLast(direction) => {
+            model.search_state.set_direction(direction);
+            jump_to_next_match(model);
+        }
+        SearchAction::JumpToNextMatch => jump_to_next_match(model),
+        SearchAction::JumpToPreviousMatch => jump_to_previous_match(model),
+        SearchAction::Clear => clear_search(model),
+    }
     Effect::Redraw
+}
+
+// review: logic below is about updateing the app but in real it is all about change the model
+// maybe it should be some abstraction to make changes in the model
+fn schedule_search(model: &mut Model, search_query: SearchQuery) {
+    if model.log_file_indexing_status == LogFileIndexingStatus::Running {
+        show_error(model, SearchError::StillIndexing.to_string());
+        return;
+    }
+
+    let search_work = jobs::search_work(model.log_file.line_scanner(), search_query.phrase.clone());
+    model.job_board.schedule(JobSlot::Search, search_work);
+    model.search_state.replace_query(search_query);
+}
+
+fn clear_search(model: &mut Model) {
+    model.job_board.cancel(JobSlot::Search);
+    model.search_state.clear();
+}
+
+fn jump_to_next_match(model: &mut Model) {
+    let cursor_line = model.log_view_state.cursor_line();
+    let match_jump = model.search_state.next_match_from(cursor_line);
+    apply_match_jump(model, match_jump);
+}
+
+fn jump_to_previous_match(model: &mut Model) {
+    let cursor_line = model.log_view_state.cursor_line();
+    let match_jump = model.search_state.previous_match_from(cursor_line);
+    apply_match_jump(model, match_jump);
+}
+
+fn apply_match_jump(model: &mut Model, match_jump: Result<Option<MatchJump>, SearchError>) {
+    match match_jump {
+        Ok(Some(match_jump)) => jump_cursor_to_match(model, match_jump),
+        Ok(None) => {}
+        Err(search_error) => show_error(model, search_error.to_string()),
+    }
+}
+
+fn jump_cursor_to_match(model: &mut Model, match_jump: MatchJump) {
+    let line_count = model.log_file.line_count();
+    model
+        .log_view_state
+        .jump_cursor_to_line(match_jump.line, line_count);
+    if match_jump.wrapped {
+        show_info(model, wrap_message(match_jump.direction).to_owned());
+    }
+}
+
+fn wrap_message(direction: SearchDirection) -> &'static str {
+    match direction {
+        SearchDirection::Forward => "search hit BOTTOM, continuing at TOP",
+        SearchDirection::Backward => "search hit TOP, continuing at BOTTOM",
+    }
+}
+
+fn show_error(model: &mut Model, error_text: String) {
+    model.status_message = Some(StatusMessage::Error(error_text));
+}
+
+fn show_info(model: &mut Model, info_text: String) {
+    model.status_message = Some(StatusMessage::Info(info_text));
 }
 
 #[cfg(test)]
@@ -146,6 +242,11 @@ mod test_helpers {
             for job_notification in job_notifications {
                 handle_job_notification(self, job_notification);
             }
+        }
+
+        pub fn finish_scheduled_jobs(&mut self) {
+            let job_notifications = self.job_board.run_scheduled_jobs();
+            self.handle_job_notifications(job_notifications);
         }
 
         pub fn type_keys(&mut self, typed: &str) -> Effect {
@@ -182,14 +283,22 @@ mod tests {
     use super::*;
     use crate::{control::Mode, domain::log_file::LogFile};
 
+    const SEARCHED_TEXT: &str = "ok\nERROR one\nok\nWARN two\nERROR three\nok\n";
+
     fn make_model() -> Model {
-        let mut model = Model::with_screen_size(
-            LogFile::from_text("first\nsecond\nthird\n"),
-            Size::new(20, 4),
-        );
-        let job_notifications = model.job_board.run_scheduled_jobs();
-        model.handle_job_notifications(job_notifications);
+        make_model_with_text("first\nsecond\nthird\n")
+    }
+
+    fn make_model_with_text(text: &str) -> Model {
+        let mut model = Model::with_screen_size(LogFile::from_text(text), Size::new(20, 4));
+        model.finish_scheduled_jobs();
         model
+    }
+
+    fn search(model: &mut Model, typed: &str) {
+        model.type_keys(typed);
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
     }
 
     fn make_indexing_model(text: &str) -> (Model, Vec<JobNotification>) {
@@ -216,6 +325,16 @@ mod tests {
         let mut model = make_model();
 
         let effect = model.type_keys(":");
+
+        assert_eq!(effect, Effect::Redraw);
+        assert_eq!(command_line_text(&model), Some(""));
+    }
+
+    #[test]
+    fn given_app_when_slash_is_pressed_then_an_empty_search_line_opens() {
+        let mut model = make_model();
+
+        let effect = model.type_keys("/");
 
         assert_eq!(effect, Effect::Redraw);
         assert_eq!(command_line_text(&model), Some(""));
@@ -543,6 +662,276 @@ mod tests {
 
         assert_eq!(effect, Effect::Nothing);
         assert_eq!(model.log_file_indexing_status, LogFileIndexingStatus::Done);
+    }
+
+    #[test]
+    fn given_indexed_file_when_searching_forward_then_cursor_jumps_to_the_first_match_below() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        search(&mut model, "/ERROR");
+
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.search_state.match_count(), 2);
+        assert!(model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_cursor_on_the_last_line_when_searching_backward_then_cursor_jumps_to_the_match_above()
+    {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("G");
+
+        search(&mut model, "?ERROR");
+
+        assert_eq!(model.log_view_state.cursor_line(), 4);
+        assert_eq!(model.status_message, None);
+    }
+
+    #[test]
+    fn given_cursor_above_every_match_when_searching_backward_then_it_wraps_to_the_bottom_with_a_message()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        search(&mut model, "?ERROR");
+
+        assert_eq!(model.log_view_state.cursor_line(), 4);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Info(
+                "search hit TOP, continuing at BOTTOM".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn given_phrase_not_in_the_file_when_searching_then_cursor_stays_and_no_line_matches() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        search(&mut model, "/zzzz");
+
+        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.search_state.match_count(), 0);
+        assert!(model.search_state.query().is_some());
+    }
+
+    #[test]
+    fn given_file_still_indexing_when_searching_then_it_is_refused() {
+        let mut model = Model::with_screen_size(
+            LogFile::unindexed_from_text(SEARCHED_TEXT),
+            Size::new(20, 4),
+        );
+
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(SearchError::StillIndexing.to_string()))
+        );
+        assert_eq!(model.search_state.query(), None);
+        assert!(!model.job_board.has_job(JobSlot::Search));
+    }
+
+    #[test]
+    fn given_scheduled_search_when_another_one_starts_then_only_the_new_one_runs() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+
+        search(&mut model, "/WARN");
+
+        assert_eq!(model.log_view_state.cursor_line(), 3);
+        assert_eq!(model.search_state.match_count(), 1);
+    }
+
+    #[test]
+    fn given_running_search_when_it_fails_then_an_error_shows_and_the_search_is_cleared() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+        let search_job_id = model.job_board.run_scheduled_jobs()[0].job_id;
+
+        let effect = handle_job_notification(
+            &mut model,
+            JobNotification {
+                job_id: search_job_id,
+                job_status: JobStatus::Failed(JobError::Panicked),
+            },
+        );
+
+        assert_eq!(effect, Effect::Redraw);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(
+                "Search failed: the job panicked".to_owned()
+            ))
+        );
+        assert_eq!(model.search_state.query(), None);
+        assert_eq!(model.search_state.match_count(), 0);
+        assert!(model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_forward_search_when_n_then_capital_n_is_pressed_then_cursor_goes_to_the_next_then_previous_match()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/ERROR");
+
+        model.type_keys("n");
+        assert_eq!(model.log_view_state.cursor_line(), 4);
+
+        model.type_keys("N");
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+    }
+
+    #[test]
+    fn given_backward_search_when_n_is_pressed_then_it_keeps_going_up() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("G");
+        search(&mut model, "?ERROR");
+
+        model.type_keys("n");
+
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+    }
+
+    #[test]
+    fn given_cursor_on_the_last_match_when_n_is_pressed_then_it_wraps_to_the_top_with_a_message() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/ERROR");
+        model.type_keys("n");
+
+        model.type_keys("n");
+
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Info(
+                "search hit BOTTOM, continuing at TOP".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn given_no_search_yet_when_n_or_capital_n_is_pressed_then_an_error_says_so() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        let no_previous_search = Some(StatusMessage::Error(
+            SearchError::NoPreviousSearch.to_string(),
+        ));
+
+        model.type_keys("n");
+        assert_eq!(model.status_message, no_previous_search);
+
+        model.type_keys("N");
+        assert_eq!(model.status_message, no_previous_search);
+    }
+
+    #[test]
+    fn given_backward_search_when_an_empty_forward_search_is_submitted_then_it_jumps_down_and_n_follows()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("3G");
+        search(&mut model, "?ERROR");
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+
+        model.type_keys("/");
+        model.press(KeyCode::Enter);
+        assert_eq!(model.log_view_state.cursor_line(), 4);
+
+        model.type_keys("N");
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert!(model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_no_search_yet_when_an_empty_search_is_submitted_then_an_error_says_so() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        model.type_keys("?");
+        model.press(KeyCode::Enter);
+
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(
+                SearchError::NoPreviousSearch.to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn given_search_still_running_when_n_is_pressed_then_it_uses_the_matches_found_so_far() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+        let search_job_id = model.job_board.run_scheduled_jobs()[0].job_id;
+        handle_job_notification(
+            &mut model,
+            JobNotification {
+                job_id: search_job_id,
+                job_status: JobStatus::Searching(vec![1]),
+            },
+        );
+
+        model.type_keys("n");
+
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert!(!model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_search_results_when_escape_is_pressed_then_the_query_and_matches_are_gone() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/ERROR");
+
+        model.press(KeyCode::Esc);
+
+        assert_eq!(model.search_state.query(), None);
+        assert_eq!(model.search_state.match_count(), 0);
+    }
+
+    #[test]
+    fn given_count_typed_after_a_search_when_escape_is_pressed_then_the_search_stays() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/ERROR");
+        model.type_keys("5");
+
+        model.press(KeyCode::Esc);
+
+        assert!(model.search_state.query().is_some());
+        assert_eq!(model.search_state.match_count(), 2);
+    }
+
+    #[test]
+    fn given_search_cleared_with_escape_when_n_is_pressed_then_there_is_no_previous_search() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/ERROR");
+        model.press(KeyCode::Esc);
+
+        model.type_keys("n");
+
+        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(
+                SearchError::NoPreviousSearch.to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn given_running_search_when_escape_is_pressed_then_it_is_cancelled_and_its_late_notifications_are_dropped()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+        let late_job_notifications = model.job_board.run_scheduled_jobs();
+
+        model.press(KeyCode::Esc);
+        model.handle_job_notifications(late_job_notifications);
+
+        assert!(model.job_board.is_empty());
+        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.search_state.match_count(), 0);
     }
 
     #[cfg(debug_assertions)]

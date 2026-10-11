@@ -1,9 +1,17 @@
+use std::ops::Range;
+
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use super::visible_row::visible_spans;
 use crate::domain::{log_file::LogFile, log_view_state::LogViewState};
 
-pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state: &LogViewState) {
+pub fn render(
+    frame: &mut Frame,
+    area: Rect,
+    log_file: &LogFile,
+    log_view_state: &LogViewState,
+    highlighted_phrase: Option<&str>,
+) {
     let top_line = log_view_state.top_line();
     let line_texts = match log_file.read_lines(top_line..top_line + usize::from(area.height)) {
         Ok(line_texts) => line_texts,
@@ -18,12 +26,28 @@ pub fn render(frame: &mut Frame, area: Rect, log_file: &LogFile, log_view_state:
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
     for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(top_line..) {
         let mut display_line = Line::from(gutter(line, line_number_width));
-        display_line.extend(visible_spans(line_text, visible_columns.clone()));
+        let highlight_ranges = highlight_ranges(line_text, highlighted_phrase);
+        display_line.extend(visible_spans(
+            line_text,
+            visible_columns.clone(),
+            &highlight_ranges,
+        ));
         if line == log_view_state.cursor_line() {
             display_line = display_line.reversed();
         }
         frame.render_widget(display_line, row_area);
     }
+}
+
+fn highlight_ranges(line_text: &str, highlighted_phrase: Option<&str>) -> Vec<Range<usize>> {
+    let Some(phrase) = highlighted_phrase.filter(|phrase| !phrase.is_empty()) else {
+        return Vec::new();
+    };
+
+    line_text
+        .match_indices(phrase)
+        .map(|(match_start, _)| match_start..match_start + phrase.len())
+        .collect()
 }
 
 fn line_number_width(line_count: usize) -> usize {
@@ -36,7 +60,10 @@ fn gutter(line: usize, line_number_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{buffer::Buffer, style::Modifier};
+    use ratatui::{
+        buffer::Buffer,
+        style::{Color, Modifier},
+    };
 
     use super::*;
     use crate::ui::tests::{render_to_buffer, rendered_rows};
@@ -47,8 +74,24 @@ mod tests {
         width: u16,
         height: u16,
     ) -> Buffer {
+        render_highlighted(log_file, log_view_state, None, width, height)
+    }
+
+    fn render_highlighted(
+        log_file: &LogFile,
+        log_view_state: &LogViewState,
+        highlighted_phrase: Option<&str>,
+        width: u16,
+        height: u16,
+    ) -> Buffer {
         render_to_buffer(width, height, |frame| {
-            render(frame, frame.area(), log_file, log_view_state);
+            render(
+                frame,
+                frame.area(),
+                log_file,
+                log_view_state,
+                highlighted_phrase,
+            );
         })
     }
 
@@ -79,6 +122,35 @@ mod tests {
             rendered_rows(&buffer),
             ["  8 │ line 8", "  9 │ line 9", " 10 │ line 10"]
         );
+    }
+
+    #[test]
+    fn given_highlighted_phrase_when_rendering_then_every_occurrence_on_visible_lines_is_highlighted()
+     {
+        let log_file = LogFile::from_text("ERROR a ERROR\nok\nERROR\n");
+
+        let buffer = render_highlighted(&log_file, &LogViewState::default(), Some("ERROR"), 20, 3);
+
+        let is_highlighted = |column, row| buffer[(column, row)].bg == Color::Yellow;
+        let gutter_width = 5;
+        assert!(is_highlighted(gutter_width, 0) && is_highlighted(gutter_width + 12, 0));
+        assert!(!is_highlighted(gutter_width + 6, 0));
+        assert!(!is_highlighted(gutter_width, 1));
+        assert!(is_highlighted(gutter_width + 4, 2));
+    }
+
+    #[test]
+    fn given_no_highlighted_phrase_when_rendering_then_nothing_is_highlighted() {
+        let log_file = LogFile::from_text("ERROR\n");
+
+        let buffer = render_highlighted(&log_file, &LogViewState::default(), None, 20, 1);
+
+        assert_ne!(buffer[(5, 0)].bg, Color::Yellow);
+    }
+
+    #[test]
+    fn given_empty_phrase_when_finding_highlights_then_there_are_none() {
+        assert!(highlight_ranges("abc", Some("")).is_empty());
     }
 
     #[test]

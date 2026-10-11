@@ -3,7 +3,7 @@ mod keymap;
 
 use ratatui::crossterm::event::KeyEvent;
 
-use crate::action::Action;
+use crate::action::{Action, CommandLineKind};
 
 pub use command_line::CommandLine;
 use command_line::CommandLineOutcome;
@@ -33,9 +33,9 @@ impl InputController {
         }
     }
 
-    pub fn open_command_line(&mut self) {
+    pub fn open_command_line(&mut self, command_line_kind: CommandLineKind) {
         self.keymap.reset();
-        self.mode = Mode::CommandLine(CommandLine::default());
+        self.mode = Mode::CommandLine(CommandLine::new(command_line_kind));
     }
 
     pub fn mode(&self) -> &Mode {
@@ -66,7 +66,7 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     use super::*;
-    use crate::action::LogViewAction;
+    use crate::{action::LogViewAction, domain::search::SearchDirection};
 
     fn type_keys(input_controller: &mut InputController, typed: &str) -> Option<Action> {
         let mut resolution = None;
@@ -82,7 +82,7 @@ mod tests {
 
     fn make_open_command_line(typed: &str) -> InputController {
         let mut input_controller = InputController::default();
-        input_controller.open_command_line();
+        input_controller.open_command_line(CommandLineKind::Command);
         type_keys(&mut input_controller, typed);
         input_controller
     }
@@ -108,9 +108,22 @@ mod tests {
     fn given_normal_mode_when_the_command_line_opens_then_it_is_empty() {
         let mut input_controller = InputController::default();
 
-        input_controller.open_command_line();
+        input_controller.open_command_line(CommandLineKind::Command);
 
         assert_eq!(command_line_text(&input_controller), Some(""));
+    }
+
+    #[test]
+    fn given_normal_mode_when_a_search_line_opens_then_it_is_empty_with_the_search_prefix() {
+        let mut input_controller = InputController::default();
+
+        input_controller.open_command_line(CommandLineKind::Search(SearchDirection::Backward));
+
+        let Mode::CommandLine(command_line) = input_controller.mode() else {
+            panic!("the search line is not open");
+        };
+        assert_eq!(command_line.prefix(), '?');
+        assert_eq!(command_line.text(), "");
     }
 
     #[test]
@@ -150,7 +163,7 @@ mod tests {
      {
         let mut input_controller = InputController::default();
         type_keys(&mut input_controller, "2:");
-        input_controller.open_command_line();
+        input_controller.open_command_line(CommandLineKind::Command);
         press(&mut input_controller, KeyCode::Esc);
 
         assert_eq!(input_controller.last_keys_text(), "");

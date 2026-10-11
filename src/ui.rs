@@ -17,24 +17,20 @@ pub fn render(frame: &mut Frame, model: &Model) {
         screen_areas.log_view,
         &model.log_file,
         &model.log_view_state,
+        model
+            .search_state
+            .query()
+            .map(|search_query| search_query.phrase.as_str()),
     );
     match model.input_controller.mode() {
         Mode::CommandLine(command_line) => command_line::render(
             frame,
             screen_areas.bottom_row,
-            ':',
+            command_line.prefix(),
             command_line.text(),
             command_line.text_before_cursor(),
         ),
-        Mode::Normal => status_bar::render(
-            frame,
-            screen_areas.bottom_row,
-            &model.log_file,
-            model.log_file_indexing_status,
-            &model.log_view_state,
-            &model.input_controller.last_keys_text(),
-            model.status_message.as_ref(),
-        ),
+        Mode::Normal => status_bar::render(frame, screen_areas.bottom_row, model),
     }
 }
 
@@ -46,6 +42,7 @@ mod tests {
         buffer::Buffer,
         crossterm::event::KeyCode,
         layout::{Position, Size},
+        style::Color,
     };
 
     use super::*;
@@ -75,9 +72,13 @@ mod tests {
     fn make_model() -> Model {
         let mut model =
             Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(50, 3));
-        let job_notifications = model.job_board.run_scheduled_jobs();
-        model.handle_job_notifications(job_notifications);
+        model.finish_scheduled_jobs();
         model
+    }
+
+    fn submit_search(model: &mut Model, typed: &str) {
+        model.type_keys(typed);
+        model.press(KeyCode::Enter);
     }
 
     fn render_model(model: &Model) -> Vec<String> {
@@ -97,6 +98,15 @@ mod tests {
         model.type_keys(":12");
 
         assert_eq!(render_model(&model), [" 1 │ first", " 2 │ second", ":12"]);
+    }
+
+    #[test]
+    fn given_open_search_line_when_rendering_then_it_shows_the_search_prefix() {
+        let mut model = make_model();
+
+        model.type_keys("/ERR");
+
+        assert_eq!(render_model(&model)[2], "/ERR");
     }
 
     #[test]
@@ -124,7 +134,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[2],
-            " app.log                         1/2 (50%) │ 13 B"
+            " app.log                 <Esc> │ 1/2 (50%) │ 13 B"
         );
     }
 
@@ -140,6 +150,65 @@ mod tests {
                 " app.log                         1/2 (50%) │ 13 B"
             ]
         );
+    }
+
+    #[test]
+    fn given_search_scheduled_when_rendering_then_the_status_bar_says_searching() {
+        let mut model = make_model();
+
+        submit_search(&mut model, "/sec");
+
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log            searching… │ 1/2 (50%) │ 13 B"
+        );
+    }
+
+    #[test]
+    fn given_search_done_when_rendering_then_the_status_bar_shows_the_query_and_match_position() {
+        let mut model = make_model();
+        submit_search(&mut model, "/sec");
+
+        model.finish_scheduled_jobs();
+
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log           /sec [1/1] │ 2/2 (100%) │ 13 B"
+        );
+    }
+
+    #[test]
+    fn given_search_without_matches_when_rendering_then_the_status_bar_says_pattern_not_found() {
+        let mut model = make_model();
+        submit_search(&mut model, "/zz");
+
+        model.finish_scheduled_jobs();
+
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log Pattern not found: zz │ 1/2 (50%) │ 13 B"
+        );
+    }
+
+    #[test]
+    fn given_search_cleared_with_escape_when_rendering_then_the_segment_and_the_highlight_are_gone()
+    {
+        let mut model = make_model();
+        submit_search(&mut model, "/sec");
+        model.finish_scheduled_jobs();
+        let is_highlighted = |model: &Model| {
+            let buffer = render_to_buffer(50, 3, |frame| render(frame, model));
+            buffer[(5, 1)].bg == Color::Yellow
+        };
+        assert!(is_highlighted(&model));
+
+        model.press(KeyCode::Esc);
+
+        assert_eq!(
+            render_model(&model)[2],
+            " app.log                <Esc> │ 2/2 (100%) │ 13 B"
+        );
+        assert!(!is_highlighted(&model));
     }
 
     #[test]

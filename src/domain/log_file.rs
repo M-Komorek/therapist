@@ -1,6 +1,7 @@
 mod line_collector;
 mod line_index;
 mod line_indexer;
+mod line_scanner;
 
 use std::{
     borrow::Cow,
@@ -15,6 +16,7 @@ use std::{
 use line_collector::LineCollector;
 pub use line_index::LineIndex;
 pub use line_indexer::LineIndexer;
+pub use line_scanner::LineScanner;
 
 const READ_LINES_CHUNK_SIZE: usize = 64 * 1024;
 
@@ -53,6 +55,10 @@ impl LogFile {
 
     pub fn line_indexer(&self) -> LineIndexer {
         LineIndexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
+    }
+
+    pub fn line_scanner(&self) -> LineScanner {
+        LineScanner::new(self.path.clone(), Arc::clone(&self.file))
     }
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {

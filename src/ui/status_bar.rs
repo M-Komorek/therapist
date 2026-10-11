@@ -6,36 +6,38 @@ use ratatui::{
 };
 
 use crate::{
-    app::{LogFileIndexingStatus, StatusMessage},
-    domain::{log_file::LogFile, log_view_state::LogViewState},
+    app::{LogFileIndexingStatus, Model, StatusMessage},
+    domain::search::SearchState,
+    jobs::JobSlot,
 };
 
 const BAR_STYLE: Style = Style::new().bg(Color::DarkGray);
 const SEGMENT_SEPARATOR: &str = " │ ";
 const FILE_SIZE_UNITS: [&str; 4] = ["kB", "MB", "GB", "TB"];
 
-pub fn render(
-    frame: &mut Frame,
-    area: Rect,
-    log_file: &LogFile,
-    log_file_indexing_status: LogFileIndexingStatus,
-    log_view_state: &LogViewState,
-    last_keys: &str,
-    status_message: Option<&StatusMessage>,
-) {
+pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
+    let log_file = &model.log_file;
+    let cursor_line = model.log_view_state.cursor_line();
+    let last_keys = model.input_controller.last_keys_text();
     let message_span = message_span(
-        status_message,
-        log_file_indexing_status,
+        model.status_message.as_ref(),
+        model.log_file_indexing_status,
         log_file.percent_indexed(),
     );
+    let search_text = search_text(
+        &model.search_state,
+        cursor_line,
+        model.job_board.has_job(JobSlot::Search),
+    );
     let position_text = position_text(
-        log_view_state.cursor_line(),
+        cursor_line,
         log_file.line_count(),
-        log_file_indexing_status,
+        model.log_file_indexing_status,
     );
     let right_segments = right_segments(
-        last_keys,
+        &last_keys,
         message_span,
+        search_text,
         position_text,
         file_size_text(log_file.file_size()),
     );
@@ -48,6 +50,7 @@ pub fn render(
 fn right_segments<'a>(
     last_keys: &'a str,
     message_span: Option<Span<'a>>,
+    search_text: Option<String>,
     position_text: String,
     file_size_text: String,
 ) -> Vec<Span<'a>> {
@@ -56,6 +59,7 @@ fn right_segments<'a>(
         segments.push(Span::raw(last_keys));
     }
     segments.extend(message_span);
+    segments.extend(search_text.map(Span::raw));
     segments.push(Span::raw(position_text));
     segments.push(Span::raw(file_size_text));
     segments
@@ -80,9 +84,32 @@ fn message_span(
     percent_indexed: u64,
 ) -> Option<Span<'_>> {
     match status_message {
+        Some(StatusMessage::Info(message_text)) => Some(Span::raw(message_text.as_str())),
         Some(StatusMessage::Error(message_text)) => Some(message_text.as_str().red()),
         None => indexing_span(log_file_indexing_status, percent_indexed),
     }
+}
+
+fn search_text(
+    search_state: &SearchState,
+    cursor_line: usize,
+    is_searching: bool,
+) -> Option<String> {
+    let search_query = search_state.query()?;
+    if is_searching {
+        return Some("searching…".to_owned());
+    }
+    if search_state.match_count() == 0 {
+        return Some(format!("Pattern not found: {}", search_query.phrase));
+    }
+
+    Some(format!(
+        "{}{} [{}/{}]",
+        search_query.direction.prefix(),
+        search_query.phrase,
+        search_state.match_count_at_or_above(cursor_line),
+        search_state.match_count()
+    ))
 }
 
 fn position_text(
@@ -138,72 +165,102 @@ fn rounds_below_1000(size_in_unit: f64) -> bool {
 mod tests {
     use ratatui::{buffer::Buffer, style::Modifier};
 
+    use ratatui::layout::Size;
+
     use super::*;
-    use crate::ui::tests::{render_to_buffer, rendered_rows};
+    use crate::{
+        domain::{
+            log_file::LogFile,
+            search::{SearchDirection, SearchQuery},
+        },
+        ui::tests::{render_to_buffer, rendered_rows},
+    };
 
-    fn render_status(text: &str, cursor_line: usize, last_keys: &str) -> String {
-        rendered_rows(&render_indexed_status_buffer(text, cursor_line, last_keys)).remove(0)
+    fn make_model(text: &str) -> Model {
+        let mut model = make_unindexed_model(text);
+        model.finish_scheduled_jobs();
+        model
     }
 
-    fn render_indexed_status_buffer(text: &str, cursor_line: usize, last_keys: &str) -> Buffer {
-        let log_file = LogFile::from_text(text);
-        let mut log_view_state = LogViewState::default();
-        log_view_state.move_cursor_down(cursor_line, log_file.line_count());
-        render_status_buffer(
-            &log_file,
-            LogFileIndexingStatus::Done,
-            &log_view_state,
-            last_keys,
-            None,
-        )
+    fn make_unindexed_model(text: &str) -> Model {
+        Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(50, 2))
     }
 
-    fn render_status_with_indexing(
-        log_file: &LogFile,
-        log_file_indexing_status: LogFileIndexingStatus,
-    ) -> String {
-        rendered_rows(&render_status_buffer(
-            log_file,
-            log_file_indexing_status,
-            &LogViewState::default(),
-            "",
-            None,
-        ))
-        .remove(0)
+    fn render_status_buffer(model: &Model) -> Buffer {
+        render_to_buffer(50, 1, |frame| render(frame, frame.area(), model))
     }
 
-    fn render_status_buffer(
-        log_file: &LogFile,
-        log_file_indexing_status: LogFileIndexingStatus,
-        log_view_state: &LogViewState,
-        last_keys: &str,
-        status_message: Option<&StatusMessage>,
-    ) -> Buffer {
-        render_to_buffer(50, 1, |frame| {
-            render(
-                frame,
-                frame.area(),
-                log_file,
-                log_file_indexing_status,
-                log_view_state,
-                last_keys,
-                status_message,
-            );
-        })
+    fn render_status(model: &Model) -> String {
+        rendered_rows(&render_status_buffer(model)).remove(0)
+    }
+
+    fn make_search_state(
+        phrase: &str,
+        direction: SearchDirection,
+        matching_lines: &[usize],
+    ) -> SearchState {
+        let mut search_state = SearchState::default();
+        search_state.replace_query(SearchQuery {
+            phrase: phrase.to_owned(),
+            direction,
+        });
+        search_state.add_matching_lines(matching_lines.to_vec());
+        search_state
+    }
+
+    #[test]
+    fn given_no_search_when_formatting_the_search_then_nothing_is_shown() {
+        assert_eq!(search_text(&SearchState::default(), 0, false), None);
+    }
+
+    #[test]
+    fn given_search_running_when_formatting_the_search_then_it_says_searching() {
+        let search_state = make_search_state("timeout", SearchDirection::Forward, &[2]);
+
+        assert_eq!(
+            search_text(&search_state, 0, true),
+            Some("searching…".to_owned())
+        );
+    }
+
+    #[test]
+    fn given_search_without_matches_when_formatting_the_search_then_pattern_not_found_is_shown() {
+        let search_state = make_search_state("zzzz", SearchDirection::Forward, &[]);
+
+        assert_eq!(
+            search_text(&search_state, 0, false),
+            Some("Pattern not found: zzzz".to_owned())
+        );
+    }
+
+    #[test]
+    fn given_cursor_on_second_of_three_matches_when_formatting_the_search_then_its_position_is_shown()
+     {
+        let search_state = make_search_state("timeout", SearchDirection::Forward, &[2, 5, 9]);
+
+        assert_eq!(
+            search_text(&search_state, 5, false),
+            Some("/timeout [2/3]".to_owned())
+        );
+    }
+
+    #[test]
+    fn given_backward_search_and_cursor_above_every_match_when_formatting_the_search_then_position_is_zero()
+     {
+        let search_state = make_search_state("WARN", SearchDirection::Backward, &[2, 5]);
+
+        assert_eq!(
+            search_text(&search_state, 0, false),
+            Some("?WARN [0/2]".to_owned())
+        );
     }
 
     #[test]
     fn given_error_message_when_rendering_then_it_takes_the_message_slot_in_red() {
-        let log_file = LogFile::from_text("a\nb\n");
-        let error_message = StatusMessage::Error("Not a command: x".to_owned());
+        let mut model = make_model("a\nb\n");
+        model.status_message = Some(StatusMessage::Error("Not a command: x".to_owned()));
 
-        let buffer = render_status_buffer(
-            &log_file,
-            LogFileIndexingStatus::Done,
-            &LogViewState::default(),
-            "",
-            Some(&error_message),
-        );
+        let buffer = render_status_buffer(&model);
 
         assert_eq!(
             rendered_rows(&buffer),
@@ -215,36 +272,48 @@ mod tests {
     }
 
     #[test]
-    fn given_error_message_while_indexing_when_rendering_then_it_replaces_the_indexing_progress() {
-        let log_file = LogFile::unindexed_from_text("a\nb\n");
-        let error_message = StatusMessage::Error("Not a command: x".to_owned());
+    fn given_info_message_when_rendering_then_it_takes_the_message_slot_unstyled() {
+        let mut model = make_model("a\nb\n");
+        model.status_message = Some(StatusMessage::Info("search hit BOTTOM".to_owned()));
 
-        let buffer = render_status_buffer(
-            &log_file,
-            LogFileIndexingStatus::Running,
-            &LogViewState::default(),
-            "",
-            Some(&error_message),
-        );
+        let buffer = render_status_buffer(&model);
 
         assert_eq!(
             rendered_rows(&buffer),
-            [" app.log            Not a command: x │ 0/0+ │ 4 B"]
+            [" app.log      search hit BOTTOM │ 1/2 (50%) │ 4 B"]
+        );
+        assert_eq!(buffer[(15, 0)].fg, Color::Reset);
+    }
+
+    #[test]
+    fn given_error_message_while_indexing_when_rendering_then_it_replaces_the_indexing_progress() {
+        let mut model = make_unindexed_model("a\nb\n");
+        model.status_message = Some(StatusMessage::Error("Not a command: x".to_owned()));
+
+        assert_eq!(
+            render_status(&model),
+            " app.log            Not a command: x │ 0/0+ │ 4 B"
         );
     }
 
     #[test]
     fn given_cursor_on_second_of_four_lines_when_rendering_then_name_is_left_and_position_and_size_are_right()
      {
+        let mut model = make_model("a\nb\nc\nd\n");
+        model.log_view_state.move_cursor_down(1, 4);
+
         assert_eq!(
-            render_status("a\nb\nc\nd\n", 1, ""),
+            render_status(&model),
             " app.log                          2/4 (50%) │ 8 B"
         );
     }
 
     #[test]
     fn given_status_bar_when_rendering_then_the_row_is_tinted_and_separators_dim() {
-        let buffer = render_indexed_status_buffer("a\nb\nc\nd\n", 1, "");
+        let mut model = make_model("a\nb\nc\nd\n");
+        model.log_view_state.move_cursor_down(1, 4);
+
+        let buffer = render_status_buffer(&model);
 
         assert_eq!(buffer[(0, 0)].bg, Color::DarkGray);
         assert_eq!(buffer[(20, 0)].bg, Color::DarkGray);
@@ -256,16 +325,20 @@ mod tests {
     #[test]
     fn given_empty_file_when_rendering_then_position_is_zero_of_zero() {
         assert_eq!(
-            render_status("", 0, ""),
+            render_status(&make_model("")),
             " app.log                                0/0 │ 0 B"
         );
     }
 
     #[test]
     fn given_last_keys_when_rendering_then_a_separator_sets_them_apart_from_the_position() {
+        let mut model = make_model("a\nb\nc\nd\n");
+
+        model.type_keys("2j");
+
         assert_eq!(
-            render_status("a\nb\nc\nd\n", 1, "5j"),
-            " app.log                     5j │ 2/4 (50%) │ 8 B"
+            render_status(&model),
+            " app.log                     2j │ 3/4 (75%) │ 8 B"
         );
     }
 
@@ -279,20 +352,19 @@ mod tests {
 
     #[test]
     fn given_file_still_indexing_when_rendering_then_progress_comes_before_the_total_with_a_plus() {
-        let log_file = LogFile::unindexed_from_text("a\nb\n");
-
         assert_eq!(
-            render_status_with_indexing(&log_file, LogFileIndexingStatus::Running),
+            render_status(&make_unindexed_model("a\nb\n")),
             " app.log                 indexing 0% │ 0/0+ │ 4 B"
         );
     }
 
     #[test]
     fn given_indexing_failed_when_rendering_then_failure_is_shown_and_total_has_a_plus() {
-        let log_file = LogFile::from_text("a\nb\nc\nd\n");
+        let mut model = make_model("a\nb\nc\nd\n");
+        model.log_file_indexing_status = LogFileIndexingStatus::Failed;
 
         assert_eq!(
-            render_status_with_indexing(&log_file, LogFileIndexingStatus::Failed),
+            render_status(&model),
             " app.log             indexing failed │ 1/4+ │ 8 B"
         );
     }

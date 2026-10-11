@@ -18,7 +18,7 @@ pub(super) struct Keymap {
 
 impl Keymap {
     pub(super) fn resolve(&mut self, key: KeyEvent) -> Option<Action> {
-        if key == ESCAPE {
+        if key == ESCAPE && self.is_pending() {
             self.reset();
             return None;
         }
@@ -120,10 +120,13 @@ fn key_name(key: &KeyEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings::{app, char_key, ctrl, log_view},
+        bindings::{app, char_key, ctrl, log_view, search},
         *,
     };
-    use crate::action::{AppAction, LogViewAction};
+    use crate::{
+        action::{AppAction, CommandLineKind, LogViewAction, SearchAction},
+        domain::search::SearchDirection,
+    };
 
     fn resolve_keys(keymap: &mut Keymap, keys: &[KeyEvent]) -> Option<Action> {
         let mut resolution = None;
@@ -156,7 +159,40 @@ mod tests {
 
     #[test]
     fn given_colon_when_resolving_then_the_command_line_opens() {
-        assert_eq!(resolve_fresh(":"), Some(app(AppAction::OpenCommandLine)));
+        assert_eq!(
+            resolve_fresh(":"),
+            Some(app(AppAction::OpenCommandLine(CommandLineKind::Command)))
+        );
+    }
+
+    #[test]
+    fn given_slash_or_question_mark_when_resolving_then_a_search_line_opens() {
+        let open_search_line = |search_direction| {
+            Some(app(AppAction::OpenCommandLine(CommandLineKind::Search(
+                search_direction,
+            ))))
+        };
+
+        assert_eq!(
+            resolve_fresh("/"),
+            open_search_line(SearchDirection::Forward)
+        );
+        assert_eq!(
+            resolve_fresh("?"),
+            open_search_line(SearchDirection::Backward)
+        );
+    }
+
+    #[test]
+    fn given_n_or_capital_n_when_resolving_then_it_jumps_to_the_next_or_previous_match() {
+        assert_eq!(
+            resolve_fresh("n"),
+            Some(search(SearchAction::JumpToNextMatch))
+        );
+        assert_eq!(
+            resolve_fresh("N"),
+            Some(search(SearchAction::JumpToPreviousMatch))
+        );
     }
 
     #[test]
@@ -461,13 +497,35 @@ mod tests {
     }
 
     #[test]
-    fn given_last_keys_when_escape_is_pressed_then_they_are_cleared() {
+    fn given_pending_count_when_escape_is_pressed_then_nothing_resolves_and_last_keys_are_cleared()
+    {
+        let mut keymap = Keymap::default();
+        resolve_typed(&mut keymap, "5");
+
+        let resolution = keymap.resolve(ESCAPE);
+
+        assert_eq!(resolution, None);
+        assert_eq!(keymap.last_keys_text(), "");
+    }
+
+    #[test]
+    fn given_started_g_when_escape_is_pressed_then_nothing_resolves() {
+        let mut keymap = Keymap::default();
+
+        let resolution = resolve_keys(&mut keymap, &[char_key('g'), ESCAPE]);
+
+        assert_eq!(resolution, None);
+    }
+
+    #[test]
+    fn given_nothing_pending_when_escape_is_pressed_then_the_search_is_cleared() {
         let mut keymap = Keymap::default();
         resolve_typed(&mut keymap, "5j");
 
-        keymap.resolve(ESCAPE);
+        let resolution = keymap.resolve(ESCAPE);
 
-        assert_eq!(keymap.last_keys_text(), "");
+        assert_eq!(resolution, Some(search(SearchAction::Clear)));
+        assert_eq!(keymap.last_keys_text(), "<Esc>");
     }
 
     #[test]

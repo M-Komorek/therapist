@@ -7,7 +7,7 @@ use std::{
 /// listed.
 const MAY_USE: &[(&str, &[&str])] = &[
     ("domain", &[]),
-    ("action", &[]),
+    ("action", &["domain"]),
     ("platform", &[]),
     ("control", &["domain", "action"]),
     ("jobs", &["domain", "action"]),

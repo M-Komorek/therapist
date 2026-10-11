@@ -1,6 +1,9 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::action::{Action, AppAction, LogViewAction};
+use crate::{
+    action::{Action, AppAction, CommandLineKind, LogViewAction, SearchAction},
+    domain::search::SearchDirection,
+};
 
 const BINDINGS: &[(&[KeyEvent], Action)] = &[
     // App
@@ -9,7 +12,26 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     (&[char_key('q')], app(AppAction::Quit)),
     (&[ctrl('c')], app(AppAction::Quit)),
     (&[ctrl('z')], app(AppAction::Suspend)),
-    (&[char_key(':')], app(AppAction::OpenCommandLine)),
+    (
+        &[char_key(':')],
+        app(AppAction::OpenCommandLine(CommandLineKind::Command)),
+    ),
+    // Searching
+    (
+        &[char_key('/')],
+        app(AppAction::OpenCommandLine(CommandLineKind::Search(
+            SearchDirection::Forward,
+        ))),
+    ),
+    (
+        &[char_key('?')],
+        app(AppAction::OpenCommandLine(CommandLineKind::Search(
+            SearchDirection::Backward,
+        ))),
+    ),
+    (&[char_key('n')], search(SearchAction::JumpToNextMatch)),
+    (&[char_key('N')], search(SearchAction::JumpToPreviousMatch)),
+    (&[plain(KeyCode::Esc)], search(SearchAction::Clear)),
     // Moving by lines
     (&[char_key('j')], log_view(LogViewAction::MoveCursorDown(1))),
     (
@@ -117,6 +139,10 @@ pub(super) const fn app(app_action: AppAction) -> Action {
 
 pub(super) const fn log_view(log_view_action: LogViewAction) -> Action {
     Action::LogView(log_view_action)
+}
+
+pub(super) const fn search(search_action: SearchAction) -> Action {
+    Action::Search(search_action)
 }
 
 #[cfg(test)]

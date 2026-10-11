@@ -1,11 +1,12 @@
 use crate::{
     control::InputController,
-    domain::{log_file::LogFile, log_view_state::LogViewState},
+    domain::{log_file::LogFile, log_view_state::LogViewState, search::SearchState},
     jobs::{self, JobBoard, JobSlot},
 };
 
 #[derive(Debug, PartialEq)]
 pub enum StatusMessage {
+    Info(String),
     Error(String),
 }
 
@@ -26,6 +27,7 @@ pub struct Model {
     pub status_message: Option<StatusMessage>,
     pub job_board: JobBoard,
     pub log_file_indexing_status: LogFileIndexingStatus,
+    pub search_state: SearchState,
 }
 
 impl Model {
@@ -43,6 +45,7 @@ impl Model {
             status_message: None,
             job_board,
             log_file_indexing_status: LogFileIndexingStatus::Running,
+            search_state: SearchState::default(),
         }
     }
 }

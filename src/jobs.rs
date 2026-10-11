@@ -1,15 +1,18 @@
 mod job;
 mod log_file_indexing;
+mod search;
 
 use std::sync::mpsc::Sender;
 
 use job::{Job, JobHandle};
 pub use job::{JobContext, JobError, JobId, JobNotification, JobStatus, JobWork};
 pub use log_file_indexing::log_file_indexing_work;
+pub use search::search_work;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobSlot {
     LogFileIndexing,
+    Search,
 }
 
 /// Every scheduled or running job, at most one per `JobSlot`. Scheduling a job cancels the one
@@ -45,6 +48,12 @@ impl JobBoard {
 
     pub fn is_empty(&self) -> bool {
         self.job_handles.is_empty()
+    }
+
+    pub fn has_job(&self, job_slot: JobSlot) -> bool {
+        self.job_handles
+            .iter()
+            .any(|(taken_slot, _)| *taken_slot == job_slot)
     }
 
     pub fn spawn_scheduled_jobs(&mut self, job_sender: &Sender<JobNotification>) {
@@ -166,6 +175,24 @@ mod tests {
             Some((JobSlot::LogFileIndexing, JobStatus::Done))
         ));
         assert!(job_board.is_empty());
+    }
+
+    #[test]
+    fn given_job_scheduled_in_one_slot_when_asking_each_slot_then_only_that_slot_has_a_job() {
+        let job_board = make_board_with_scheduled_job();
+
+        assert!(job_board.has_job(JobSlot::LogFileIndexing));
+        assert!(!job_board.has_job(JobSlot::Search));
+    }
+
+    #[test]
+    fn given_running_job_when_done_is_resolved_then_its_slot_has_no_job() {
+        let mut job_board = make_board_with_scheduled_job();
+        let done_notification = job_board.run_scheduled_jobs().pop().unwrap();
+
+        job_board.resolve(done_notification);
+
+        assert!(!job_board.has_job(JobSlot::LogFileIndexing));
     }
 
     #[test]
