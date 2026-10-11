@@ -120,11 +120,11 @@ fn key_name(key: &KeyEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings::{app, char_key, ctrl, log_view, search},
+        bindings::{app, bookmark, char_key, ctrl, log_view, search},
         *,
     };
     use crate::{
-        action::{AppAction, CommandLineKind, LogViewAction, SearchAction},
+        action::{AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction},
         domain::search::SearchDirection,
     };
 
@@ -192,6 +192,24 @@ mod tests {
         assert_eq!(
             resolve_fresh("N"),
             Some(search(SearchAction::JumpToPreviousMatch))
+        );
+    }
+
+    #[test]
+    fn given_bb_when_resolving_then_the_bookmark_on_the_cursor_line_toggles() {
+        assert_eq!(resolve_fresh("b"), None);
+        assert_eq!(resolve_fresh("bb"), Some(bookmark(BookmarkAction::Toggle)));
+    }
+
+    #[test]
+    fn given_bn_or_bp_when_resolving_then_it_jumps_to_the_next_or_previous_bookmark() {
+        assert_eq!(
+            resolve_fresh("bn"),
+            Some(bookmark(BookmarkAction::JumpToNext))
+        );
+        assert_eq!(
+            resolve_fresh("bp"),
+            Some(bookmark(BookmarkAction::JumpToPrevious))
         );
     }
 

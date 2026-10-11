@@ -5,6 +5,7 @@ pub enum Action {
     App(AppAction),
     LogView(LogViewAction),
     Search(SearchAction),
+    Bookmark(BookmarkAction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,4 +48,11 @@ pub enum SearchAction {
     JumpToNextMatch,
     JumpToPreviousMatch,
     Clear,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BookmarkAction {
+    Toggle,
+    JumpToNext,
+    JumpToPrevious,
 }

@@ -1,6 +1,8 @@
 use crate::{
     control::InputController,
-    domain::{log_file::LogFile, log_view_state::LogViewState, search::SearchState},
+    domain::{
+        bookmarks::Bookmarks, log_file::LogFile, log_view_state::LogViewState, search::SearchState,
+    },
     jobs::{self, JobBoard, JobSlot},
 };
 
@@ -21,6 +23,7 @@ pub enum LogFileIndexingStatus {
 /// public so that `update` can borrow several of them at once.
 pub struct Model {
     // TODO Consider adding a bag for States and a bag for Statuses
+    pub bookmarks: Bookmarks,
     pub input_controller: InputController,
     pub job_board: JobBoard,
     pub log_file: LogFile,
@@ -39,6 +42,7 @@ impl Model {
         );
 
         Self {
+            bookmarks: Bookmarks::default(),
             input_controller: InputController::default(),
             job_board,
             log_file,

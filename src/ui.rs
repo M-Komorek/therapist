@@ -21,6 +21,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
             .search_state
             .query()
             .map(|search_query| search_query.phrase.as_str()),
+        &model.bookmarks,
     );
     match model.input_controller.mode() {
         Mode::CommandLine(command_line) => command_line::render(
@@ -97,7 +98,7 @@ mod tests {
 
         model.type_keys(":12");
 
-        assert_eq!(render_model(&model), [" 1 │ first", " 2 │ second", ":12"]);
+        assert_eq!(render_model(&model), ["  1 │ first", "  2 │ second", ":12"]);
     }
 
     #[test]
@@ -145,8 +146,8 @@ mod tests {
         assert_eq!(
             render_model(&model),
             [
-                " 1 │ first",
-                " 2 │ second",
+                "  1 │ first",
+                "  2 │ second",
                 " app.log                         1/2 (50%) │ 13 B"
             ]
         );
@@ -198,7 +199,7 @@ mod tests {
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
             let buffer = render_to_buffer(50, 3, |frame| render(frame, model));
-            buffer[(5, 1)].bg == Color::Yellow
+            buffer[(6, 1)].bg == Color::Yellow
         };
         assert!(is_highlighted(&model));
 

@@ -3,7 +3,9 @@ use std::ops::Range;
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use super::visible_row::visible_spans;
-use crate::domain::{log_file::LogFile, log_view_state::LogViewState};
+use crate::domain::{bookmarks::Bookmarks, log_file::LogFile, log_view_state::LogViewState};
+
+const BOOKMARK_MARKER: char = '●';
 
 pub fn render(
     frame: &mut Frame,
@@ -11,6 +13,7 @@ pub fn render(
     log_file: &LogFile,
     log_view_state: &LogViewState,
     highlighted_phrase: Option<&str>,
+    bookmarks: &Bookmarks,
 ) {
     let top_line = log_view_state.top_line();
     let line_texts = match log_file.read_lines(top_line..top_line + usize::from(area.height)) {
@@ -25,7 +28,8 @@ pub fn render(
     let left_column = log_view_state.left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
     for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(top_line..) {
-        let mut display_line = Line::from(gutter(line, line_number_width));
+        let is_bookmarked = bookmarks.contains(line);
+        let mut display_line = Line::from(gutter(line, line_number_width, is_bookmarked));
         let highlight_ranges = highlight_ranges(line_text, highlighted_phrase);
         display_line.extend(visible_spans(
             line_text,
@@ -54,8 +58,9 @@ fn line_number_width(line_count: usize) -> usize {
     line_count.max(1).ilog10() as usize + 1
 }
 
-fn gutter(line: usize, line_number_width: usize) -> String {
-    format!(" {:>line_number_width$} │ ", line + 1)
+fn gutter(line: usize, line_number_width: usize, is_bookmarked: bool) -> String {
+    let marker = if is_bookmarked { BOOKMARK_MARKER } else { ' ' };
+    format!("{marker} {:>line_number_width$} │ ", line + 1)
 }
 
 #[cfg(test)]
@@ -91,6 +96,7 @@ mod tests {
                 log_file,
                 log_view_state,
                 highlighted_phrase,
+                &Bookmarks::default(),
             );
         })
     }
@@ -120,7 +126,7 @@ mod tests {
 
         assert_eq!(
             rendered_rows(&buffer),
-            ["  8 │ line 8", "  9 │ line 9", " 10 │ line 10"]
+            ["   8 │ line 8", "   9 │ line 9", "  10 │ line 10"]
         );
     }
 
@@ -132,7 +138,7 @@ mod tests {
         let buffer = render_highlighted(&log_file, &LogViewState::default(), Some("ERROR"), 20, 3);
 
         let is_highlighted = |column, row| buffer[(column, row)].bg == Color::Yellow;
-        let gutter_width = 5;
+        let gutter_width = 6;
         assert!(is_highlighted(gutter_width, 0) && is_highlighted(gutter_width + 12, 0));
         assert!(!is_highlighted(gutter_width + 6, 0));
         assert!(!is_highlighted(gutter_width, 1));
@@ -145,12 +151,33 @@ mod tests {
 
         let buffer = render_highlighted(&log_file, &LogViewState::default(), None, 20, 1);
 
-        assert_ne!(buffer[(5, 0)].bg, Color::Yellow);
+        assert_ne!(buffer[(6, 0)].bg, Color::Yellow);
     }
 
     #[test]
     fn given_empty_phrase_when_finding_highlights_then_there_are_none() {
         assert!(highlight_ranges("abc", Some("")).is_empty());
+    }
+
+    #[test]
+    fn given_bookmarked_line_when_rendering_then_its_gutter_starts_with_the_marker() {
+        let log_file = LogFile::from_text("a\nb\n");
+        let mut bookmarks = Bookmarks::default();
+        bookmarks.toggle(1);
+
+        let buffer = render_to_buffer(20, 2, |frame| {
+            let log_view_state = LogViewState::default();
+            render(
+                frame,
+                frame.area(),
+                &log_file,
+                &log_view_state,
+                None,
+                &bookmarks,
+            );
+        });
+
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a", "● 2 │ b"]);
     }
 
     #[test]
@@ -166,14 +193,14 @@ mod tests {
     fn given_line_wider_than_the_area_when_rendering_then_it_is_cut_at_the_edge() {
         let buffer = render_text("abcdefghij\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ abc"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ab"]);
     }
 
     #[test]
     fn given_tabs_when_rendering_then_they_expand_to_stops_every_eight_columns() {
         let buffer = render_text("ab\tc\td\n", 0, 30, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ ab      c       d"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ab      c       d"]);
     }
 
     #[test]
@@ -181,31 +208,31 @@ mod tests {
         let buffer = render_text("漢\t❤\u{fe0f}\tx\n", 0, 30, 1);
 
         let x_column = (0..30).find(|&column| buffer[(column, 0)].symbol() == "x");
-        assert_eq!(x_column, Some(5 + 16));
+        assert_eq!(x_column, Some(6 + 16));
     }
 
     #[test]
     fn given_c1_control_before_a_tab_when_rendering_then_it_is_dropped_without_moving_the_tab() {
         let buffer = render_text("a\u{85}\tx\n", 0, 30, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ a       x"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a       x"]);
     }
 
     #[test]
     fn given_control_characters_when_rendering_then_they_show_dimmed_in_caret_notation() {
         let buffer = render_text("a\x1b[31mb\rc\n", 0, 30, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ a^[[31mb^Mc"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a^[[31mb^Mc"]);
         let is_dim = |column| buffer[(column, 0)].modifier.contains(Modifier::DIM);
-        assert!(is_dim(6) && is_dim(7));
-        assert!(!is_dim(5) && !is_dim(8));
+        assert!(is_dim(7) && is_dim(8));
+        assert!(!is_dim(6) && !is_dim(9));
     }
 
     #[test]
     fn given_del_character_when_rendering_then_it_shows_in_caret_notation() {
         let buffer = render_text("a\x7fb\n", 0, 30, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ a^?b"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a^?b"]);
     }
 
     #[test]
@@ -213,7 +240,7 @@ mod tests {
     {
         let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ abc"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ab"]);
     }
 
     #[test]
@@ -227,7 +254,7 @@ mod tests {
     fn given_scrolled_view_when_rendering_then_every_line_is_cut_and_the_gutter_stays() {
         let buffer = render_scrolled("abcdef\nxyz\n", 2, 20, 2);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ cdef", " 2 │ z"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ cdef", "  2 │ z"]);
     }
 
     #[test]
@@ -235,37 +262,37 @@ mod tests {
         let buffer = render_scrolled("漢字x\n", 1, 14, 1);
 
         let symbol_at = |column| buffer[(column, 0)].symbol().to_owned();
-        assert_eq!(symbol_at(5), " ");
-        assert_eq!(symbol_at(6), "字");
-        assert_eq!(symbol_at(8), "x");
+        assert_eq!(symbol_at(6), " ");
+        assert_eq!(symbol_at(7), "字");
+        assert_eq!(symbol_at(9), "x");
     }
 
     #[test]
     fn given_tab_left_of_the_edge_when_scrolled_then_text_after_it_keeps_its_tab_stop() {
         let buffer = render_scrolled("a\tb\n", 4, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │     b"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │     b"]);
     }
 
     #[test]
     fn given_control_character_left_of_the_edge_when_scrolled_then_its_caret_notation_is_skipped() {
         let buffer = render_scrolled("\x1bXY\n", 2, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │ XY"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ XY"]);
     }
 
     #[test]
     fn given_view_scrolled_past_the_end_of_a_line_when_rendering_then_only_the_gutter_shows() {
         let buffer = render_scrolled("abc\n", 10, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │"]);
     }
 
     #[test]
     fn given_caret_notation_cut_by_the_left_edge_when_scrolled_then_its_visible_half_is_a_space() {
         let buffer = render_scrolled("\x1bXY\n", 1, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), [" 1 │  XY"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │  XY"]);
     }
 
     #[test]
@@ -273,6 +300,6 @@ mod tests {
         let buffer = render_text("\u{644}\u{627}\tx\n", 0, 30, 1);
 
         let x_column = (0..30).find(|&column| buffer[(column, 0)].symbol() == "x");
-        assert_eq!(x_column, Some(5 + 8));
+        assert_eq!(x_column, Some(6 + 8));
     }
 }

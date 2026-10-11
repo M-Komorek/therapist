@@ -1,7 +1,7 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    action::{Action, AppAction, CommandLineKind, LogViewAction, SearchAction},
+    action::{Action, AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction},
     domain::search::SearchDirection,
 };
 
@@ -32,6 +32,19 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
     (&[char_key('n')], search(SearchAction::JumpToNextMatch)),
     (&[char_key('N')], search(SearchAction::JumpToPreviousMatch)),
     (&[plain(KeyCode::Esc)], search(SearchAction::Clear)),
+    // Bookmarks
+    (
+        &[char_key('b'), char_key('b')],
+        bookmark(BookmarkAction::Toggle),
+    ),
+    (
+        &[char_key('b'), char_key('n')],
+        bookmark(BookmarkAction::JumpToNext),
+    ),
+    (
+        &[char_key('b'), char_key('p')],
+        bookmark(BookmarkAction::JumpToPrevious),
+    ),
     // Moving by lines
     (&[char_key('j')], log_view(LogViewAction::MoveCursorDown(1))),
     (
@@ -143,6 +156,10 @@ pub(super) const fn log_view(log_view_action: LogViewAction) -> Action {
 
 pub(super) const fn search(search_action: SearchAction) -> Action {
     Action::Search(search_action)
+}
+
+pub(super) const fn bookmark(bookmark_action: BookmarkAction) -> Action {
+    Action::Bookmark(bookmark_action)
 }
 
 #[cfg(test)]
