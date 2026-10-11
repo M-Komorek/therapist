@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use super::{JobContext, JobStatus, JobWork};
 use crate::domain::{log_file::LineScanner, search::find_matching_lines};
 
-pub fn search_work(line_scanner: LineScanner, phrase: String) -> JobWork {
+pub fn searching_work(line_scanner: LineScanner, phrase: String) -> JobWork {
     Box::new(move |job_context: &JobContext| {
         line_scanner.scan(|chunk, chunk_first_line| {
             let matching_lines = find_matching_lines(chunk, chunk_first_line, &phrase);
@@ -32,8 +32,8 @@ mod tests {
         let log_file = LogFile::from_text(text);
         let mut job_board = JobBoard::default();
         job_board.schedule(
-            JobSlot::Search,
-            search_work(log_file.line_scanner(), phrase.to_owned()),
+            JobSlot::Searching,
+            searching_work(log_file.line_scanner(), phrase.to_owned()),
         );
 
         job_board
@@ -44,7 +44,7 @@ mod tests {
     }
 
     #[test]
-    fn given_phrase_in_the_file_when_its_search_work_runs_then_the_matching_lines_arrive_before_done()
+    fn given_phrase_in_the_file_when_its_searching_work_runs_then_the_matching_lines_arrive_before_done()
      {
         let job_statuses = search_statuses("ok\nERROR a\nok\nERROR b\n", "ERROR");
 
@@ -55,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn given_phrase_not_in_the_file_when_its_search_work_runs_then_only_done_arrives() {
+    fn given_phrase_not_in_the_file_when_its_searching_work_runs_then_only_done_arrives() {
         let job_statuses = search_statuses("ok\nok\n", "ERROR");
 
         assert!(matches!(job_statuses.as_slice(), [JobStatus::Done]));

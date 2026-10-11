@@ -27,7 +27,7 @@ pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
     let search_text = search_text(
         &model.search_state,
         cursor_line,
-        model.job_board.has_job(JobSlot::Search),
+        model.job_board.has_job(JobSlot::Searching),
     );
     let position_text = position_text(
         cursor_line,

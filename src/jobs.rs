@@ -1,18 +1,18 @@
 mod job;
 mod log_file_indexing;
-mod search;
+mod searching;
 
 use std::sync::mpsc::Sender;
 
 use job::{Job, JobHandle};
 pub use job::{JobContext, JobError, JobId, JobNotification, JobStatus, JobWork};
 pub use log_file_indexing::log_file_indexing_work;
-pub use search::search_work;
+pub use searching::searching_work;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobSlot {
     LogFileIndexing,
-    Search,
+    Searching,
 }
 
 /// Every scheduled or running job, at most one per `JobSlot`. Scheduling a job cancels the one
@@ -182,7 +182,7 @@ mod tests {
         let job_board = make_board_with_scheduled_job();
 
         assert!(job_board.has_job(JobSlot::LogFileIndexing));
-        assert!(!job_board.has_job(JobSlot::Search));
+        assert!(!job_board.has_job(JobSlot::Searching));
     }
 
     #[test]
