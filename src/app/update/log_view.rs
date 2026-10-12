@@ -11,6 +11,7 @@ pub fn resize_log_view(model: &mut Model, screen_size: Size) -> Effect {
     model.tabs.set_log_view_size(
         usize::from(log_view_area.height),
         usize::from(log_view_area.width),
+        model.log_file.line_count(),
     );
     Effect::Redraw
 }
@@ -21,7 +22,9 @@ pub(super) fn dispatch_log_view(model: &mut Model, log_view_action: LogViewActio
     let row_count = active_tab.row_count(line_count);
     let log_view_state = active_tab.log_view_state_mut();
     match log_view_action {
-        LogViewAction::MoveCursorUp(rows_to_move) => log_view_state.move_cursor_up(rows_to_move),
+        LogViewAction::MoveCursorUp(rows_to_move) => {
+            log_view_state.move_cursor_up(rows_to_move, row_count)
+        }
         LogViewAction::MoveCursorDown(rows_to_move) => {
             log_view_state.move_cursor_down(rows_to_move, row_count)
         }
@@ -29,9 +32,9 @@ pub(super) fn dispatch_log_view(model: &mut Model, log_view_action: LogViewActio
             active_tab.move_cursor_to_line_number(line_number, line_count)
         }
         LogViewAction::MoveCursorToLastLine => log_view_state.move_cursor_to_last_row(row_count),
-        LogViewAction::ScrollHalfPageUp => log_view_state.scroll_half_page_up(),
+        LogViewAction::ScrollHalfPageUp => log_view_state.scroll_half_page_up(row_count),
         LogViewAction::ScrollHalfPageDown => log_view_state.scroll_half_page_down(row_count),
-        LogViewAction::ScrollPageUp => log_view_state.scroll_page_up(),
+        LogViewAction::ScrollPageUp => log_view_state.scroll_page_up(row_count),
         LogViewAction::ScrollPageDown => log_view_state.scroll_page_down(row_count),
         LogViewAction::ScrollLeft(columns_to_scroll) => {
             log_view_state.scroll_left(columns_to_scroll)

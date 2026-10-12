@@ -117,7 +117,7 @@ mod tests {
 
     fn make_tabs(width: u16, height: u16) -> Tabs {
         let mut tabs = Tabs::default();
-        tabs.set_log_view_size(usize::from(height), usize::from(width));
+        tabs.set_log_view_size(usize::from(height), usize::from(width), 0);
         tabs
     }
 
@@ -173,7 +173,7 @@ mod tests {
 
         assert_eq!(
             rendered_rows(&buffer),
-            ["   8 │ line 8", "   9 │ line 9", "  10 │ line 10"]
+            ["   9 │ line 9", "  10 │ line 10", "  11 │ line 11"]
         );
     }
 

@@ -193,13 +193,13 @@ mod tests {
 
     fn make_all_lines_tab(height: usize) -> TabState {
         let mut tab_state = TabState::for_all_lines(TabId(0));
-        tab_state.log_view_state.set_height(height);
+        tab_state.log_view_state.set_height(height, 0);
         tab_state
     }
 
     fn make_grep_tab(matching_lines: &[usize], height: usize) -> TabState {
         let mut log_view_state = LogViewState::default();
-        log_view_state.set_height(height);
+        log_view_state.set_height(height, 0);
         let mut tab_state = TabState::for_grep(TabId(1), vec!["ERROR".to_owned()], log_view_state);
         if let Some(grep_state) = tab_state.grep_state_mut() {
             grep_state.add_batch(MatchingLinesBatch {

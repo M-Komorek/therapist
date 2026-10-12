@@ -246,11 +246,12 @@ mod tests {
     fn given_all_tab_when_ta_is_pressed_then_the_cursor_and_scroll_stay() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         model.type_keys("2j");
+        let top_row = model.tabs.active_tab().log_view_state().top_row();
 
         model.type_keys("ta");
 
         assert_eq!(model.cursor_line(), Some(2));
-        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 0);
+        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), top_row);
     }
 
     #[test]
@@ -290,7 +291,7 @@ mod tests {
         model.type_keys("tp");
         model.press_ctrl('d');
 
-        assert_eq!(model.cursor_line(), Some(5));
+        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 5);
     }
 
     #[test]

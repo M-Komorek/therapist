@@ -116,10 +116,11 @@ impl Tabs {
         self.active_position = 0;
     }
 
-    pub fn set_log_view_size(&mut self, height: usize, width: usize) {
+    pub fn set_log_view_size(&mut self, height: usize, width: usize, file_line_count: usize) {
         for tab_state in &mut self.tab_states {
+            let row_count = tab_state.row_count(file_line_count);
             let log_view_state = tab_state.log_view_state_mut();
-            log_view_state.set_height(height);
+            log_view_state.set_height(height, row_count);
             log_view_state.set_width(width);
         }
     }
@@ -209,7 +210,7 @@ mod tests {
     #[test]
     fn given_sized_tabs_when_a_grep_tab_opens_then_it_has_the_same_size() {
         let mut tabs = Tabs::default();
-        tabs.set_log_view_size(10, 80);
+        tabs.set_log_view_size(10, 80, 0);
         let grep_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
         tabs.add_grep_batch(grep_tab_id, batch((0..100).collect()));
         let active_tab = tabs.active_tab_mut();
