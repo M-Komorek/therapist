@@ -120,11 +120,13 @@ fn key_name(key: &KeyEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings::{app, bookmark, char_key, ctrl, log_view, search},
+        bindings::{app, bookmark, char_key, ctrl, log_view, search, tab},
         *,
     };
     use crate::{
-        action::{AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction},
+        action::{
+            AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction, TabAction,
+        },
         domain::search::SearchDirection,
     };
 
@@ -211,6 +213,22 @@ mod tests {
             resolve_fresh("bp"),
             Some(bookmark(BookmarkAction::JumpToPrevious))
         );
+    }
+
+    #[test]
+    fn given_ampersand_when_resolving_then_a_grep_line_opens() {
+        assert_eq!(
+            resolve_fresh("&"),
+            Some(app(AppAction::OpenCommandLine(CommandLineKind::Grep)))
+        );
+    }
+
+    #[test]
+    fn given_tn_tp_or_tc_when_resolving_then_it_switches_or_closes_tabs() {
+        assert_eq!(resolve_fresh("t"), None);
+        assert_eq!(resolve_fresh("tn"), Some(tab(TabAction::SwitchToNext)));
+        assert_eq!(resolve_fresh("tp"), Some(tab(TabAction::SwitchToPrevious)));
+        assert_eq!(resolve_fresh("tc"), Some(tab(TabAction::CloseActive)));
     }
 
     #[test]

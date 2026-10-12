@@ -3,7 +3,7 @@ mod parser;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    action::{Action, AppAction, CommandLineKind, SearchAction},
+    action::{Action, AppAction, CommandLineKind, SearchAction, TabAction},
     domain::search::{SearchDirection, SearchQuery},
 };
 
@@ -47,6 +47,7 @@ impl CommandLine {
         match self.command_line_kind {
             CommandLineKind::Command => ':',
             CommandLineKind::Search(direction) => direction.prefix(),
+            CommandLineKind::Grep => '&',
         }
     }
 
@@ -62,6 +63,7 @@ impl CommandLine {
         match self.command_line_kind {
             CommandLineKind::Command => command_submission_outcome(&self.text),
             CommandLineKind::Search(direction) => search_submission_outcome(&self.text, direction),
+            CommandLineKind::Grep => grep_submission_outcome(&self.text),
         }
     }
 
@@ -120,6 +122,14 @@ fn search_submission_outcome(phrase: &str, direction: SearchDirection) -> Comman
         direction,
     };
     CommandLineOutcome::Submitted(Action::Search(SearchAction::Start(search_query)))
+}
+
+fn grep_submission_outcome(phrase: &str) -> CommandLineOutcome {
+    if phrase.is_empty() {
+        return CommandLineOutcome::Closed;
+    }
+
+    CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(phrase.to_owned())))
 }
 
 fn is_text_input(modifiers: KeyModifiers) -> bool {
@@ -301,6 +311,7 @@ mod tests {
             prefix_of(CommandLineKind::Search(SearchDirection::Backward)),
             '?'
         );
+        assert_eq!(prefix_of(CommandLineKind::Grep), '&');
     }
 
     #[test]
@@ -329,6 +340,27 @@ mod tests {
             CommandLineOutcome::Submitted(Action::Search(SearchAction::RepeatLast(
                 SearchDirection::Backward
             )))
+        );
+    }
+
+    #[test]
+    fn given_phrase_on_a_grep_line_when_enter_is_pressed_then_the_grep_is_submitted_with_it_as_typed()
+     {
+        let mut command_line = make_command_line_of_kind(CommandLineKind::Grep, " ERROR ");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(" ERROR ".to_owned())))
+        );
+    }
+
+    #[test]
+    fn given_empty_grep_line_when_enter_is_pressed_then_it_closes() {
+        let mut command_line = make_command_line_of_kind(CommandLineKind::Grep, "");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Closed
         );
     }
 

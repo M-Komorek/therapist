@@ -1,6 +1,7 @@
 use super::{
     Effect,
     app::{show_error, show_info},
+    log_view::{cursor_line, jump_cursor_to_line},
 };
 use crate::{
     action::BookmarkAction,
@@ -21,23 +22,28 @@ pub(super) fn dispatch_bookmark(model: &mut Model, bookmark_action: BookmarkActi
 }
 
 fn toggle_bookmark(model: &mut Model) {
-    if model.log_file.line_count() == 0 {
+    let Some(cursor_line) = cursor_line(model) else {
         return;
-    }
+    };
 
-    let cursor_line = model.log_view_state.cursor_line();
     model.bookmarks.toggle(cursor_line);
 }
 
 fn jump_to_next_bookmark(model: &mut Model) {
-    let cursor_line = model.log_view_state.cursor_line();
-    let bookmark_jump = model.bookmarks.next_bookmark_from(cursor_line);
+    let cursor_line = cursor_line(model).unwrap_or_default();
+    let active_tab = model.tabs.active_tab();
+    let bookmark_jump = model
+        .bookmarks
+        .next_bookmark_from(cursor_line, |line| active_tab.contains_line(line));
     apply_bookmark_jump(model, bookmark_jump, WRAPPED_TO_TOP_MESSAGE);
 }
 
 fn jump_to_previous_bookmark(model: &mut Model) {
-    let cursor_line = model.log_view_state.cursor_line();
-    let bookmark_jump = model.bookmarks.previous_bookmark_from(cursor_line);
+    let cursor_line = cursor_line(model).unwrap_or_default();
+    let active_tab = model.tabs.active_tab();
+    let bookmark_jump = model
+        .bookmarks
+        .previous_bookmark_from(cursor_line, |line| active_tab.contains_line(line));
     apply_bookmark_jump(model, bookmark_jump, WRAPPED_TO_BOTTOM_MESSAGE);
 }
 
@@ -53,10 +59,7 @@ fn apply_bookmark_jump(
 }
 
 fn jump_cursor_to_bookmark(model: &mut Model, bookmark_jump: BookmarkJump, wrap_message: &str) {
-    let line_count = model.log_file.line_count();
-    model
-        .log_view_state
-        .jump_cursor_to_line(bookmark_jump.line, line_count);
+    jump_cursor_to_line(model, bookmark_jump.line);
     if bookmark_jump.wrapped {
         show_info(model, wrap_message.to_owned());
     }
@@ -64,6 +67,8 @@ fn jump_cursor_to_bookmark(model: &mut Model, bookmark_jump: BookmarkJump, wrap_
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
     use super::*;
     use crate::app::{
         StatusMessage,
@@ -107,10 +112,10 @@ mod tests {
         model.type_keys("2Gbb5Gbb3G");
 
         model.type_keys("bn");
-        assert_eq!(model.log_view_state.cursor_line(), 4);
+        assert_eq!(model.cursor_line(), Some(4));
 
         model.type_keys("bp");
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
         assert_eq!(model.status_message, None);
     }
 
@@ -122,7 +127,7 @@ mod tests {
 
         model.type_keys("bn");
 
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
         assert_eq!(
             model.status_message,
             Some(StatusMessage::Info(WRAPPED_TO_TOP_MESSAGE.to_owned()))
@@ -137,10 +142,43 @@ mod tests {
 
         model.type_keys("bp");
 
-        assert_eq!(model.log_view_state.cursor_line(), 4);
+        assert_eq!(model.cursor_line(), Some(4));
         assert_eq!(
             model.status_message,
             Some(StatusMessage::Info(WRAPPED_TO_BOTTOM_MESSAGE.to_owned()))
+        );
+    }
+
+    #[test]
+    fn given_bookmark_on_a_line_not_in_the_grep_tab_when_bn_is_pressed_there_then_it_is_skipped() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("3Gbb5Gbb");
+        model.type_keys("&ERROR");
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+
+        model.type_keys("bn");
+
+        assert_eq!(model.cursor_line(), Some(4));
+        assert_eq!(model.status_message, None);
+    }
+
+    #[test]
+    fn given_bookmarks_only_on_lines_not_in_the_grep_tab_when_bn_is_pressed_there_then_an_error_says_so()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("3Gbb");
+        model.type_keys("&ERROR");
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+
+        model.type_keys("bn");
+
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(
+                BookmarkError::NoBookmarksShown.to_string()
+            ))
         );
     }
 
@@ -154,6 +192,6 @@ mod tests {
 
         model.type_keys("bp");
         assert_eq!(model.status_message, no_bookmarks);
-        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.cursor_line(), Some(0));
     }
 }

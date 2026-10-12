@@ -3,6 +3,7 @@ mod bookmark;
 mod job_notification;
 mod log_view;
 mod search;
+mod tab;
 
 use ratatui::crossterm::event::KeyEvent;
 
@@ -34,6 +35,7 @@ fn dispatch(model: &mut Model, action: Action) -> Effect {
         Action::LogView(log_view_action) => log_view::dispatch_log_view(model, log_view_action),
         Action::Search(search_action) => search::dispatch_search(model, search_action),
         Action::Bookmark(bookmark_action) => bookmark::dispatch_bookmark(model, bookmark_action),
+        Action::Tab(tab_action) => tab::dispatch_tab(model, tab_action),
     }
 }
 
@@ -44,7 +46,7 @@ mod test_helpers {
         layout::Size,
     };
 
-    use super::{Effect, handle_job_notification, handle_key, resize_log_view};
+    use super::{Effect, handle_job_notification, handle_key, log_view, resize_log_view};
     use crate::{app::Model, control::Mode, domain::log_file::LogFile, jobs::JobNotification};
 
     pub(super) const SEARCHED_TEXT: &str = "ok\nERROR one\nok\nWARN two\nERROR three\nok\n";
@@ -91,6 +93,10 @@ mod test_helpers {
         pub fn press(&mut self, code: KeyCode) -> Effect {
             handle_key(self, code.into())
         }
+
+        pub fn cursor_line(&self) -> Option<usize> {
+            log_view::cursor_line(self)
+        }
     }
 
     pub(super) fn make_model() -> Model {
@@ -98,7 +104,7 @@ mod test_helpers {
     }
 
     pub(super) fn make_model_with_text(text: &str) -> Model {
-        let mut model = Model::with_screen_size(LogFile::from_text(text), Size::new(20, 4));
+        let mut model = Model::with_screen_size(LogFile::from_text(text), Size::new(20, 5));
         model.finish_scheduled_jobs();
         model
     }
@@ -144,7 +150,7 @@ mod tests {
         model.type_keys("j");
 
         assert_eq!(model.status_message.as_ref(), None);
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
     }
 
     #[test]
@@ -164,6 +170,6 @@ mod tests {
         let effect = model.type_keys("2");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.cursor_line(), Some(0));
     }
 }

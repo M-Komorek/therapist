@@ -2,6 +2,7 @@ use super::Effect;
 use crate::{
     action::{AppAction, CommandLineKind},
     app::{Model, StatusMessage},
+    domain::tabs::TabError,
 };
 
 pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
@@ -21,6 +22,12 @@ pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
 }
 
 fn open_command_line(model: &mut Model, command_line_kind: CommandLineKind) -> Effect {
+    let is_search_or_grep = command_line_kind != CommandLineKind::Command;
+    if is_search_or_grep && !model.tabs.active_tab().shows_all_lines() {
+        show_error(model, TabError::NotAvailableInGrepTabs.to_string());
+        return Effect::Redraw;
+    }
+
     model.input_controller.open_command_line(command_line_kind);
     Effect::Redraw
 }
@@ -35,6 +42,8 @@ pub(super) fn show_info(model: &mut Model, info_text: String) {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
     use super::*;
     use crate::app::update::test_helpers::{command_line_text, make_model, run_command};
 
@@ -59,6 +68,26 @@ mod tests {
     }
 
     #[test]
+    fn given_grep_tab_when_a_search_or_grep_line_is_opened_then_it_is_not_available_yet() {
+        let mut model = make_model();
+        model.type_keys("&first");
+        model.press(KeyCode::Enter);
+        let not_available = Some(StatusMessage::Error(
+            TabError::NotAvailableInGrepTabs.to_string(),
+        ));
+
+        for opening_key in ["/", "?", "&"] {
+            model.type_keys(opening_key);
+
+            assert_eq!(model.status_message, not_available);
+            assert_eq!(command_line_text(&model), None);
+        }
+
+        model.type_keys(":");
+        assert_eq!(command_line_text(&model), Some(""));
+    }
+
+    #[test]
     fn given_open_command_line_when_motion_and_quit_keys_are_typed_then_they_go_to_it() {
         let mut model = make_model();
 
@@ -66,7 +95,7 @@ mod tests {
 
         assert_eq!(effect, Effect::Redraw);
         assert_eq!(command_line_text(&model), Some("jq"));
-        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.cursor_line(), Some(0));
     }
 
     #[test]

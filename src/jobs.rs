@@ -1,18 +1,21 @@
 mod job;
 mod log_file_indexing;
-mod searching;
+mod phrase_scanning;
 
 use std::sync::mpsc::Sender;
 
 use job::{Job, JobHandle};
 pub use job::{JobContext, JobError, JobId, JobNotification, JobStatus, JobWork};
 pub use log_file_indexing::log_file_indexing_work;
-pub use searching::searching_work;
+pub use phrase_scanning::{grepping_work, searching_work};
+
+use crate::domain::tabs::TabId;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobSlot {
     LogFileIndexing,
     Searching,
+    Grepping(TabId),
 }
 
 /// Every scheduled or running job, at most one per `JobSlot`. Scheduling a job cancels the one

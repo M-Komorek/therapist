@@ -1,22 +1,29 @@
 mod command_line;
 mod log_view;
 mod status_bar;
+mod tab_bar;
 mod visible_row;
 
-use ratatui::Frame;
+use ratatui::{
+    Frame,
+    style::{Color, Style},
+};
 
 use crate::{
     app::{Model, ScreenAreas},
     control::Mode,
 };
 
+const BAR_STYLE: Style = Style::new().bg(Color::DarkGray);
+
 pub fn render(frame: &mut Frame, model: &Model) {
     let screen_areas = ScreenAreas::new(frame.area());
+    tab_bar::render(frame, screen_areas.tab_bar, &model.tabs);
     log_view::render(
         frame,
         screen_areas.log_view,
         &model.log_file,
-        &model.log_view_state,
+        model.tabs.active_tab(),
         model
             .search_state
             .query()
@@ -72,7 +79,7 @@ mod tests {
 
     fn make_model() -> Model {
         let mut model =
-            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(50, 3));
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(50, 4));
         model.finish_scheduled_jobs();
         model
     }
@@ -83,11 +90,11 @@ mod tests {
     }
 
     fn render_model(model: &Model) -> Vec<String> {
-        rendered_rows(&render_to_buffer(50, 3, |frame| render(frame, model)))
+        rendered_rows(&render_to_buffer(50, 4, |frame| render(frame, model)))
     }
 
     fn cursor_position_after_render(model: &Model) -> Position {
-        let mut terminal = Terminal::new(TestBackend::new(50, 3)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(50, 4)).unwrap();
         terminal.draw(|frame| render(frame, model)).unwrap();
         terminal.get_cursor_position().unwrap()
     }
@@ -98,7 +105,10 @@ mod tests {
 
         model.type_keys(":12");
 
-        assert_eq!(render_model(&model), ["  1 │ first", "  2 │ second", ":12"]);
+        assert_eq!(
+            render_model(&model),
+            [" [all]", "  1 │ first", "  2 │ second", ":12"]
+        );
     }
 
     #[test]
@@ -107,7 +117,7 @@ mod tests {
 
         model.type_keys("/ERR");
 
-        assert_eq!(render_model(&model)[2], "/ERR");
+        assert_eq!(render_model(&model)[3], "/ERR");
     }
 
     #[test]
@@ -118,7 +128,7 @@ mod tests {
 
         model.press(KeyCode::Left);
 
-        assert_eq!(cursor_position_after_render(&model), Position::new(3, 2));
+        assert_eq!(cursor_position_after_render(&model), Position::new(3, 3));
     }
 
     #[test]
@@ -127,14 +137,14 @@ mod tests {
         model.type_keys(":abc");
         model.press(KeyCode::Enter);
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log    Not a command: abc │ 1/2 (50%) │ 13 B"
         );
 
         model.press(KeyCode::Esc);
 
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log                 <Esc> │ 1/2 (50%) │ 13 B"
         );
     }
@@ -146,6 +156,7 @@ mod tests {
         assert_eq!(
             render_model(&model),
             [
+                " [all]",
                 "  1 │ first",
                 "  2 │ second",
                 " app.log                         1/2 (50%) │ 13 B"
@@ -160,8 +171,8 @@ mod tests {
         submit_search(&mut model, "/sec");
 
         assert_eq!(
-            render_model(&model)[2],
-            " app.log            searching… │ 1/2 (50%) │ 13 B"
+            render_model(&model)[3],
+            " app.log          searching 0% │ 1/2 (50%) │ 13 B"
         );
     }
 
@@ -173,7 +184,7 @@ mod tests {
         model.finish_scheduled_jobs();
 
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log           /sec [1/1] │ 2/2 (100%) │ 13 B"
         );
     }
@@ -186,7 +197,7 @@ mod tests {
         model.finish_scheduled_jobs();
 
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log Pattern not found: zz │ 1/2 (50%) │ 13 B"
         );
     }
@@ -198,15 +209,15 @@ mod tests {
         submit_search(&mut model, "/sec");
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
-            let buffer = render_to_buffer(50, 3, |frame| render(frame, model));
-            buffer[(6, 1)].bg == Color::Yellow
+            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            buffer[(6, 2)].bg == Color::Yellow
         };
         assert!(is_highlighted(&model));
 
         model.press(KeyCode::Esc);
 
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log                <Esc> │ 2/2 (100%) │ 13 B"
         );
         assert!(!is_highlighted(&model));
@@ -219,7 +230,7 @@ mod tests {
         model.type_keys("5");
 
         assert_eq!(
-            render_model(&model)[2],
+            render_model(&model)[3],
             " app.log                     5 │ 1/2 (50%) │ 13 B"
         );
     }

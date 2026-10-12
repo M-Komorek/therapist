@@ -1,8 +1,6 @@
 use crate::{
     control::InputController,
-    domain::{
-        bookmarks::Bookmarks, log_file::LogFile, log_view_state::LogViewState, search::SearchState,
-    },
+    domain::{bookmarks::Bookmarks, log_file::LogFile, search::SearchState, tabs::Tabs},
     jobs::{self, JobBoard, JobSlot},
 };
 
@@ -27,8 +25,8 @@ pub struct Model {
     pub input_controller: InputController,
     pub job_board: JobBoard,
     pub log_file: LogFile,
-    pub log_view_state: LogViewState,
     pub search_state: SearchState,
+    pub tabs: Tabs,
     pub status_message: Option<StatusMessage>,
     pub log_file_indexing_status: LogFileIndexingStatus,
 }
@@ -46,8 +44,8 @@ impl Model {
             input_controller: InputController::default(),
             job_board,
             log_file,
-            log_view_state: LogViewState::default(),
             search_state: SearchState::default(),
+            tabs: Tabs::default(),
             status_message: None,
             log_file_indexing_status: LogFileIndexingStatus::Running,
         }

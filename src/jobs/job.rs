@@ -9,7 +9,10 @@ use std::{
     time::Instant,
 };
 
-use crate::domain::log_file::{LineIndex, LogFileError};
+use crate::domain::{
+    log_file::{LineIndex, LogFileError},
+    phrase_matching::MatchingLinesBatch,
+};
 
 pub type JobWork = Box<dyn FnOnce(&JobContext) -> Result<(), JobError> + Send>;
 
@@ -25,7 +28,8 @@ pub struct JobNotification {
 #[derive(Debug)]
 pub enum JobStatus {
     LogFileIndexing(LineIndex),
-    Searching(Vec<usize>),
+    Searching(MatchingLinesBatch),
+    Grepping(MatchingLinesBatch),
     Done,
     Failed(JobError),
 }

@@ -1,4 +1,5 @@
 use super::{SearchDirection, SearchQuery};
+use crate::domain::phrase_matching::MatchingLinesBatch;
 
 #[derive(Debug, PartialEq)]
 pub struct MatchJump {
@@ -15,13 +16,14 @@ pub enum SearchError {
     StillIndexing,
 }
 
-/// The last search and the lines that match it: their positions, counted from 0 like the cursor
-/// line, in file order. A new query or clearing empties them, so they always belong to the query.
-/// Jumps between them use a binary search.
+/// The last search, the lines that match it and how much of the file the search has read. The lines
+/// are positions counted from 0 like the cursor line, in file order. A new query or clearing empties
+/// them, so they always belong to the query. Jumps between them use a binary search.
 #[derive(Default)]
 pub struct SearchState {
     query: Option<SearchQuery>,
     matching_lines: Vec<usize>,
+    percent_searched: u64,
 }
 
 impl SearchState {
@@ -32,6 +34,7 @@ impl SearchState {
     pub fn replace_query(&mut self, query: SearchQuery) {
         self.query = Some(query);
         self.matching_lines.clear();
+        self.percent_searched = 0;
     }
 
     pub fn clear(&mut self) {
@@ -44,8 +47,14 @@ impl SearchState {
         }
     }
 
-    pub fn add_matching_lines(&mut self, matching_lines: Vec<usize>) {
-        self.matching_lines.extend(matching_lines);
+    pub fn add_batch(&mut self, matching_lines_batch: MatchingLinesBatch) {
+        self.matching_lines
+            .extend(matching_lines_batch.matching_lines);
+        self.percent_searched = matching_lines_batch.percent_scanned;
+    }
+
+    pub fn percent_searched(&self) -> u64 {
+        self.percent_searched
     }
 
     pub fn next_match_from(&self, line: usize) -> Result<Option<MatchJump>, SearchError> {
@@ -117,10 +126,17 @@ mod tests {
         }
     }
 
+    fn batch(matching_lines: &[usize], percent_scanned: u64) -> MatchingLinesBatch {
+        MatchingLinesBatch {
+            matching_lines: matching_lines.to_vec(),
+            percent_scanned,
+        }
+    }
+
     fn make_search_state(direction: SearchDirection, matching_lines: &[usize]) -> SearchState {
         let mut search_state = SearchState::default();
         search_state.replace_query(make_query("ERROR", direction));
-        search_state.add_matching_lines(matching_lines.to_vec());
+        search_state.add_batch(batch(matching_lines, 100));
         search_state
     }
 
@@ -149,12 +165,14 @@ mod tests {
     }
 
     #[test]
-    fn given_matches_of_a_query_when_the_query_is_replaced_then_the_old_matches_are_gone() {
+    fn given_matches_of_a_query_when_the_query_is_replaced_then_the_old_matches_and_progress_are_gone()
+     {
         let mut search_state = make_search_state(Forward, &[3, 7]);
 
         search_state.replace_query(make_query("WARN", Forward));
 
         assert_eq!(search_state.match_count(), 0);
+        assert_eq!(search_state.percent_searched(), 0);
         assert_eq!(search_state.query(), Some(&make_query("WARN", Forward)));
     }
 
@@ -191,11 +209,21 @@ mod tests {
     fn given_matching_lines_added_in_two_batches_when_jumping_then_they_are_one_list() {
         let mut search_state = make_matches(&[3, 7]);
 
-        search_state.add_matching_lines(vec![12, 20]);
+        search_state.add_batch(batch(&[12, 20], 100));
 
         assert_eq!(search_state.match_count(), 4);
         assert_eq!(search_state.jump_from(7, Forward), jump_to(12, Forward));
         assert_eq!(search_state.jump_from(20, Backward), jump_to(12, Backward));
+    }
+
+    #[test]
+    fn given_batch_when_it_is_added_then_the_percent_searched_is_the_batch_s() {
+        let mut search_state = SearchState::default();
+        search_state.replace_query(make_query("ERROR", Forward));
+
+        search_state.add_batch(batch(&[3], 40));
+
+        assert_eq!(search_state.percent_searched(), 40);
     }
 
     #[test]

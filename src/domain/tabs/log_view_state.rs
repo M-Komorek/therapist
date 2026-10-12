@@ -2,47 +2,51 @@ const WIDE_SCROLL_PERCENT: usize = 20;
 
 #[derive(Default)]
 pub struct LogViewState {
-    cursor_line: usize,
-    top_line: usize,
+    cursor_row: usize,
+    top_row: usize,
     left_column: usize,
     height: usize,
     width: usize,
 }
 
 impl LogViewState {
-    pub fn cursor_line(&self) -> usize {
-        self.cursor_line
+    pub(super) fn with_size_of(log_view_state: &LogViewState) -> Self {
+        Self {
+            height: log_view_state.height,
+            width: log_view_state.width,
+            ..Self::default()
+        }
     }
 
-    pub fn top_line(&self) -> usize {
-        self.top_line
+    pub fn cursor_row(&self) -> usize {
+        self.cursor_row
+    }
+
+    pub fn top_row(&self) -> usize {
+        self.top_row
     }
 
     pub fn left_column(&self) -> usize {
         self.left_column
     }
 
-    pub fn move_cursor_up(&mut self, lines_to_move: usize) {
-        self.cursor_line = self.cursor_line.saturating_sub(lines_to_move);
+    pub fn move_cursor_up(&mut self, rows_to_move: usize) {
+        self.cursor_row = self.cursor_row.saturating_sub(rows_to_move);
         self.keep_cursor_visible();
     }
 
-    pub fn move_cursor_down(&mut self, lines_to_move: usize, line_count: usize) {
-        self.move_cursor_to_line(self.cursor_line.saturating_add(lines_to_move), line_count);
+    pub fn move_cursor_down(&mut self, rows_to_move: usize, row_count: usize) {
+        self.move_cursor_to_row(self.cursor_row.saturating_add(rows_to_move), row_count);
     }
 
-    pub fn move_cursor_to_line_number(&mut self, line_number: usize, line_count: usize) {
-        self.jump_cursor_to_line(line_number.saturating_sub(1), line_count);
+    pub fn move_cursor_to_last_row(&mut self, row_count: usize) {
+        self.jump_cursor_to_row(last_row(row_count), row_count);
     }
 
-    pub fn move_cursor_to_last_line(&mut self, line_count: usize) {
-        self.jump_cursor_to_line(last_line(line_count), line_count);
-    }
-
-    pub fn jump_cursor_to_line(&mut self, line: usize, line_count: usize) {
-        self.cursor_line = line.min(last_line(line_count));
-        if !self.shows(self.cursor_line) {
-            self.centre_on(self.cursor_line, line_count);
+    pub(super) fn jump_cursor_to_row(&mut self, row: usize, row_count: usize) {
+        self.cursor_row = row.min(last_row(row_count));
+        if !self.shows(self.cursor_row) {
+            self.centre_on(self.cursor_row, row_count);
         }
     }
 
@@ -50,16 +54,16 @@ impl LogViewState {
         self.scroll_up_with_cursor(self.half_page());
     }
 
-    pub fn scroll_half_page_down(&mut self, line_count: usize) {
-        self.scroll_down_with_cursor(self.half_page(), line_count);
+    pub fn scroll_half_page_down(&mut self, row_count: usize) {
+        self.scroll_down_with_cursor(self.half_page(), row_count);
     }
 
     pub fn scroll_page_up(&mut self) {
         self.scroll_up_with_cursor(self.full_page());
     }
 
-    pub fn scroll_page_down(&mut self, line_count: usize) {
-        self.scroll_down_with_cursor(self.full_page(), line_count);
+    pub fn scroll_page_down(&mut self, row_count: usize) {
+        self.scroll_down_with_cursor(self.full_page(), row_count);
     }
 
     pub fn scroll_left(&mut self, columns_to_scroll: usize) {
@@ -82,62 +86,62 @@ impl LogViewState {
         self.left_column = 0;
     }
 
-    pub fn set_height(&mut self, height: usize) {
+    pub(super) fn set_height(&mut self, height: usize) {
         self.height = height;
         self.keep_cursor_visible();
     }
 
-    pub fn set_width(&mut self, width: usize) {
+    pub(super) fn set_width(&mut self, width: usize) {
         self.width = width;
     }
 
-    fn move_cursor_to_line(&mut self, line: usize, line_count: usize) {
-        self.cursor_line = line.min(last_line(line_count));
+    fn move_cursor_to_row(&mut self, row: usize, row_count: usize) {
+        self.cursor_row = row.min(last_row(row_count));
         self.keep_cursor_visible();
     }
 
-    fn scroll_up_with_cursor(&mut self, lines_to_scroll: usize) {
-        self.scroll_top_line_up(lines_to_scroll);
-        self.move_cursor_up(lines_to_scroll);
+    fn scroll_up_with_cursor(&mut self, rows_to_scroll: usize) {
+        self.scroll_top_row_up(rows_to_scroll);
+        self.move_cursor_up(rows_to_scroll);
     }
 
-    fn scroll_down_with_cursor(&mut self, lines_to_scroll: usize, line_count: usize) {
-        self.scroll_top_line_down(lines_to_scroll, line_count);
-        self.move_cursor_down(lines_to_scroll, line_count);
+    fn scroll_down_with_cursor(&mut self, rows_to_scroll: usize, row_count: usize) {
+        self.scroll_top_row_down(rows_to_scroll, row_count);
+        self.move_cursor_down(rows_to_scroll, row_count);
     }
 
-    fn scroll_top_line_up(&mut self, lines_to_scroll: usize) {
-        self.top_line = self.top_line.saturating_sub(lines_to_scroll);
+    fn scroll_top_row_up(&mut self, rows_to_scroll: usize) {
+        self.top_row = self.top_row.saturating_sub(rows_to_scroll);
     }
 
-    fn scroll_top_line_down(&mut self, lines_to_scroll: usize, line_count: usize) {
-        let top_of_last_page = self.top_of_last_page(line_count);
-        if self.top_line < top_of_last_page {
-            self.top_line = self
-                .top_line
-                .saturating_add(lines_to_scroll)
+    fn scroll_top_row_down(&mut self, rows_to_scroll: usize, row_count: usize) {
+        let top_of_last_page = self.top_of_last_page(row_count);
+        if self.top_row < top_of_last_page {
+            self.top_row = self
+                .top_row
+                .saturating_add(rows_to_scroll)
                 .min(top_of_last_page);
         }
     }
 
-    fn shows(&self, line: usize) -> bool {
-        (self.top_line..self.top_line + self.height).contains(&line)
+    fn shows(&self, row: usize) -> bool {
+        (self.top_row..self.top_row + self.height).contains(&row)
     }
 
-    fn centre_on(&mut self, line: usize, line_count: usize) {
-        let centred_top_line = line.saturating_sub(self.height / 2);
-        self.top_line = centred_top_line.min(self.top_of_last_page(line_count));
+    fn centre_on(&mut self, row: usize, row_count: usize) {
+        let centred_top_row = row.saturating_sub(self.height / 2);
+        self.top_row = centred_top_row.min(self.top_of_last_page(row_count));
     }
 
-    fn top_of_last_page(&self, line_count: usize) -> usize {
-        line_count.saturating_sub(self.height)
+    fn top_of_last_page(&self, row_count: usize) -> usize {
+        row_count.saturating_sub(self.height)
     }
 
     fn keep_cursor_visible(&mut self) {
-        if self.cursor_line < self.top_line || self.height == 0 {
-            self.top_line = self.cursor_line;
-        } else if self.cursor_line >= self.top_line + self.height {
-            self.top_line = self.cursor_line + 1 - self.height;
+        if self.cursor_row < self.top_row || self.height == 0 {
+            self.top_row = self.cursor_row;
+        } else if self.cursor_row >= self.top_row + self.height {
+            self.top_row = self.cursor_row + 1 - self.height;
         }
     }
 
@@ -154,8 +158,8 @@ impl LogViewState {
     }
 }
 
-fn last_line(line_count: usize) -> usize {
-    line_count.saturating_sub(1)
+fn last_row(row_count: usize) -> usize {
+    row_count.saturating_sub(1)
 }
 
 #[cfg(test)]
@@ -169,56 +173,73 @@ mod tests {
     }
 
     #[test]
-    fn given_count_past_the_start_when_moving_up_then_cursor_stops_at_first_line() {
+    fn given_moved_and_scrolled_state_when_a_new_one_takes_its_size_then_only_the_size_is_copied() {
+        let mut log_view_state = make_log_view_state(10);
+        log_view_state.set_width(80);
+        log_view_state.move_cursor_down(50, 100);
+        log_view_state.scroll_right(5);
+
+        let mut sized_like_it = LogViewState::with_size_of(&log_view_state);
+
+        assert_eq!(sized_like_it.cursor_row(), 0);
+        assert_eq!(sized_like_it.left_column(), 0);
+        sized_like_it.scroll_page_down(100);
+        assert_eq!(sized_like_it.top_row(), 10);
+        sized_like_it.scroll_right_wide();
+        assert_eq!(sized_like_it.left_column(), 16);
+    }
+
+    #[test]
+    fn given_count_past_the_start_when_moving_up_then_cursor_stops_at_first_row() {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.move_cursor_down(5, 10);
 
         log_view_state.move_cursor_up(usize::MAX);
 
-        assert_eq!(log_view_state.cursor_line(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
     }
 
     #[test]
-    fn given_count_past_the_end_when_moving_down_then_cursor_stops_at_last_line() {
+    fn given_count_past_the_end_when_moving_down_then_cursor_stops_at_last_row() {
         let mut log_view_state = make_log_view_state(10);
 
         log_view_state.move_cursor_down(usize::MAX, 5);
 
-        assert_eq!(log_view_state.cursor_line(), 4);
+        assert_eq!(log_view_state.cursor_row(), 4);
     }
 
     #[test]
-    fn given_empty_file_when_moving_down_then_cursor_stays_on_first_line() {
+    fn given_no_rows_when_moving_down_then_cursor_stays_on_first_row() {
         let mut log_view_state = make_log_view_state(10);
 
         log_view_state.move_cursor_down(1, 0);
 
-        assert_eq!(log_view_state.cursor_line(), 0);
-        assert_eq!(log_view_state.top_line(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
     }
 
     #[test]
-    fn given_cursor_on_last_visible_line_when_moving_down_then_view_scrolls_one_line() {
+    fn given_cursor_on_last_visible_row_when_moving_down_then_view_scrolls_one_row() {
         let mut log_view_state = make_log_view_state(3);
         log_view_state.move_cursor_down(2, 10);
-        assert_eq!(log_view_state.top_line(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
 
         log_view_state.move_cursor_down(1, 10);
 
-        assert_eq!(log_view_state.cursor_line(), 3);
-        assert_eq!(log_view_state.top_line(), 1);
+        assert_eq!(log_view_state.cursor_row(), 3);
+        assert_eq!(log_view_state.top_row(), 1);
     }
 
     #[test]
     fn given_cursor_moving_above_the_view_when_moving_up_then_view_starts_at_cursor() {
         let mut log_view_state = make_log_view_state(3);
         log_view_state.move_cursor_down(5, 10);
-        assert_eq!(log_view_state.top_line(), 3);
+        assert_eq!(log_view_state.top_row(), 3);
 
         log_view_state.move_cursor_up(3);
 
-        assert_eq!(log_view_state.cursor_line(), 2);
-        assert_eq!(log_view_state.top_line(), 2);
+        assert_eq!(log_view_state.cursor_row(), 2);
+        assert_eq!(log_view_state.top_row(), 2);
     }
 
     #[test]
@@ -227,7 +248,7 @@ mod tests {
 
         log_view_state.move_cursor_down(4, 10);
 
-        assert_eq!(log_view_state.top_line(), 4);
+        assert_eq!(log_view_state.top_row(), 4);
     }
 
     #[test]
@@ -237,108 +258,89 @@ mod tests {
 
         log_view_state.set_height(5);
 
-        assert_eq!(log_view_state.top_line(), 4);
+        assert_eq!(log_view_state.top_row(), 4);
     }
 
     #[test]
-    fn given_line_below_the_view_when_going_to_its_number_then_it_is_centred() {
+    fn given_row_below_the_view_when_jumping_to_it_then_it_is_centred() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.move_cursor_to_line_number(50, 100);
+        log_view_state.jump_cursor_to_row(49, 100);
 
-        assert_eq!(log_view_state.cursor_line(), 49);
-        assert_eq!(log_view_state.top_line(), 44);
+        assert_eq!(log_view_state.cursor_row(), 49);
+        assert_eq!(log_view_state.top_row(), 44);
     }
 
     #[test]
-    fn given_line_above_the_view_when_jumping_to_it_then_it_is_centred() {
+    fn given_row_above_the_view_when_jumping_to_it_then_it_is_centred() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_to_last_line(100);
+        log_view_state.move_cursor_to_last_row(100);
 
-        log_view_state.jump_cursor_to_line(30, 100);
+        log_view_state.jump_cursor_to_row(30, 100);
 
-        assert_eq!(log_view_state.cursor_line(), 30);
-        assert_eq!(log_view_state.top_line(), 25);
+        assert_eq!(log_view_state.cursor_row(), 30);
+        assert_eq!(log_view_state.top_row(), 25);
     }
 
     #[test]
-    fn given_line_on_the_screen_when_jumping_to_it_then_the_view_stays() {
+    fn given_row_on_the_screen_when_jumping_to_it_then_the_view_stays() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_to_line_number(50, 100);
+        log_view_state.jump_cursor_to_row(49, 100);
 
-        log_view_state.jump_cursor_to_line(47, 100);
+        log_view_state.jump_cursor_to_row(47, 100);
 
-        assert_eq!(log_view_state.cursor_line(), 47);
-        assert_eq!(log_view_state.top_line(), 44);
+        assert_eq!(log_view_state.cursor_row(), 47);
+        assert_eq!(log_view_state.top_row(), 44);
     }
 
     #[test]
-    fn given_view_at_the_end_when_going_to_the_first_line_then_the_view_starts_at_it() {
+    fn given_view_at_the_end_when_jumping_to_the_first_row_then_the_view_starts_at_it() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_to_last_line(100);
+        log_view_state.move_cursor_to_last_row(100);
 
-        log_view_state.move_cursor_to_line_number(1, 100);
+        log_view_state.jump_cursor_to_row(0, 100);
 
-        assert_eq!(log_view_state.cursor_line(), 0);
-        assert_eq!(log_view_state.top_line(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
     }
 
     #[test]
-    fn given_line_past_the_end_when_jumping_to_it_then_cursor_stops_at_the_last_line() {
+    fn given_row_past_the_end_when_jumping_to_it_then_cursor_stops_at_the_last_row() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.jump_cursor_to_line(500, 100);
+        log_view_state.jump_cursor_to_row(500, 100);
 
-        assert_eq!(log_view_state.cursor_line(), 99);
-        assert_eq!(log_view_state.top_line(), 90);
+        assert_eq!(log_view_state.cursor_row(), 99);
+        assert_eq!(log_view_state.top_row(), 90);
     }
 
     #[test]
     fn given_zero_height_viewport_when_jumping_then_view_starts_at_cursor() {
         let mut log_view_state = make_log_view_state(0);
 
-        log_view_state.jump_cursor_to_line(40, 100);
+        log_view_state.jump_cursor_to_row(40, 100);
 
-        assert_eq!(log_view_state.top_line(), 40);
+        assert_eq!(log_view_state.top_row(), 40);
     }
 
     #[test]
-    fn given_line_number_past_the_end_when_going_to_it_then_cursor_stops_at_last_line() {
+    fn given_many_rows_when_going_to_the_last_row_then_it_is_the_bottom_row() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.move_cursor_to_line_number(500, 100);
+        log_view_state.move_cursor_to_last_row(100);
 
-        assert_eq!(log_view_state.cursor_line(), 99);
+        assert_eq!(log_view_state.cursor_row(), 99);
+        assert_eq!(log_view_state.top_row(), 90);
     }
 
     #[test]
-    fn given_line_number_zero_when_going_to_it_then_cursor_goes_to_first_line() {
-        let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_down(5, 100);
-
-        log_view_state.move_cursor_to_line_number(0, 100);
-
-        assert_eq!(log_view_state.cursor_line(), 0);
-    }
-
-    #[test]
-    fn given_long_file_when_going_to_last_line_then_it_is_the_bottom_row() {
+    fn given_no_rows_when_going_to_the_last_row_then_cursor_stays_on_the_first_row() {
         let mut log_view_state = make_log_view_state(10);
 
-        log_view_state.move_cursor_to_last_line(100);
+        log_view_state.move_cursor_to_last_row(0);
 
-        assert_eq!(log_view_state.cursor_line(), 99);
-        assert_eq!(log_view_state.top_line(), 90);
-    }
-
-    #[test]
-    fn given_empty_file_when_going_to_last_line_then_cursor_stays_on_first_line() {
-        let mut log_view_state = make_log_view_state(10);
-
-        log_view_state.move_cursor_to_last_line(0);
-
-        assert_eq!(log_view_state.cursor_line(), 0);
-        assert_eq!(log_view_state.top_line(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
     }
 
     #[test]
@@ -348,8 +350,8 @@ mod tests {
 
         log_view_state.scroll_half_page_down(100);
 
-        assert_eq!(log_view_state.top_line(), 5);
-        assert_eq!(log_view_state.cursor_line(), 7);
+        assert_eq!(log_view_state.top_row(), 5);
+        assert_eq!(log_view_state.cursor_row(), 7);
     }
 
     #[test]
@@ -358,49 +360,49 @@ mod tests {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.move_cursor_down(17, 20);
         log_view_state.move_cursor_up(9);
-        assert_eq!(log_view_state.top_line(), 8);
+        assert_eq!(log_view_state.top_row(), 8);
 
         log_view_state.scroll_half_page_down(20);
 
-        assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor_line(), 13);
+        assert_eq!(log_view_state.top_row(), 10);
+        assert_eq!(log_view_state.cursor_row(), 13);
     }
 
     #[test]
-    fn given_last_page_shown_when_half_page_down_then_cursor_stops_at_last_line() {
+    fn given_last_page_shown_when_half_page_down_then_cursor_stops_at_last_row() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_to_last_line(20);
+        log_view_state.move_cursor_to_last_row(20);
         log_view_state.move_cursor_up(3);
 
         log_view_state.scroll_half_page_down(20);
 
-        assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor_line(), 19);
+        assert_eq!(log_view_state.top_row(), 10);
+        assert_eq!(log_view_state.cursor_row(), 19);
     }
 
     #[test]
     fn given_view_past_the_last_page_after_resize_when_half_page_down_then_view_does_not_move_back()
     {
         let mut log_view_state = make_log_view_state(5);
-        log_view_state.move_cursor_to_last_line(20);
+        log_view_state.move_cursor_to_last_row(20);
         log_view_state.set_height(10);
-        assert_eq!(log_view_state.top_line(), 15);
+        assert_eq!(log_view_state.top_row(), 15);
 
         log_view_state.scroll_half_page_down(20);
 
-        assert_eq!(log_view_state.top_line(), 15);
+        assert_eq!(log_view_state.top_row(), 15);
     }
 
     #[test]
     fn given_scrolled_view_when_half_page_up_then_view_scrolls_and_cursor_keeps_its_row() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.move_cursor_to_line_number(33, 100);
-        assert_eq!(log_view_state.top_line(), 27);
+        log_view_state.jump_cursor_to_row(32, 100);
+        assert_eq!(log_view_state.top_row(), 27);
 
         log_view_state.scroll_half_page_up();
 
-        assert_eq!(log_view_state.top_line(), 22);
-        assert_eq!(log_view_state.cursor_line(), 27);
+        assert_eq!(log_view_state.top_row(), 22);
+        assert_eq!(log_view_state.cursor_row(), 27);
     }
 
     #[test]
@@ -410,8 +412,8 @@ mod tests {
 
         log_view_state.scroll_half_page_up();
 
-        assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor_line(), 2);
+        assert_eq!(log_view_state.top_row(), 0);
+        assert_eq!(log_view_state.cursor_row(), 2);
     }
 
     #[test]
@@ -419,33 +421,33 @@ mod tests {
         let mut log_view_state = make_log_view_state(10);
 
         log_view_state.scroll_page_down(100);
-        assert_eq!(log_view_state.top_line(), 10);
-        assert_eq!(log_view_state.cursor_line(), 10);
+        assert_eq!(log_view_state.top_row(), 10);
+        assert_eq!(log_view_state.cursor_row(), 10);
 
         log_view_state.scroll_page_up();
-        assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor_line(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
     }
 
     #[test]
-    fn given_one_row_viewport_when_half_page_down_then_view_moves_one_line() {
+    fn given_one_row_viewport_when_half_page_down_then_view_moves_one_row() {
         let mut log_view_state = make_log_view_state(1);
 
         log_view_state.scroll_half_page_down(100);
 
-        assert_eq!(log_view_state.top_line(), 1);
-        assert_eq!(log_view_state.cursor_line(), 1);
+        assert_eq!(log_view_state.top_row(), 1);
+        assert_eq!(log_view_state.cursor_row(), 1);
     }
 
     #[test]
-    fn given_empty_file_when_paging_down_then_nothing_moves() {
+    fn given_no_rows_when_paging_down_then_nothing_moves() {
         let mut log_view_state = make_log_view_state(10);
 
         log_view_state.scroll_half_page_down(0);
         log_view_state.scroll_page_down(0);
 
-        assert_eq!(log_view_state.top_line(), 0);
-        assert_eq!(log_view_state.cursor_line(), 0);
+        assert_eq!(log_view_state.top_row(), 0);
+        assert_eq!(log_view_state.cursor_row(), 0);
     }
 
     #[test]

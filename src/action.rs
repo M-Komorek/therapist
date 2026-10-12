@@ -6,6 +6,7 @@ pub enum Action {
     LogView(LogViewAction),
     Search(SearchAction),
     Bookmark(BookmarkAction),
+    Tab(TabAction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +23,7 @@ pub enum AppAction {
 pub enum CommandLineKind {
     Command,
     Search(SearchDirection),
+    Grep,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,4 +57,12 @@ pub enum BookmarkAction {
     Toggle,
     JumpToNext,
     JumpToPrevious,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TabAction {
+    Grep(String),
+    SwitchToNext,
+    SwitchToPrevious,
+    CloseActive,
 }

@@ -3,7 +3,7 @@ use std::ops::Range;
 use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
 
 use super::visible_row::visible_spans;
-use crate::domain::{bookmarks::Bookmarks, log_file::LogFile, log_view_state::LogViewState};
+use crate::domain::{bookmarks::Bookmarks, log_file::LogFile, tabs::TabState};
 
 const BOOKMARK_MARKER: char = '●';
 
@@ -11,13 +11,15 @@ pub fn render(
     frame: &mut Frame,
     area: Rect,
     log_file: &LogFile,
-    log_view_state: &LogViewState,
+    tab_state: &TabState,
     highlighted_phrase: Option<&str>,
     bookmarks: &Bookmarks,
 ) {
-    let top_line = log_view_state.top_line();
-    let line_texts = match log_file.read_lines(top_line..top_line + usize::from(area.height)) {
-        Ok(line_texts) => line_texts,
+    let log_view_state = tab_state.log_view_state();
+    let top_row = log_view_state.top_row();
+    let tab_rows = match tab_state.read_rows(top_row..top_row + usize::from(area.height), log_file)
+    {
+        Ok(tab_rows) => tab_rows,
         Err(error) => {
             tracing::error!(%error, "reading visible lines failed");
             frame.render_widget(Line::raw(error.to_string()), area);
@@ -27,16 +29,16 @@ pub fn render(
     let line_number_width = line_number_width(log_file.line_count());
     let left_column = log_view_state.left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
-    for ((row_area, line_text), line) in area.rows().zip(&line_texts).zip(top_line..) {
-        let is_bookmarked = bookmarks.contains(line);
-        let mut display_line = Line::from(gutter(line, line_number_width, is_bookmarked));
-        let highlight_ranges = highlight_ranges(line_text, highlighted_phrase);
+    for ((row_area, tab_row), row) in area.rows().zip(&tab_rows).zip(top_row..) {
+        let is_bookmarked = bookmarks.contains(tab_row.line);
+        let mut display_line = Line::from(gutter(tab_row.line, line_number_width, is_bookmarked));
+        let highlight_ranges = highlight_ranges(&tab_row.text, highlighted_phrase);
         display_line.extend(visible_spans(
-            line_text,
+            &tab_row.text,
             visible_columns.clone(),
             &highlight_ranges,
         ));
-        if line == log_view_state.cursor_line() {
+        if row == log_view_state.cursor_row() {
             display_line = display_line.reversed();
         }
         frame.render_widget(display_line, row_area);
@@ -71,21 +73,26 @@ mod tests {
     };
 
     use super::*;
-    use crate::ui::tests::{render_to_buffer, rendered_rows};
+    use crate::{
+        domain::tabs::Tabs,
+        ui::tests::{render_to_buffer, rendered_rows},
+    };
 
-    fn render_log_view(
-        log_file: &LogFile,
-        log_view_state: &LogViewState,
-        width: u16,
-        height: u16,
-    ) -> Buffer {
-        render_highlighted(log_file, log_view_state, None, width, height)
+    fn make_tabs(width: u16, height: u16) -> Tabs {
+        let mut tabs = Tabs::default();
+        tabs.set_log_view_size(usize::from(height), usize::from(width));
+        tabs
     }
 
-    fn render_highlighted(
+    fn render_log_view(log_file: &LogFile, tabs: &Tabs, width: u16, height: u16) -> Buffer {
+        render_with(log_file, tabs, None, &Bookmarks::default(), width, height)
+    }
+
+    fn render_with(
         log_file: &LogFile,
-        log_view_state: &LogViewState,
+        tabs: &Tabs,
         highlighted_phrase: Option<&str>,
+        bookmarks: &Bookmarks,
         width: u16,
         height: u16,
     ) -> Buffer {
@@ -94,26 +101,29 @@ mod tests {
                 frame,
                 frame.area(),
                 log_file,
-                log_view_state,
+                tabs.active_tab(),
                 highlighted_phrase,
-                &Bookmarks::default(),
+                bookmarks,
             );
         })
     }
 
-    fn render_text(text: &str, cursor_line: usize, width: u16, height: u16) -> Buffer {
+    fn render_text(text: &str, cursor_row: usize, width: u16, height: u16) -> Buffer {
         let log_file = LogFile::from_text(text);
-        let mut log_view_state = LogViewState::default();
-        log_view_state.set_height(usize::from(height));
-        log_view_state.move_cursor_down(cursor_line, log_file.line_count());
-        render_log_view(&log_file, &log_view_state, width, height)
+        let mut tabs = make_tabs(width, height);
+        tabs.active_tab_mut()
+            .log_view_state_mut()
+            .move_cursor_down(cursor_row, log_file.line_count());
+        render_log_view(&log_file, &tabs, width, height)
     }
 
     fn render_scrolled(text: &str, columns_to_scroll: usize, width: u16, height: u16) -> Buffer {
         let log_file = LogFile::from_text(text);
-        let mut log_view_state = LogViewState::default();
-        log_view_state.scroll_right(columns_to_scroll);
-        render_log_view(&log_file, &log_view_state, width, height)
+        let mut tabs = make_tabs(width, height);
+        tabs.active_tab_mut()
+            .log_view_state_mut()
+            .scroll_right(columns_to_scroll);
+        render_log_view(&log_file, &tabs, width, height)
     }
 
     #[test]
@@ -134,8 +144,16 @@ mod tests {
     fn given_highlighted_phrase_when_rendering_then_every_occurrence_on_visible_lines_is_highlighted()
      {
         let log_file = LogFile::from_text("ERROR a ERROR\nok\nERROR\n");
+        let tabs = make_tabs(20, 3);
 
-        let buffer = render_highlighted(&log_file, &LogViewState::default(), Some("ERROR"), 20, 3);
+        let buffer = render_with(
+            &log_file,
+            &tabs,
+            Some("ERROR"),
+            &Bookmarks::default(),
+            20,
+            3,
+        );
 
         let is_highlighted = |column, row| buffer[(column, row)].bg == Color::Yellow;
         let gutter_width = 6;
@@ -149,7 +167,7 @@ mod tests {
     fn given_no_highlighted_phrase_when_rendering_then_nothing_is_highlighted() {
         let log_file = LogFile::from_text("ERROR\n");
 
-        let buffer = render_highlighted(&log_file, &LogViewState::default(), None, 20, 1);
+        let buffer = render_log_view(&log_file, &make_tabs(20, 1), 20, 1);
 
         assert_ne!(buffer[(6, 0)].bg, Color::Yellow);
     }
@@ -165,17 +183,7 @@ mod tests {
         let mut bookmarks = Bookmarks::default();
         bookmarks.toggle(1);
 
-        let buffer = render_to_buffer(20, 2, |frame| {
-            let log_view_state = LogViewState::default();
-            render(
-                frame,
-                frame.area(),
-                &log_file,
-                &log_view_state,
-                None,
-                &bookmarks,
-            );
-        });
+        let buffer = render_with(&log_file, &make_tabs(20, 2), None, &bookmarks, 20, 2);
 
         assert_eq!(rendered_rows(&buffer), ["  1 │ a", "● 2 │ b"]);
     }

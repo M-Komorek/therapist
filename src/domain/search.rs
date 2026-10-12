@@ -1,7 +1,5 @@
-mod matching;
 mod state;
 
-pub use matching::find_matching_lines;
 pub use state::{MatchJump, SearchError, SearchState};
 
 #[derive(Debug, Clone, Copy, PartialEq)]

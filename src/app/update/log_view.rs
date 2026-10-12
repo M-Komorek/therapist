@@ -8,28 +8,31 @@ use crate::{
 
 pub fn resize_log_view(model: &mut Model, screen_size: Size) -> Effect {
     let log_view_area = ScreenAreas::new(Rect::from(screen_size)).log_view;
-    let log_view_state = &mut model.log_view_state;
-    log_view_state.set_height(usize::from(log_view_area.height));
-    log_view_state.set_width(usize::from(log_view_area.width));
+    model.tabs.set_log_view_size(
+        usize::from(log_view_area.height),
+        usize::from(log_view_area.width),
+    );
     Effect::Redraw
 }
 
 pub(super) fn dispatch_log_view(model: &mut Model, log_view_action: LogViewAction) -> Effect {
     let line_count = model.log_file.line_count();
-    let log_view_state = &mut model.log_view_state;
+    let active_tab = model.tabs.active_tab_mut();
+    let row_count = active_tab.row_count(line_count);
+    let log_view_state = active_tab.log_view_state_mut();
     match log_view_action {
-        LogViewAction::MoveCursorUp(lines_to_move) => log_view_state.move_cursor_up(lines_to_move),
-        LogViewAction::MoveCursorDown(lines_to_move) => {
-            log_view_state.move_cursor_down(lines_to_move, line_count)
+        LogViewAction::MoveCursorUp(rows_to_move) => log_view_state.move_cursor_up(rows_to_move),
+        LogViewAction::MoveCursorDown(rows_to_move) => {
+            log_view_state.move_cursor_down(rows_to_move, row_count)
         }
         LogViewAction::MoveCursorToLineNumber(line_number) => {
-            log_view_state.move_cursor_to_line_number(line_number, line_count)
+            active_tab.move_cursor_to_line_number(line_number, line_count)
         }
-        LogViewAction::MoveCursorToLastLine => log_view_state.move_cursor_to_last_line(line_count),
+        LogViewAction::MoveCursorToLastLine => log_view_state.move_cursor_to_last_row(row_count),
         LogViewAction::ScrollHalfPageUp => log_view_state.scroll_half_page_up(),
-        LogViewAction::ScrollHalfPageDown => log_view_state.scroll_half_page_down(line_count),
+        LogViewAction::ScrollHalfPageDown => log_view_state.scroll_half_page_down(row_count),
         LogViewAction::ScrollPageUp => log_view_state.scroll_page_up(),
-        LogViewAction::ScrollPageDown => log_view_state.scroll_page_down(line_count),
+        LogViewAction::ScrollPageDown => log_view_state.scroll_page_down(row_count),
         LogViewAction::ScrollLeft(columns_to_scroll) => {
             log_view_state.scroll_left(columns_to_scroll)
         }
@@ -41,6 +44,19 @@ pub(super) fn dispatch_log_view(model: &mut Model, log_view_action: LogViewActio
         LogViewAction::ScrollToFirstColumn => log_view_state.scroll_to_first_column(),
     }
     Effect::Redraw
+}
+
+pub(super) fn cursor_line(model: &Model) -> Option<usize> {
+    let line_count = model.log_file.line_count();
+    model.tabs.active_tab().cursor_line(line_count)
+}
+
+pub(super) fn jump_cursor_to_line(model: &mut Model, line: usize) {
+    let line_count = model.log_file.line_count();
+    model
+        .tabs
+        .active_tab_mut()
+        .jump_cursor_to_line(line, line_count);
 }
 
 #[cfg(test)]
@@ -55,7 +71,7 @@ mod tests {
         let effect = run_command(&mut model, "2");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
         assert_eq!(command_line_text(&model), None);
     }
 
@@ -65,7 +81,7 @@ mod tests {
 
         run_command(&mut model, "99");
 
-        assert_eq!(model.log_view_state.cursor_line(), 2);
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]
@@ -75,7 +91,7 @@ mod tests {
 
         run_command(&mut model, "0");
 
-        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.cursor_line(), Some(0));
     }
 
     #[test]
@@ -95,7 +111,7 @@ mod tests {
         let effect = model.type_keys("j");
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
     }
 
     #[test]
@@ -105,7 +121,7 @@ mod tests {
 
         model.type_keys("k");
 
-        assert_eq!(model.log_view_state.cursor_line(), 0);
+        assert_eq!(model.cursor_line(), Some(0));
     }
 
     #[test]
@@ -115,7 +131,7 @@ mod tests {
 
         model.type_keys("j");
 
-        assert_eq!(model.log_view_state.cursor_line(), 2);
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]
@@ -125,7 +141,7 @@ mod tests {
 
         model.type_keys("j");
 
-        assert_eq!(model.log_view_state.cursor_line(), 2);
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]
@@ -134,7 +150,7 @@ mod tests {
 
         model.type_keys("j");
 
-        assert_eq!(model.log_view_state.top_line(), 0);
+        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 0);
     }
 
     #[test]
@@ -143,7 +159,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor_line(), 2);
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]
@@ -153,7 +169,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
     }
 
     #[test]
@@ -163,7 +179,7 @@ mod tests {
         let effect = model.press_ctrl('d');
 
         assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.log_view_state.cursor_line(), 1);
+        assert_eq!(model.cursor_line(), Some(1));
     }
 
     #[test]
@@ -174,7 +190,7 @@ mod tests {
 
         model.type_keys("h");
 
-        assert_eq!(model.log_view_state.left_column(), 2);
+        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 2);
     }
 
     #[test]
@@ -185,7 +201,7 @@ mod tests {
 
         model.type_keys("L");
 
-        assert_eq!(model.log_view_state.left_column(), 20);
+        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 20);
     }
 
     #[test]
@@ -202,8 +218,8 @@ mod tests {
         let mut model = make_model();
         model.type_keys("jj");
 
-        resize_log_view(&mut model, Size::new(20, 2));
+        resize_log_view(&mut model, Size::new(20, 3));
 
-        assert_eq!(model.log_view_state.top_line(), 2);
+        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 2);
     }
 }

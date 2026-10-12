@@ -1,7 +1,9 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    action::{Action, AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction},
+    action::{
+        Action, AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction, TabAction,
+    },
     domain::search::SearchDirection,
 };
 
@@ -45,6 +47,20 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
         &[char_key('b'), char_key('p')],
         bookmark(BookmarkAction::JumpToPrevious),
     ),
+    // Tabs
+    (
+        &[char_key('&')],
+        app(AppAction::OpenCommandLine(CommandLineKind::Grep)),
+    ),
+    (
+        &[char_key('t'), char_key('n')],
+        tab(TabAction::SwitchToNext),
+    ),
+    (
+        &[char_key('t'), char_key('p')],
+        tab(TabAction::SwitchToPrevious),
+    ),
+    (&[char_key('t'), char_key('c')], tab(TabAction::CloseActive)),
     // Moving by lines
     (&[char_key('j')], log_view(LogViewAction::MoveCursorDown(1))),
     (
@@ -160,6 +176,10 @@ pub(super) const fn search(search_action: SearchAction) -> Action {
 
 pub(super) const fn bookmark(bookmark_action: BookmarkAction) -> Action {
     Action::Bookmark(bookmark_action)
+}
+
+pub(super) const fn tab(tab_action: TabAction) -> Action {
+    Action::Tab(tab_action)
 }
 
 #[cfg(test)]

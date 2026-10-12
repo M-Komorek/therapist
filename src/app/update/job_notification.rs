@@ -2,9 +2,11 @@ use super::{
     Effect,
     app::show_error,
     search::{clear_search, jump_to_next_match},
+    tab::close_tab,
 };
 use crate::{
     app::{LogFileIndexingStatus, Model},
+    domain::tabs::{GrepError, TabId},
     jobs::{JobError, JobNotification, JobSlot, JobStatus},
 };
 
@@ -15,8 +17,13 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
 
     match job_status {
         JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
-        JobStatus::Searching(matching_lines) => {
-            model.search_state.add_matching_lines(matching_lines)
+        JobStatus::Searching(matching_lines_batch) => {
+            model.search_state.add_batch(matching_lines_batch)
+        }
+        JobStatus::Grepping(matching_lines_batch) => {
+            if let JobSlot::Grepping(tab_id) = job_slot {
+                model.tabs.add_grep_batch(tab_id, matching_lines_batch);
+            }
         }
         JobStatus::Done => mark_job_done(model, job_slot),
         JobStatus::Failed(job_error) => mark_job_failed(model, job_slot, job_error),
@@ -39,8 +46,11 @@ fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
                 match_count = model.search_state.match_count(),
                 "search done"
             );
-            jump_to_next_match(model);
+            if model.tabs.active_tab().shows_all_lines() {
+                jump_to_next_match(model);
+            }
         }
+        JobSlot::Grepping(tab_id) => mark_grep_done(model, tab_id),
     }
 }
 
@@ -55,6 +65,24 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
             clear_search(model);
             show_error(model, format!("Search failed: {job_error}"));
         }
+        JobSlot::Grepping(tab_id) => {
+            tracing::error!(error = %job_error, "grep failed");
+            close_tab(model, tab_id);
+            show_error(model, format!("Grep failed: {job_error}"));
+        }
+    }
+}
+
+fn mark_grep_done(model: &mut Model, tab_id: TabId) {
+    let Some(grep_state) = model.tabs.grep_state(tab_id) else {
+        return;
+    };
+
+    tracing::debug!(match_count = grep_state.match_count(), "grep done");
+    if grep_state.match_count() == 0 {
+        let pattern_not_found = GrepError::PatternNotFound(grep_state.phrase().to_owned());
+        close_tab(model, tab_id);
+        show_error(model, pattern_not_found.to_string());
     }
 }
 
@@ -73,7 +101,7 @@ mod tests {
 
     fn make_indexing_model(text: &str) -> (Model, Vec<JobNotification>) {
         let mut model =
-            Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(20, 4));
+            Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(20, 5));
         let job_notifications = model.job_board.run_scheduled_jobs();
         (model, job_notifications)
     }
@@ -106,7 +134,7 @@ mod tests {
 
         model.type_keys("G");
 
-        assert_eq!(model.log_view_state.cursor_line(), 2);
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]

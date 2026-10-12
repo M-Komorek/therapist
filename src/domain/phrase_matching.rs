@@ -1,5 +1,11 @@
 use memchr::memmem;
 
+#[derive(Debug, PartialEq)]
+pub struct MatchingLinesBatch {
+    pub matching_lines: Vec<usize>,
+    pub percent_scanned: u64,
+}
+
 pub fn find_matching_lines(chunk: &[u8], chunk_first_line: usize, phrase: &str) -> Vec<usize> {
     if phrase.is_empty() {
         return Vec::new();

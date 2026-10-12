@@ -1,43 +1,57 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style, Stylize},
+    style::Stylize,
     text::{Line, Span},
 };
 
+use super::BAR_STYLE;
 use crate::{
     app::{LogFileIndexingStatus, Model, StatusMessage},
-    domain::search::SearchState,
+    domain::{search::SearchState, tabs::GrepState},
     jobs::JobSlot,
 };
 
-const BAR_STYLE: Style = Style::new().bg(Color::DarkGray);
 const SEGMENT_SEPARATOR: &str = " │ ";
 const FILE_SIZE_UNITS: [&str; 4] = ["kB", "MB", "GB", "TB"];
 
 pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
     let log_file = &model.log_file;
-    let cursor_line = model.log_view_state.cursor_line();
+    let line_count = log_file.line_count();
+    let active_tab = model.tabs.active_tab();
+    let cursor_row = active_tab.log_view_state().cursor_row();
+    let cursor_line = active_tab.cursor_line(line_count).unwrap_or_default();
+    let is_grepping = model
+        .job_board
+        .has_job(JobSlot::Grepping(active_tab.tab_id()));
+    let is_row_count_final = if active_tab.shows_all_lines() {
+        model.log_file_indexing_status == LogFileIndexingStatus::Done
+    } else {
+        !is_grepping
+    };
     let last_keys = model.input_controller.last_keys_text();
     let message_span = message_span(
         model.status_message.as_ref(),
         model.log_file_indexing_status,
         log_file.percent_indexed(),
     );
-    let search_text = search_text(
+    let search_span = search_span(
         &model.search_state,
         cursor_line,
         model.job_board.has_job(JobSlot::Searching),
     );
+    let percent_grepped = active_tab.grep_state().map(GrepState::percent_grepped);
+    let grepping_span = grepping_span(percent_grepped, is_grepping);
     let position_text = position_text(
-        cursor_line,
-        log_file.line_count(),
-        model.log_file_indexing_status,
+        cursor_row,
+        active_tab.row_count(line_count),
+        is_row_count_final,
     );
     let right_segments = right_segments(
         &last_keys,
         message_span,
-        search_text,
+        search_span,
+        grepping_span,
         position_text,
         file_size_text(log_file.file_size()),
     );
@@ -50,7 +64,8 @@ pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
 fn right_segments<'a>(
     last_keys: &'a str,
     message_span: Option<Span<'a>>,
-    search_text: Option<String>,
+    search_span: Option<Span<'a>>,
+    grepping_span: Option<Span<'a>>,
     position_text: String,
     file_size_text: String,
 ) -> Vec<Span<'a>> {
@@ -59,7 +74,8 @@ fn right_segments<'a>(
         segments.push(Span::raw(last_keys));
     }
     segments.extend(message_span);
-    segments.extend(search_text.map(Span::raw));
+    segments.extend(search_span);
+    segments.extend(grepping_span);
     segments.push(Span::raw(position_text));
     segments.push(Span::raw(file_size_text));
     segments
@@ -90,41 +106,43 @@ fn message_span(
     }
 }
 
-fn search_text(
+fn search_span(
     search_state: &SearchState,
     cursor_line: usize,
     is_searching: bool,
-) -> Option<String> {
+) -> Option<Span<'static>> {
     let search_query = search_state.query()?;
     if is_searching {
-        return Some("searching…".to_owned());
+        return Some(format!("searching {}%", search_state.percent_searched()).yellow());
     }
     if search_state.match_count() == 0 {
-        return Some(format!("Pattern not found: {}", search_query.phrase));
+        return Some(Span::raw(format!(
+            "Pattern not found: {}",
+            search_query.phrase
+        )));
     }
 
-    Some(format!(
+    Some(Span::raw(format!(
         "{}{} [{}/{}]",
         search_query.direction.prefix(),
         search_query.phrase,
         search_state.match_count_at_or_above(cursor_line),
         search_state.match_count()
-    ))
+    )))
 }
 
-fn position_text(
-    cursor_line: usize,
-    line_count: usize,
-    log_file_indexing_status: LogFileIndexingStatus,
-) -> String {
-    let line_number = if line_count == 0 { 0 } else { cursor_line + 1 };
-    let position = format!("{line_number}/{line_count}");
-    match log_file_indexing_status {
-        LogFileIndexingStatus::Running | LogFileIndexingStatus::Failed => format!("{position}+"),
-        LogFileIndexingStatus::Done if line_count == 0 => position,
-        LogFileIndexingStatus::Done => {
-            format!("{position} ({}%)", line_number * 100 / line_count)
-        }
+fn grepping_span(percent_grepped: Option<u64>, is_grepping: bool) -> Option<Span<'static>> {
+    let percent_grepped = percent_grepped.filter(|_| is_grepping)?;
+    Some(format!("grepping {percent_grepped}%").yellow())
+}
+
+fn position_text(cursor_row: usize, row_count: usize, is_row_count_final: bool) -> String {
+    let row_number = if row_count == 0 { 0 } else { cursor_row + 1 };
+    let position = format!("{row_number}/{row_count}");
+    match (is_row_count_final, row_count) {
+        (false, _) => format!("{position}+"),
+        (true, 0) => position,
+        (true, _) => format!("{position} ({}%)", row_number * 100 / row_count),
     }
 }
 
@@ -163,7 +181,11 @@ fn rounds_below_1000(size_in_unit: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{buffer::Buffer, style::Modifier};
+    use ratatui::{
+        buffer::Buffer,
+        crossterm::event::KeyCode,
+        style::{Color, Modifier},
+    };
 
     use ratatui::layout::Size;
 
@@ -171,6 +193,7 @@ mod tests {
     use crate::{
         domain::{
             log_file::LogFile,
+            phrase_matching::MatchingLinesBatch,
             search::{SearchDirection, SearchQuery},
         },
         ui::tests::{render_to_buffer, rendered_rows},
@@ -183,7 +206,7 @@ mod tests {
     }
 
     fn make_unindexed_model(text: &str) -> Model {
-        Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(50, 2))
+        Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(50, 3))
     }
 
     fn render_status_buffer(model: &Model) -> Buffer {
@@ -204,22 +227,25 @@ mod tests {
             phrase: phrase.to_owned(),
             direction,
         });
-        search_state.add_matching_lines(matching_lines.to_vec());
+        search_state.add_batch(MatchingLinesBatch {
+            matching_lines: matching_lines.to_vec(),
+            percent_scanned: 40,
+        });
         search_state
     }
 
     #[test]
     fn given_no_search_when_formatting_the_search_then_nothing_is_shown() {
-        assert_eq!(search_text(&SearchState::default(), 0, false), None);
+        assert_eq!(search_span(&SearchState::default(), 0, false), None);
     }
 
     #[test]
-    fn given_search_running_when_formatting_the_search_then_it_says_searching() {
+    fn given_search_running_when_formatting_the_search_then_its_percent_is_shown_in_yellow() {
         let search_state = make_search_state("timeout", SearchDirection::Forward, &[2]);
 
         assert_eq!(
-            search_text(&search_state, 0, true),
-            Some("searching…".to_owned())
+            search_span(&search_state, 0, true),
+            Some("searching 40%".yellow())
         );
     }
 
@@ -228,8 +254,8 @@ mod tests {
         let search_state = make_search_state("zzzz", SearchDirection::Forward, &[]);
 
         assert_eq!(
-            search_text(&search_state, 0, false),
-            Some("Pattern not found: zzzz".to_owned())
+            search_span(&search_state, 0, false),
+            Some(Span::raw("Pattern not found: zzzz"))
         );
     }
 
@@ -239,8 +265,8 @@ mod tests {
         let search_state = make_search_state("timeout", SearchDirection::Forward, &[2, 5, 9]);
 
         assert_eq!(
-            search_text(&search_state, 5, false),
-            Some("/timeout [2/3]".to_owned())
+            search_span(&search_state, 5, false),
+            Some(Span::raw("/timeout [2/3]"))
         );
     }
 
@@ -250,8 +276,8 @@ mod tests {
         let search_state = make_search_state("WARN", SearchDirection::Backward, &[2, 5]);
 
         assert_eq!(
-            search_text(&search_state, 0, false),
-            Some("?WARN [0/2]".to_owned())
+            search_span(&search_state, 0, false),
+            Some(Span::raw("?WARN [0/2]"))
         );
     }
 
@@ -300,7 +326,11 @@ mod tests {
     fn given_cursor_on_second_of_four_lines_when_rendering_then_name_is_left_and_position_and_size_are_right()
      {
         let mut model = make_model("a\nb\nc\nd\n");
-        model.log_view_state.move_cursor_down(1, 4);
+        model
+            .tabs
+            .active_tab_mut()
+            .log_view_state_mut()
+            .move_cursor_down(1, 4);
 
         assert_eq!(
             render_status(&model),
@@ -311,7 +341,11 @@ mod tests {
     #[test]
     fn given_status_bar_when_rendering_then_the_row_is_tinted_and_separators_dim() {
         let mut model = make_model("a\nb\nc\nd\n");
-        model.log_view_state.move_cursor_down(1, 4);
+        model
+            .tabs
+            .active_tab_mut()
+            .log_view_state_mut()
+            .move_cursor_down(1, 4);
 
         let buffer = render_status_buffer(&model);
 
@@ -344,10 +378,7 @@ mod tests {
 
     #[test]
     fn given_large_file_when_formatting_position_then_percent_is_rounded_down() {
-        assert_eq!(
-            position_text(1203, 88213, LogFileIndexingStatus::Done),
-            "1204/88213 (1%)"
-        );
+        assert_eq!(position_text(1203, 88213, true), "1204/88213 (1%)");
     }
 
     #[test]
@@ -370,10 +401,47 @@ mod tests {
     }
 
     #[test]
-    fn given_file_still_indexing_when_formatting_position_then_there_is_no_percent() {
+    fn given_row_count_not_final_when_formatting_position_then_there_is_no_percent() {
+        assert_eq!(position_text(1203, 88213, false), "1204/88213+");
+    }
+
+    #[test]
+    fn given_grep_running_when_building_its_span_then_its_percent_is_shown_in_yellow() {
+        assert_eq!(grepping_span(Some(62), true), Some("grepping 62%".yellow()));
+    }
+
+    #[test]
+    fn given_grep_done_or_all_lines_tab_when_building_the_grep_span_then_nothing_is_shown() {
+        assert_eq!(grepping_span(Some(100), false), None);
+        assert_eq!(grepping_span(None, false), None);
+    }
+
+    #[test]
+    fn given_running_grep_tab_when_rendering_then_the_progress_and_its_rows_so_far_are_shown() {
+        let mut model = make_model("ok\nERROR a\nok\nERROR b\n");
+        model.type_keys("&ERROR");
+        model.press(KeyCode::Enter);
+        let mut job_notifications = model.job_board.run_scheduled_jobs();
+        let _done_notification = job_notifications.pop();
+        model.handle_job_notifications(job_notifications);
+
         assert_eq!(
-            position_text(1203, 88213, LogFileIndexingStatus::Running),
-            "1204/88213+"
+            render_status(&model),
+            " app.log              grepping 100% │ 1/2+ │ 22 B"
+        );
+    }
+
+    #[test]
+    fn given_finished_grep_tab_when_rendering_then_the_position_counts_its_rows() {
+        let mut model = make_model("ok\nERROR a\nok\nERROR b\n");
+        model.type_keys("&ERROR");
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+        model.type_keys("j");
+
+        assert_eq!(
+            render_status(&model),
+            " app.log                    j │ 2/2 (100%) │ 22 B"
         );
     }
 
