@@ -19,13 +19,14 @@ const BAR_STYLE: Style = Style::new().bg(Color::DarkGray);
 pub fn render(frame: &mut Frame, model: &Model) {
     let screen_areas = ScreenAreas::new(frame.area());
     tab_bar::render(frame, screen_areas.tab_bar, &model.tabs);
+    let active_tab = model.tabs.active_tab();
     log_view::render(
         frame,
         screen_areas.log_view,
         &model.log_file,
-        model.tabs.active_tab(),
-        model
-            .search_state
+        active_tab,
+        active_tab
+            .search_state()
             .query()
             .map(|search_query| search_query.phrase.as_str()),
         &model.bookmarks,
@@ -221,6 +222,28 @@ mod tests {
             " app.log                <Esc> │ 2/2 (100%) │ 13 B"
         );
         assert!(!is_highlighted(&model));
+    }
+
+    #[test]
+    fn given_search_in_the_all_tab_when_a_grep_tab_is_active_then_its_segment_and_highlight_are_not_shown()
+     {
+        let mut model = make_model();
+        submit_search(&mut model, "/sec");
+        model.finish_scheduled_jobs();
+        let is_highlighted = |model: &Model| {
+            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            buffer[(6, 2)].bg == Color::Yellow
+        };
+
+        model.type_keys("&s");
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+
+        assert!(!render_model(&model)[3].contains("/sec"));
+        assert!(!is_highlighted(&model));
+        model.type_keys("tn");
+        assert!(render_model(&model)[3].contains("/sec [1/1]"));
+        assert!(is_highlighted(&model));
     }
 
     #[test]

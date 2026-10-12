@@ -1,4 +1,8 @@
-use super::{Effect, app::show_error};
+use super::{
+    Effect,
+    app::show_error,
+    log_view::{cursor_line, jump_cursor_to_line},
+};
 use crate::{
     action::TabAction,
     app::{LogFileIndexingStatus, Model},
@@ -12,6 +16,7 @@ pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
         TabAction::SwitchToNext => model.tabs.switch_to_next(),
         TabAction::SwitchToPrevious => model.tabs.switch_to_previous(),
         TabAction::CloseActive => close_active_tab(model),
+        TabAction::ShowCursorLineInAllLinesTab => show_cursor_line_in_all_lines_tab(model),
     }
     Effect::Redraw
 }
@@ -22,13 +27,14 @@ fn schedule_grep(model: &mut Model, phrase: String) {
         return;
     }
 
+    let phrases = model.tabs.active_tab().grep_phrases_with(phrase);
     let log_file = &model.log_file;
     let grepping_work = jobs::grepping_work(
         log_file.line_scanner(),
         log_file.file_size(),
-        phrase.clone(),
+        phrases.clone(),
     );
-    let tab_id = model.tabs.open_grep_tab(phrase);
+    let tab_id = model.tabs.open_grep_tab(phrases);
     model
         .job_board
         .schedule(JobSlot::Grepping(tab_id), grepping_work);
@@ -39,16 +45,27 @@ fn close_active_tab(model: &mut Model) {
     close_tab(model, active_tab_id);
 }
 
+fn show_cursor_line_in_all_lines_tab(model: &mut Model) {
+    let cursor_line = cursor_line(model);
+    model.tabs.switch_to_all_lines_tab();
+    if let Some(cursor_line) = cursor_line {
+        jump_cursor_to_line(model, cursor_line);
+    }
+}
+
 pub(super) fn close_tab(model: &mut Model, tab_id: TabId) {
     match model.tabs.close(tab_id) {
-        Ok(()) => model.job_board.cancel(JobSlot::Grepping(tab_id)),
+        Ok(()) => {
+            model.job_board.cancel(JobSlot::Grepping(tab_id));
+            model.job_board.cancel(JobSlot::Searching(tab_id));
+        }
         Err(tab_error) => show_error(model, tab_error.to_string()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{crossterm::event::KeyCode, layout::Size};
+    use ratatui::layout::Size;
 
     use super::*;
     use crate::{
@@ -56,30 +73,20 @@ mod tests {
             StatusMessage,
             update::{
                 handle_job_notification, resize_log_view,
-                test_helpers::{SEARCHED_TEXT, make_model_with_text, run_command},
+                test_helpers::{
+                    SEARCHED_TEXT, grep, make_model_with_text, run_command, start_grep,
+                },
             },
         },
-        domain::{log_file::LogFile, tabs::TabError},
+        domain::{
+            log_file::LogFile,
+            tabs::{TabError, TabState},
+        },
         jobs::{JobError, JobNotification, JobStatus},
     };
 
-    fn start_grep(model: &mut Model, phrase: &str) {
-        model.type_keys(&format!("&{phrase}"));
-        model.press(KeyCode::Enter);
-    }
-
-    fn grep(model: &mut Model, phrase: &str) {
-        start_grep(model, phrase);
-        model.finish_scheduled_jobs();
-    }
-
-    fn tab_names(model: &Model) -> Vec<&str> {
-        model
-            .tabs
-            .tab_states()
-            .iter()
-            .map(|tab_state| tab_state.name())
-            .collect()
+    fn tab_names(model: &Model) -> Vec<String> {
+        model.tabs.tab_states().iter().map(TabState::name).collect()
     }
 
     fn active_row_count(model: &Model) -> usize {
@@ -150,7 +157,113 @@ mod tests {
             .iter()
             .map(|tab_state| tab_state.row_count(6))
             .collect();
-        assert_eq!(row_counts, [6, 2, 1]);
+        assert_eq!(tab_names(&model), ["all", "WARN", "ERROR"]);
+        assert_eq!(row_counts, [6, 1, 2]);
+    }
+
+    #[test]
+    fn given_grep_tab_when_grepping_in_it_then_a_child_tab_right_after_it_shows_lines_with_both_phrases()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "WARN");
+        model.type_keys("tp");
+        grep(&mut model, "ERROR");
+
+        grep(&mut model, "three");
+
+        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR > three", "WARN"]);
+        assert_eq!(model.tabs.active_position(), 2);
+        assert_eq!(active_row_count(&model), 1);
+        assert_eq!(model.cursor_line(), Some(4));
+    }
+
+    #[test]
+    fn given_parent_tab_still_grepping_when_grepping_in_it_then_the_child_tab_greps_on_its_own() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        start_grep(&mut model, "ERROR");
+        let parent_tab_id = model.tabs.active_tab().tab_id();
+
+        start_grep(&mut model, "three");
+        let child_tab_id = model.tabs.active_tab().tab_id();
+
+        assert!(model.job_board.has_job(JobSlot::Grepping(parent_tab_id)));
+        assert!(model.job_board.has_job(JobSlot::Grepping(child_tab_id)));
+        model.finish_scheduled_jobs();
+        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR > three"]);
+        assert_eq!(active_row_count(&model), 1);
+    }
+
+    #[test]
+    fn given_child_tab_when_its_parent_is_closed_then_the_child_keeps_its_lines_and_grep() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+        let parent_tab_id = model.tabs.active_tab().tab_id();
+        start_grep(&mut model, "three");
+        let child_tab_id = model.tabs.active_tab().tab_id();
+
+        close_tab(&mut model, parent_tab_id);
+
+        assert_eq!(tab_names(&model), ["all", "ERROR > three"]);
+        assert!(model.job_board.has_job(JobSlot::Grepping(child_tab_id)));
+        model.finish_scheduled_jobs();
+        assert_eq!(model.tabs.active_tab().tab_id(), child_tab_id);
+        assert_eq!(active_row_count(&model), 1);
+        assert_eq!(model.cursor_line(), Some(4));
+    }
+
+    #[test]
+    fn given_grep_tab_when_a_cascade_finds_nothing_then_the_child_closes_and_its_parent_is_active()
+    {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+
+        grep(&mut model, "WARN");
+
+        assert_eq!(tab_names(&model), ["all", "ERROR"]);
+        assert_eq!(model.tabs.active_tab().name(), "ERROR");
+        assert_eq!(
+            model.status_message,
+            error_message("Pattern not found: WARN")
+        );
+    }
+
+    #[test]
+    fn given_cursor_in_a_grep_tab_when_ta_is_pressed_then_the_all_tab_shows_the_same_line() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+        model.type_keys("j");
+
+        model.type_keys("ta");
+
+        assert!(model.tabs.active_tab().shows_all_lines());
+        assert_eq!(model.cursor_line(), Some(4));
+        model.type_keys("tn");
+        assert_eq!(model.cursor_line(), Some(4));
+        assert_eq!(model.tabs.active_tab().log_view_state().cursor_row(), 1);
+    }
+
+    #[test]
+    fn given_all_tab_when_ta_is_pressed_then_the_cursor_and_scroll_stay() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("2j");
+
+        model.type_keys("ta");
+
+        assert_eq!(model.cursor_line(), Some(2));
+        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 0);
+    }
+
+    #[test]
+    fn given_grep_tab_without_lines_yet_when_ta_is_pressed_then_the_all_tab_is_active_and_its_cursor_stays()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("2j");
+        start_grep(&mut model, "ERROR");
+
+        model.type_keys("ta");
+
+        assert!(model.tabs.active_tab().shows_all_lines());
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]

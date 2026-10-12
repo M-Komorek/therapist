@@ -1,8 +1,7 @@
 use super::Effect;
 use crate::{
-    action::{AppAction, CommandLineKind},
+    action::AppAction,
     app::{Model, StatusMessage},
-    domain::tabs::TabError,
 };
 
 pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
@@ -10,7 +9,8 @@ pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
         AppAction::Quit => Effect::Quit,
         AppAction::Suspend => Effect::Suspend,
         AppAction::OpenCommandLine(command_line_kind) => {
-            open_command_line(model, command_line_kind)
+            model.input_controller.open_command_line(command_line_kind);
+            Effect::Redraw
         }
         AppAction::ShowError(error_text) => {
             show_error(model, error_text);
@@ -19,17 +19,6 @@ pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
         #[cfg(debug_assertions)]
         AppAction::DebugPanic => panic!("Debug panic key pressed"),
     }
-}
-
-fn open_command_line(model: &mut Model, command_line_kind: CommandLineKind) -> Effect {
-    let is_search_or_grep = command_line_kind != CommandLineKind::Command;
-    if is_search_or_grep && !model.tabs.active_tab().shows_all_lines() {
-        show_error(model, TabError::NotAvailableInGrepTabs.to_string());
-        return Effect::Redraw;
-    }
-
-    model.input_controller.open_command_line(command_line_kind);
-    Effect::Redraw
 }
 
 pub(super) fn show_error(model: &mut Model, error_text: String) {
@@ -68,23 +57,17 @@ mod tests {
     }
 
     #[test]
-    fn given_grep_tab_when_a_search_or_grep_line_is_opened_then_it_is_not_available_yet() {
+    fn given_grep_tab_when_a_search_or_grep_line_is_opened_then_it_opens() {
         let mut model = make_model();
         model.type_keys("&first");
         model.press(KeyCode::Enter);
-        let not_available = Some(StatusMessage::Error(
-            TabError::NotAvailableInGrepTabs.to_string(),
-        ));
 
-        for opening_key in ["/", "?", "&"] {
+        for opening_key in ["/", "?", "&", ":"] {
             model.type_keys(opening_key);
 
-            assert_eq!(model.status_message, not_available);
-            assert_eq!(command_line_text(&model), None);
+            assert_eq!(command_line_text(&model), Some(""));
+            model.press(KeyCode::Esc);
         }
-
-        model.type_keys(":");
-        assert_eq!(command_line_text(&model), Some(""));
     }
 
     #[test]

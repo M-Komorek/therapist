@@ -61,6 +61,10 @@ const BINDINGS: &[(&[KeyEvent], Action)] = &[
         tab(TabAction::SwitchToPrevious),
     ),
     (&[char_key('t'), char_key('c')], tab(TabAction::CloseActive)),
+    (
+        &[char_key('t'), char_key('a')],
+        tab(TabAction::ShowCursorLineInAllLinesTab),
+    ),
     // Moving by lines
     (&[char_key('j')], log_view(LogViewAction::MoveCursorDown(1))),
     (

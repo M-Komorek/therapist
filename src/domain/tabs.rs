@@ -6,7 +6,7 @@ pub use grep_state::{GrepError, GrepState};
 pub use log_view_state::LogViewState;
 pub use tab_state::TabState;
 
-use crate::domain::phrase_matching::MatchingLinesBatch;
+use crate::domain::{phrase_matching::MatchingLinesBatch, search::SearchState};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabId(u64);
@@ -15,13 +15,12 @@ pub struct TabId(u64);
 pub enum TabError {
     #[error("The [all] tab can't be closed")]
     CannotCloseAllLinesTab,
-    #[error("Not available in grep tabs yet")]
-    NotAvailableInGrepTabs,
 }
 
 /// The open tabs in tab-bar order, and the active one. The first tab shows every line of the file
-/// and can't be closed, so there is always an active tab. A new tab opens at the end and becomes
-/// active; closing the active tab activates its left neighbour. Tab ids never repeat.
+/// and can't be closed, so there is always an active tab. A new tab opens right after the active
+/// one and becomes active; closing the active tab activates its left neighbour. Tab ids never
+/// repeat.
 pub struct Tabs {
     tab_states: Vec<TabState>,
     active_position: usize,
@@ -60,6 +59,16 @@ impl Tabs {
         }
     }
 
+    pub fn search_state(&self, tab_id: TabId) -> Option<&SearchState> {
+        let position = self.position_of(tab_id)?;
+        Some(self.tab_states[position].search_state())
+    }
+
+    pub fn search_state_mut(&mut self, tab_id: TabId) -> Option<&mut SearchState> {
+        let position = self.position_of(tab_id)?;
+        Some(self.tab_states[position].search_state_mut())
+    }
+
     pub fn tab_states(&self) -> &[TabState] {
         &self.tab_states
     }
@@ -68,12 +77,14 @@ impl Tabs {
         self.active_position
     }
 
-    pub fn open_grep_tab(&mut self, phrase: String) -> TabId {
+    pub fn open_grep_tab(&mut self, phrases: Vec<String>) -> TabId {
         let tab_id = self.take_unused_tab_id();
         let log_view_state = LogViewState::with_size_of(self.active_tab().log_view_state());
-        self.tab_states
-            .push(TabState::for_grep(tab_id, phrase, log_view_state));
-        self.active_position = self.tab_states.len() - 1;
+        self.active_position += 1;
+        self.tab_states.insert(
+            self.active_position,
+            TabState::for_grep(tab_id, phrases, log_view_state),
+        );
         tab_id
     }
 
@@ -99,6 +110,10 @@ impl Tabs {
     pub fn switch_to_previous(&mut self) {
         let tab_count = self.tab_states.len();
         self.active_position = (self.active_position + tab_count - 1) % tab_count;
+    }
+
+    pub fn switch_to_all_lines_tab(&mut self) {
+        self.active_position = 0;
     }
 
     pub fn set_log_view_size(&mut self, height: usize, width: usize) {
@@ -129,7 +144,7 @@ mod tests {
     fn make_tabs_with_grep_tabs(phrases: &[&str]) -> Tabs {
         let mut tabs = Tabs::default();
         for phrase in phrases {
-            tabs.open_grep_tab((*phrase).to_owned());
+            tabs.open_grep_tab(vec![(*phrase).to_owned()]);
         }
         tabs
     }
@@ -141,7 +156,7 @@ mod tests {
         }
     }
 
-    fn tab_names(tabs: &Tabs) -> Vec<&str> {
+    fn tab_names(tabs: &Tabs) -> Vec<String> {
         tabs.tab_states().iter().map(TabState::name).collect()
     }
 
@@ -155,10 +170,10 @@ mod tests {
     }
 
     #[test]
-    fn given_tabs_when_a_grep_tab_opens_then_it_is_added_at_the_end_and_active() {
+    fn given_last_tab_active_when_a_grep_tab_opens_then_it_is_added_at_the_end_and_active() {
         let mut tabs = make_tabs_with_grep_tabs(&["ERROR"]);
 
-        tabs.open_grep_tab("WARN".to_owned());
+        tabs.open_grep_tab(vec!["WARN".to_owned()]);
 
         assert_eq!(tab_names(&tabs), ["all", "ERROR", "WARN"]);
         assert_eq!(tabs.active_position(), 2);
@@ -166,12 +181,26 @@ mod tests {
     }
 
     #[test]
+    fn given_middle_tab_active_when_a_grep_tab_opens_then_it_is_added_right_after_it_and_active() {
+        let mut tabs = make_tabs_with_grep_tabs(&["ERROR", "WARN"]);
+        tabs.switch_to_previous();
+
+        tabs.open_grep_tab(vec!["ERROR".to_owned(), "user=42".to_owned()]);
+
+        assert_eq!(
+            tab_names(&tabs),
+            ["all", "ERROR", "ERROR > user=42", "WARN"]
+        );
+        assert_eq!(tabs.active_position(), 2);
+    }
+
+    #[test]
     fn given_closed_tab_when_another_grep_tab_opens_then_its_id_is_new() {
         let mut tabs = Tabs::default();
-        let closed_tab_id = tabs.open_grep_tab("ERROR".to_owned());
+        let closed_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
         tabs.close(closed_tab_id).unwrap();
 
-        let new_tab_id = tabs.open_grep_tab("ERROR".to_owned());
+        let new_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
 
         assert_ne!(new_tab_id, closed_tab_id);
         assert!(tabs.grep_state(closed_tab_id).is_none());
@@ -181,7 +210,7 @@ mod tests {
     fn given_sized_tabs_when_a_grep_tab_opens_then_it_has_the_same_size() {
         let mut tabs = Tabs::default();
         tabs.set_log_view_size(10, 80);
-        let grep_tab_id = tabs.open_grep_tab("ERROR".to_owned());
+        let grep_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
         tabs.add_grep_batch(grep_tab_id, batch((0..100).collect()));
         let active_tab = tabs.active_tab_mut();
 
@@ -193,8 +222,8 @@ mod tests {
     #[test]
     fn given_grep_tabs_when_a_batch_arrives_for_one_then_only_its_grep_gets_it() {
         let mut tabs = Tabs::default();
-        let error_tab_id = tabs.open_grep_tab("ERROR".to_owned());
-        let warn_tab_id = tabs.open_grep_tab("WARN".to_owned());
+        let error_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        let warn_tab_id = tabs.open_grep_tab(vec!["WARN".to_owned()]);
 
         tabs.add_grep_batch(error_tab_id, batch(vec![3, 7]));
 
@@ -206,7 +235,7 @@ mod tests {
     #[test]
     fn given_closed_tab_when_a_batch_arrives_for_it_then_nothing_changes() {
         let mut tabs = Tabs::default();
-        let closed_tab_id = tabs.open_grep_tab("ERROR".to_owned());
+        let closed_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
         tabs.close(closed_tab_id).unwrap();
 
         tabs.add_grep_batch(closed_tab_id, batch(vec![3]));
@@ -281,6 +310,16 @@ mod tests {
     }
 
     #[test]
+    fn given_grep_tab_active_when_switching_to_the_all_lines_tab_then_the_first_tab_is_active() {
+        let mut tabs = make_tabs_with_grep_tabs(&["ERROR", "WARN"]);
+
+        tabs.switch_to_all_lines_tab();
+
+        assert_eq!(tabs.active_position(), 0);
+        assert!(tabs.active_tab().shows_all_lines());
+    }
+
+    #[test]
     fn given_only_the_all_tab_when_switching_either_way_then_it_stays_active() {
         let mut tabs = Tabs::default();
 
@@ -291,14 +330,10 @@ mod tests {
     }
 
     #[test]
-    fn given_tab_errors_when_displayed_then_they_say_what_happened() {
+    fn given_tab_error_when_displayed_then_it_says_what_happened() {
         assert_eq!(
             TabError::CannotCloseAllLinesTab.to_string(),
             "The [all] tab can't be closed"
-        );
-        assert_eq!(
-            TabError::NotAvailableInGrepTabs.to_string(),
-            "Not available in grep tabs yet"
         );
     }
 }

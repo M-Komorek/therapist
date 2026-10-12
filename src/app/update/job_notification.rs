@@ -18,7 +18,11 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
     match job_status {
         JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
         JobStatus::Searching(matching_lines_batch) => {
-            model.search_state.add_batch(matching_lines_batch)
+            if let JobSlot::Searching(tab_id) = job_slot
+                && let Some(search_state) = model.tabs.search_state_mut(tab_id)
+            {
+                search_state.add_batch(matching_lines_batch);
+            }
         }
         JobStatus::Grepping(matching_lines_batch) => {
             if let JobSlot::Grepping(tab_id) = job_slot {
@@ -41,15 +45,7 @@ fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
             );
             model.log_file_indexing_status = LogFileIndexingStatus::Done;
         }
-        JobSlot::Searching => {
-            tracing::debug!(
-                match_count = model.search_state.match_count(),
-                "search done"
-            );
-            if model.tabs.active_tab().shows_all_lines() {
-                jump_to_next_match(model);
-            }
-        }
+        JobSlot::Searching(tab_id) => mark_search_done(model, tab_id),
         JobSlot::Grepping(tab_id) => mark_grep_done(model, tab_id),
     }
 }
@@ -60,9 +56,9 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
             tracing::error!(error = %job_error, "indexing failed");
             model.log_file_indexing_status = LogFileIndexingStatus::Failed;
         }
-        JobSlot::Searching => {
+        JobSlot::Searching(tab_id) => {
             tracing::error!(error = %job_error, "search failed");
-            clear_search(model);
+            clear_search(model, tab_id);
             show_error(model, format!("Search failed: {job_error}"));
         }
         JobSlot::Grepping(tab_id) => {
@@ -73,6 +69,17 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
     }
 }
 
+fn mark_search_done(model: &mut Model, tab_id: TabId) {
+    let Some(search_state) = model.tabs.search_state(tab_id) else {
+        return;
+    };
+
+    tracing::debug!(match_count = search_state.match_count(), "search done");
+    if model.tabs.active_tab().tab_id() == tab_id {
+        jump_to_next_match(model);
+    }
+}
+
 fn mark_grep_done(model: &mut Model, tab_id: TabId) {
     let Some(grep_state) = model.tabs.grep_state(tab_id) else {
         return;
@@ -80,7 +87,8 @@ fn mark_grep_done(model: &mut Model, tab_id: TabId) {
 
     tracing::debug!(match_count = grep_state.match_count(), "grep done");
     if grep_state.match_count() == 0 {
-        let pattern_not_found = GrepError::PatternNotFound(grep_state.phrase().to_owned());
+        let last_phrase = grep_state.phrases().last().cloned().unwrap_or_default();
+        let pattern_not_found = GrepError::PatternNotFound(last_phrase);
         close_tab(model, tab_id);
         show_error(model, pattern_not_found.to_string());
     }
@@ -209,8 +217,9 @@ mod tests {
                 "Search failed: the job panicked".to_owned()
             ))
         );
-        assert_eq!(model.search_state.query(), None);
-        assert_eq!(model.search_state.match_count(), 0);
+        let search_state = model.tabs.active_tab().search_state();
+        assert_eq!(search_state.query(), None);
+        assert_eq!(search_state.match_count(), 0);
         assert!(model.job_board.is_empty());
     }
 }

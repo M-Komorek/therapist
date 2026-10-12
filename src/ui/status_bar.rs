@@ -36,9 +36,11 @@ pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
         log_file.percent_indexed(),
     );
     let search_span = search_span(
-        &model.search_state,
+        active_tab.search_state(),
         cursor_line,
-        model.job_board.has_job(JobSlot::Searching),
+        model
+            .job_board
+            .has_job(JobSlot::Searching(active_tab.tab_id())),
     );
     let percent_grepped = active_tab.grep_state().map(GrepState::percent_grepped);
     let grepping_span = grepping_span(percent_grepped, is_grepping);

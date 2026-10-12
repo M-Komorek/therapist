@@ -6,18 +6,18 @@ use crate::domain::{
     phrase_matching::{MatchingLinesBatch, find_matching_lines},
 };
 
-pub fn searching_work(line_scanner: LineScanner, file_size: u64, phrase: String) -> JobWork {
-    phrase_scanning_work(line_scanner, file_size, phrase, JobStatus::Searching)
+pub fn searching_work(line_scanner: LineScanner, file_size: u64, phrases: Vec<String>) -> JobWork {
+    phrase_scanning_work(line_scanner, file_size, phrases, JobStatus::Searching)
 }
 
-pub fn grepping_work(line_scanner: LineScanner, file_size: u64, phrase: String) -> JobWork {
-    phrase_scanning_work(line_scanner, file_size, phrase, JobStatus::Grepping)
+pub fn grepping_work(line_scanner: LineScanner, file_size: u64, phrases: Vec<String>) -> JobWork {
+    phrase_scanning_work(line_scanner, file_size, phrases, JobStatus::Grepping)
 }
 
 fn phrase_scanning_work(
     line_scanner: LineScanner,
     file_size: u64,
-    phrase: String,
+    phrases: Vec<String>,
     job_status_for_batch: fn(MatchingLinesBatch) -> JobStatus,
 ) -> JobWork {
     Box::new(move |job_context: &JobContext| {
@@ -25,7 +25,7 @@ fn phrase_scanning_work(
         line_scanner.scan(|chunk, chunk_first_line| {
             bytes_scanned += chunk.len() as u64;
             job_context.notify(job_status_for_batch(MatchingLinesBatch {
-                matching_lines: find_matching_lines(chunk, chunk_first_line, &phrase),
+                matching_lines: find_matching_lines(chunk, chunk_first_line, &phrases),
                 percent_scanned: percent_scanned(bytes_scanned, file_size),
             }));
             if job_context.is_cancelled() {
@@ -53,7 +53,7 @@ mod tests {
         jobs::{JobBoard, JobSlot},
     };
 
-    type WorkConstructor = fn(LineScanner, u64, String) -> JobWork;
+    type WorkConstructor = fn(LineScanner, u64, Vec<String>) -> JobWork;
 
     fn job_statuses(
         job_slot: JobSlot,
@@ -68,7 +68,7 @@ mod tests {
             work_constructor(
                 log_file.line_scanner(),
                 log_file.file_size(),
-                phrase.to_owned(),
+                vec![phrase.to_owned()],
             ),
         );
 
@@ -80,7 +80,8 @@ mod tests {
     }
 
     fn search_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {
-        job_statuses(JobSlot::Searching, searching_work, text, phrase)
+        let tab_id = Tabs::default().active_tab().tab_id();
+        job_statuses(JobSlot::Searching(tab_id), searching_work, text, phrase)
     }
 
     fn grep_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {

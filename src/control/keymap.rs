@@ -224,11 +224,15 @@ mod tests {
     }
 
     #[test]
-    fn given_tn_tp_or_tc_when_resolving_then_it_switches_or_closes_tabs() {
+    fn given_tn_tp_tc_or_ta_when_resolving_then_it_switches_or_closes_tabs() {
         assert_eq!(resolve_fresh("t"), None);
         assert_eq!(resolve_fresh("tn"), Some(tab(TabAction::SwitchToNext)));
         assert_eq!(resolve_fresh("tp"), Some(tab(TabAction::SwitchToPrevious)));
         assert_eq!(resolve_fresh("tc"), Some(tab(TabAction::CloseActive)));
+        assert_eq!(
+            resolve_fresh("ta"),
+            Some(tab(TabAction::ShowCursorLineInAllLinesTab))
+        );
     }
 
     #[test]

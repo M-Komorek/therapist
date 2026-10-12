@@ -1,6 +1,6 @@
 use crate::{
     control::InputController,
-    domain::{bookmarks::Bookmarks, log_file::LogFile, search::SearchState, tabs::Tabs},
+    domain::{bookmarks::Bookmarks, log_file::LogFile, tabs::Tabs},
     jobs::{self, JobBoard, JobSlot},
 };
 
@@ -25,9 +25,9 @@ pub struct Model {
     pub input_controller: InputController,
     pub job_board: JobBoard,
     pub log_file: LogFile,
-    pub search_state: SearchState,
     pub tabs: Tabs,
     pub status_message: Option<StatusMessage>,
+    // TODO Cosider move to LogFile
     pub log_file_indexing_status: LogFileIndexingStatus,
 }
 
@@ -44,7 +44,6 @@ impl Model {
             input_controller: InputController::default(),
             job_board,
             log_file,
-            search_state: SearchState::default(),
             tabs: Tabs::default(),
             status_message: None,
             log_file_indexing_status: LogFileIndexingStatus::Running,

@@ -8,7 +8,7 @@ use crate::{
     app::{LogFileIndexingStatus, Model},
     domain::{
         search::{MatchJump, SearchDirection, SearchError, SearchQuery},
-        tabs::TabError,
+        tabs::TabId,
     },
     jobs::{self, JobSlot},
 };
@@ -17,51 +17,64 @@ pub(super) fn dispatch_search(model: &mut Model, search_action: SearchAction) ->
     match search_action {
         SearchAction::Start(search_query) => schedule_search(model, search_query),
         SearchAction::RepeatLast(direction) => {
-            model.search_state.set_direction(direction);
+            let active_tab = model.tabs.active_tab_mut();
+            active_tab.search_state_mut().set_direction(direction);
             jump_to_next_match(model);
-        }
-        SearchAction::JumpToNextMatch | SearchAction::JumpToPreviousMatch
-            if !model.tabs.active_tab().shows_all_lines() =>
-        {
-            show_error(model, TabError::NotAvailableInGrepTabs.to_string())
         }
         SearchAction::JumpToNextMatch => jump_to_next_match(model),
         SearchAction::JumpToPreviousMatch => jump_to_previous_match(model),
-        SearchAction::Clear => clear_search(model),
+        SearchAction::Clear => {
+            let active_tab_id = model.tabs.active_tab().tab_id();
+            clear_search(model, active_tab_id);
+        }
     }
     Effect::Redraw
 }
 
 fn schedule_search(model: &mut Model, search_query: SearchQuery) {
-    if model.log_file_indexing_status == LogFileIndexingStatus::Running {
-        show_error(model, SearchError::StillIndexing.to_string());
+    let active_tab_id = model.tabs.active_tab().tab_id();
+    if let Some(search_error) = search_refusal(model, active_tab_id) {
+        show_error(model, search_error.to_string());
         return;
     }
 
+    let active_tab = model.tabs.active_tab_mut();
+    let phrases = active_tab.grep_phrases_with(search_query.phrase.clone());
     let log_file = &model.log_file;
-    let searching_work = jobs::searching_work(
-        log_file.line_scanner(),
-        log_file.file_size(),
-        search_query.phrase.clone(),
-    );
-    model.job_board.schedule(JobSlot::Searching, searching_work);
-    model.search_state.replace_query(search_query);
+    let searching_work =
+        jobs::searching_work(log_file.line_scanner(), log_file.file_size(), phrases);
+    model
+        .job_board
+        .schedule(JobSlot::Searching(active_tab_id), searching_work);
+    active_tab.search_state_mut().replace_query(search_query);
 }
 
-pub(super) fn clear_search(model: &mut Model) {
-    model.job_board.cancel(JobSlot::Searching);
-    model.search_state.clear();
+fn search_refusal(model: &Model, tab_id: TabId) -> Option<SearchError> {
+    if model.log_file_indexing_status == LogFileIndexingStatus::Running {
+        return Some(SearchError::StillIndexing);
+    }
+    let is_grepping = model.job_board.has_job(JobSlot::Grepping(tab_id));
+    is_grepping.then_some(SearchError::StillGrepping)
+}
+
+pub(super) fn clear_search(model: &mut Model, tab_id: TabId) {
+    model.job_board.cancel(JobSlot::Searching(tab_id));
+    if let Some(search_state) = model.tabs.search_state_mut(tab_id) {
+        search_state.clear();
+    }
 }
 
 pub(super) fn jump_to_next_match(model: &mut Model) {
     let cursor_line = cursor_line(model).unwrap_or_default();
-    let match_jump = model.search_state.next_match_from(cursor_line);
+    let search_state = model.tabs.active_tab().search_state();
+    let match_jump = search_state.next_match_from(cursor_line);
     apply_match_jump(model, match_jump);
 }
 
 fn jump_to_previous_match(model: &mut Model) {
     let cursor_line = cursor_line(model).unwrap_or_default();
-    let match_jump = model.search_state.previous_match_from(cursor_line);
+    let search_state = model.tabs.active_tab().search_state();
+    let match_jump = search_state.previous_match_from(cursor_line);
     apply_match_jump(model, match_jump);
 }
 
@@ -97,10 +110,10 @@ mod tests {
             StatusMessage,
             update::{
                 handle_job_notification,
-                test_helpers::{SEARCHED_TEXT, make_model_with_text},
+                test_helpers::{SEARCHED_TEXT, grep, make_model_with_text, start_grep},
             },
         },
-        domain::{log_file::LogFile, phrase_matching::MatchingLinesBatch},
+        domain::{log_file::LogFile, phrase_matching::MatchingLinesBatch, search::SearchState},
         jobs::{JobNotification, JobStatus},
     };
 
@@ -110,6 +123,10 @@ mod tests {
         model.finish_scheduled_jobs();
     }
 
+    fn active_search_state(model: &Model) -> &SearchState {
+        model.tabs.active_tab().search_state()
+    }
+
     #[test]
     fn given_indexed_file_when_searching_forward_then_cursor_jumps_to_the_first_match_below() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
@@ -117,7 +134,7 @@ mod tests {
         search(&mut model, "/ERROR");
 
         assert_eq!(model.cursor_line(), Some(1));
-        assert_eq!(model.search_state.match_count(), 2);
+        assert_eq!(active_search_state(&model).match_count(), 2);
         assert!(model.job_board.is_empty());
     }
 
@@ -156,8 +173,8 @@ mod tests {
         search(&mut model, "/zzzz");
 
         assert_eq!(model.cursor_line(), Some(0));
-        assert_eq!(model.search_state.match_count(), 0);
-        assert!(model.search_state.query().is_some());
+        assert_eq!(active_search_state(&model).match_count(), 0);
+        assert!(active_search_state(&model).query().is_some());
     }
 
     #[test]
@@ -174,8 +191,13 @@ mod tests {
             model.status_message,
             Some(StatusMessage::Error(SearchError::StillIndexing.to_string()))
         );
-        assert_eq!(model.search_state.query(), None);
-        assert!(!model.job_board.has_job(JobSlot::Searching));
+        assert_eq!(active_search_state(&model).query(), None);
+        let all_lines_tab_id = model.tabs.active_tab().tab_id();
+        assert!(
+            !model
+                .job_board
+                .has_job(JobSlot::Searching(all_lines_tab_id))
+        );
     }
 
     #[test]
@@ -187,7 +209,7 @@ mod tests {
         search(&mut model, "/WARN");
 
         assert_eq!(model.cursor_line(), Some(3));
-        assert_eq!(model.search_state.match_count(), 1);
+        assert_eq!(active_search_state(&model).match_count(), 1);
     }
 
     #[test]
@@ -307,8 +329,8 @@ mod tests {
 
         model.press(KeyCode::Esc);
 
-        assert_eq!(model.search_state.query(), None);
-        assert_eq!(model.search_state.match_count(), 0);
+        assert_eq!(active_search_state(&model).query(), None);
+        assert_eq!(active_search_state(&model).match_count(), 0);
     }
 
     #[test]
@@ -319,8 +341,8 @@ mod tests {
 
         model.press(KeyCode::Esc);
 
-        assert!(model.search_state.query().is_some());
-        assert_eq!(model.search_state.match_count(), 2);
+        assert!(active_search_state(&model).query().is_some());
+        assert_eq!(active_search_state(&model).match_count(), 2);
     }
 
     #[test]
@@ -341,13 +363,11 @@ mod tests {
     }
 
     #[test]
-    fn given_search_done_in_the_all_tab_when_n_is_pressed_in_a_grep_tab_then_it_is_not_available_yet()
+    fn given_search_done_in_the_all_tab_when_n_is_pressed_in_a_grep_tab_then_there_is_no_previous_search()
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         search(&mut model, "/WARN");
-        model.type_keys("&ERROR");
-        model.press(KeyCode::Enter);
-        model.finish_scheduled_jobs();
+        grep(&mut model, "ERROR");
 
         model.type_keys("n");
 
@@ -355,21 +375,74 @@ mod tests {
         assert_eq!(
             model.status_message,
             Some(StatusMessage::Error(
-                TabError::NotAvailableInGrepTabs.to_string()
+                SearchError::NoPreviousSearch.to_string()
             ))
         );
     }
 
     #[test]
-    fn given_grep_tab_when_escape_is_pressed_then_the_search_is_cleared() {
+    fn given_grep_tab_when_searching_then_only_its_lines_match() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+
+        search(&mut model, "/t");
+
+        assert_eq!(model.cursor_line(), Some(4));
+        assert_eq!(active_search_state(&model).match_count(), 1);
+        assert_eq!(active_search_state(&model).match_count_at_or_above(4), 1);
+    }
+
+    #[test]
+    fn given_searches_in_two_tabs_when_switching_tabs_then_each_tab_keeps_its_own_search() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         search(&mut model, "/WARN");
-        model.type_keys("&ERROR");
-        model.press(KeyCode::Enter);
+        grep(&mut model, "ERROR");
+        search(&mut model, "/three");
+        let active_phrase = |model: &Model| {
+            active_search_state(model)
+                .query()
+                .map(|search_query| search_query.phrase.clone())
+        };
+
+        model.type_keys("tn");
+        assert_eq!(active_phrase(&model), Some("WARN".to_owned()));
+        assert_eq!(model.cursor_line(), Some(3));
+
+        model.type_keys("tn");
+        assert_eq!(active_phrase(&model), Some("three".to_owned()));
+        assert_eq!(model.cursor_line(), Some(4));
+    }
+
+    #[test]
+    fn given_searches_in_two_tabs_when_escape_is_pressed_in_the_grep_tab_then_only_its_search_is_cleared()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        search(&mut model, "/WARN");
+        grep(&mut model, "ERROR");
+        search(&mut model, "/three");
 
         model.press(KeyCode::Esc);
 
-        assert_eq!(model.search_state.query(), None);
+        assert_eq!(active_search_state(&model).query(), None);
+        let all_lines_tab = &model.tabs.tab_states()[0];
+        assert!(all_lines_tab.search_state().query().is_some());
+    }
+
+    #[test]
+    fn given_grep_still_running_when_searching_in_its_tab_then_it_is_refused() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        start_grep(&mut model, "ERROR");
+        let grep_tab_id = model.tabs.active_tab().tab_id();
+
+        model.type_keys("/three");
+        model.press(KeyCode::Enter);
+
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Error(SearchError::StillGrepping.to_string()))
+        );
+        assert_eq!(active_search_state(&model).query(), None);
+        assert!(!model.job_board.has_job(JobSlot::Searching(grep_tab_id)));
     }
 
     #[test]
@@ -378,13 +451,30 @@ mod tests {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         model.type_keys("/WARN");
         model.press(KeyCode::Enter);
-        model.type_keys("&ERROR");
-        model.press(KeyCode::Enter);
+        start_grep(&mut model, "ERROR");
 
         model.finish_scheduled_jobs();
 
         assert_eq!(model.cursor_line(), Some(1));
-        assert_eq!(model.search_state.match_count(), 1);
+        let all_lines_tab = &model.tabs.tab_states()[0];
+        assert_eq!(all_lines_tab.search_state().match_count(), 1);
+    }
+
+    #[test]
+    fn given_search_running_in_a_grep_tab_when_the_tab_is_closed_then_the_search_is_cancelled() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+        let grep_tab_id = model.tabs.active_tab().tab_id();
+        model.type_keys("/three");
+        model.press(KeyCode::Enter);
+        let late_job_notifications = model.job_board.run_scheduled_jobs();
+
+        model.type_keys("tc");
+        model.handle_job_notifications(late_job_notifications);
+
+        assert!(!model.job_board.has_job(JobSlot::Searching(grep_tab_id)));
+        assert_eq!(model.cursor_line(), Some(0));
+        assert_eq!(active_search_state(&model).query(), None);
     }
 
     #[test]
@@ -400,6 +490,6 @@ mod tests {
 
         assert!(model.job_board.is_empty());
         assert_eq!(model.cursor_line(), Some(0));
-        assert_eq!(model.search_state.match_count(), 0);
+        assert_eq!(active_search_state(&model).match_count(), 0);
     }
 }

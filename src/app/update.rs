@@ -120,6 +120,16 @@ mod test_helpers {
         model.type_keys(&format!(":{command_text}"));
         model.press(KeyCode::Enter)
     }
+
+    pub(super) fn start_grep(model: &mut Model, phrase: &str) {
+        model.type_keys(&format!("&{phrase}"));
+        model.press(KeyCode::Enter);
+    }
+
+    pub(super) fn grep(model: &mut Model, phrase: &str) {
+        start_grep(model, phrase);
+        model.finish_scheduled_jobs();
+    }
 }
 
 #[cfg(test)]

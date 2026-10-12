@@ -1,9 +1,13 @@
 use std::ops::Range;
 
 use super::{GrepState, LogViewState, TabId};
-use crate::domain::log_file::{LogFile, LogFileError};
+use crate::domain::{
+    log_file::{LogFile, LogFileError},
+    search::SearchState,
+};
 
 const ALL_LINES_TAB_NAME: &str = "all";
+const PHRASE_SEPARATOR: &str = " > ";
 
 #[derive(Debug, PartialEq)]
 pub struct TabRow {
@@ -16,12 +20,14 @@ enum TabLines {
     Grepped(GrepState),
 }
 
-/// One tab: the lines it shows and its own log view state. Rows are counted within the tab: in the
-/// `[all]` tab, row k shows file line k; in a grep tab, it shows the k-th matching line in file order.
+/// One tab: the lines it shows, its own log view state and its own search. Rows are counted within
+/// the tab: in the `[all]` tab, row k shows file line k; in a grep tab, it shows the k-th matching
+/// line in file order.
 pub struct TabState {
     tab_id: TabId,
     tab_lines: TabLines,
     log_view_state: LogViewState,
+    search_state: SearchState,
 }
 
 impl TabState {
@@ -30,14 +36,20 @@ impl TabState {
             tab_id,
             tab_lines: TabLines::All,
             log_view_state: LogViewState::default(),
+            search_state: SearchState::default(),
         }
     }
 
-    pub(super) fn for_grep(tab_id: TabId, phrase: String, log_view_state: LogViewState) -> Self {
+    pub(super) fn for_grep(
+        tab_id: TabId,
+        phrases: Vec<String>,
+        log_view_state: LogViewState,
+    ) -> Self {
         Self {
             tab_id,
-            tab_lines: TabLines::Grepped(GrepState::new(phrase)),
+            tab_lines: TabLines::Grepped(GrepState::new(phrases)),
             log_view_state,
+            search_state: SearchState::default(),
         }
     }
 
@@ -45,11 +57,20 @@ impl TabState {
         self.tab_id
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> String {
         match &self.tab_lines {
-            TabLines::All => ALL_LINES_TAB_NAME,
-            TabLines::Grepped(grep_state) => grep_state.phrase(),
+            TabLines::All => ALL_LINES_TAB_NAME.to_owned(),
+            TabLines::Grepped(grep_state) => grep_state.phrases().join(PHRASE_SEPARATOR),
         }
+    }
+
+    pub fn grep_phrases_with(&self, phrase: String) -> Vec<String> {
+        let mut phrases = match &self.tab_lines {
+            TabLines::All => Vec::new(),
+            TabLines::Grepped(grep_state) => grep_state.phrases().to_vec(),
+        };
+        phrases.push(phrase);
+        phrases
     }
 
     pub fn shows_all_lines(&self) -> bool {
@@ -76,6 +97,14 @@ impl TabState {
 
     pub fn log_view_state_mut(&mut self) -> &mut LogViewState {
         &mut self.log_view_state
+    }
+
+    pub fn search_state(&self) -> &SearchState {
+        &self.search_state
+    }
+
+    pub fn search_state_mut(&mut self) -> &mut SearchState {
+        &mut self.search_state
     }
 
     pub fn row_count(&self, file_line_count: usize) -> usize {
@@ -171,7 +200,7 @@ mod tests {
     fn make_grep_tab(matching_lines: &[usize], height: usize) -> TabState {
         let mut log_view_state = LogViewState::default();
         log_view_state.set_height(height);
-        let mut tab_state = TabState::for_grep(TabId(1), "ERROR".to_owned(), log_view_state);
+        let mut tab_state = TabState::for_grep(TabId(1), vec!["ERROR".to_owned()], log_view_state);
         if let Some(grep_state) = tab_state.grep_state_mut() {
             grep_state.add_batch(MatchingLinesBatch {
                 matching_lines: matching_lines.to_vec(),
@@ -309,8 +338,28 @@ mod tests {
         assert_eq!(
             make_grep_tab(&[1, 4], 10)
                 .grep_state()
-                .map(GrepState::phrase),
-            Some("ERROR")
+                .map(GrepState::phrases),
+            Some(["ERROR".to_owned()].as_slice())
         );
+    }
+
+    #[test]
+    fn given_cascaded_grep_tab_when_asking_for_its_name_then_it_joins_the_phrases_in_order() {
+        let phrases = vec!["ERROR".to_owned(), "user=42".to_owned()];
+        let tab_state = TabState::for_grep(TabId(2), phrases, LogViewState::default());
+
+        assert_eq!(tab_state.name(), "ERROR > user=42");
+        assert_eq!(
+            tab_state.grep_phrases_with("took=5".to_owned()),
+            ["ERROR", "user=42", "took=5"]
+        );
+    }
+
+    #[test]
+    fn given_all_lines_tab_when_adding_a_phrase_to_its_grep_phrases_then_it_is_the_only_one() {
+        let tab_state = make_all_lines_tab(10);
+
+        assert_eq!(tab_state.name(), "all");
+        assert_eq!(tab_state.grep_phrases_with("WARN".to_owned()), ["WARN"]);
     }
 }

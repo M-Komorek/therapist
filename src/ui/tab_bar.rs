@@ -13,7 +13,7 @@ pub fn render(frame: &mut Frame, area: Rect, tabs: &Tabs) {
     for (position, tab_state) in tabs.tab_states().iter().enumerate() {
         tab_bar_line.push_span(" ");
         tab_bar_line.push_span(tab_label(
-            tab_state.name(),
+            &tab_state.name(),
             position == tabs.active_position(),
         ));
     }

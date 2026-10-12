@@ -14,6 +14,8 @@ pub enum SearchError {
     NoPreviousSearch,
     #[error("Still indexing, try again")]
     StillIndexing,
+    #[error("Still grepping, try again")]
+    StillGrepping,
 }
 
 /// The last search, the lines that match it and how much of the file the search has read. The lines
@@ -346,6 +348,10 @@ mod tests {
         assert_eq!(
             SearchError::StillIndexing.to_string(),
             "Still indexing, try again"
+        );
+        assert_eq!(
+            SearchError::StillGrepping.to_string(),
+            "Still grepping, try again"
         );
     }
 }

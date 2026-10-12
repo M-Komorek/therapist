@@ -14,7 +14,7 @@ use crate::domain::tabs::TabId;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JobSlot {
     LogFileIndexing,
-    Searching,
+    Searching(TabId),
     Grepping(TabId),
 }
 
@@ -116,7 +116,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::domain::log_file::LineIndex;
+    use crate::domain::{log_file::LineIndex, tabs::Tabs};
 
     pub(super) fn work_that_notifies_once() -> JobWork {
         Box::new(|job_context: &JobContext| {
@@ -185,7 +185,7 @@ mod tests {
         let job_board = make_board_with_scheduled_job();
 
         assert!(job_board.has_job(JobSlot::LogFileIndexing));
-        assert!(!job_board.has_job(JobSlot::Searching));
+        assert!(!job_board.has_job(JobSlot::Searching(Tabs::default().active_tab().tab_id())));
     }
 
     #[test]

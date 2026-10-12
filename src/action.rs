@@ -65,4 +65,5 @@ pub enum TabAction {
     SwitchToNext,
     SwitchToPrevious,
     CloseActive,
+    ShowCursorLineInAllLinesTab,
 }

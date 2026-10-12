@@ -10,26 +10,26 @@ pub enum GrepError {
     PatternNotFound(String),
 }
 
-/// A grep's phrase and the lines that contain it, found so far: positions counted from 0, in file
-/// order, because the grep reads the file from the start. Finding a line among them uses a binary
-/// search.
+/// A grep's phrases and the lines that contain all of them, found so far: positions counted from 0,
+/// in file order, because the grep reads the file from the start. Finding a line among them uses a
+/// binary search.
 pub struct GrepState {
-    phrase: String,
+    phrases: Vec<String>,
     matching_lines: Vec<usize>,
     percent_grepped: u64,
 }
 
 impl GrepState {
-    pub(super) fn new(phrase: String) -> Self {
+    pub(super) fn new(phrases: Vec<String>) -> Self {
         Self {
-            phrase,
+            phrases,
             matching_lines: Vec::new(),
             percent_grepped: 0,
         }
     }
 
-    pub fn phrase(&self) -> &str {
-        &self.phrase
+    pub fn phrases(&self) -> &[String] {
+        &self.phrases
     }
 
     pub fn percent_grepped(&self) -> u64 {
@@ -78,16 +78,16 @@ mod tests {
     }
 
     fn make_grep_state(matching_lines: &[usize]) -> GrepState {
-        let mut grep_state = GrepState::new("ERROR".to_owned());
+        let mut grep_state = GrepState::new(vec!["ERROR".to_owned()]);
         grep_state.add_batch(batch(matching_lines, 100));
         grep_state
     }
 
     #[test]
     fn given_new_grep_when_asking_for_its_matches_then_there_are_none_and_nothing_is_grepped() {
-        let grep_state = GrepState::new("ERROR".to_owned());
+        let grep_state = GrepState::new(vec!["ERROR".to_owned()]);
 
-        assert_eq!(grep_state.phrase(), "ERROR");
+        assert_eq!(grep_state.phrases(), ["ERROR"]);
         assert_eq!(grep_state.match_count(), 0);
         assert_eq!(grep_state.percent_grepped(), 0);
     }
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn given_two_batches_added_when_asking_for_the_matching_lines_then_they_are_one_list_in_order()
     {
-        let mut grep_state = GrepState::new("ERROR".to_owned());
+        let mut grep_state = GrepState::new(vec!["ERROR".to_owned()]);
         grep_state.add_batch(batch(&[3, 7], 40));
 
         grep_state.add_batch(batch(&[12], 62));
