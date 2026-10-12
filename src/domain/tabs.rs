@@ -189,7 +189,7 @@ mod tests {
 
         assert_eq!(
             tab_names(&tabs),
-            ["all", "ERROR", "ERROR > user=42", "WARN"]
+            ["all", "ERROR", "ERROR › user=42", "WARN"]
         );
         assert_eq!(tabs.active_position(), 2);
     }

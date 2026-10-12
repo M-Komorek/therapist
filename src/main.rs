@@ -48,7 +48,7 @@ fn run(cli: Cli) -> Result<(), TherapistError> {
     tracing::info!(browsed_file = %cli.browsed_file_path.display(), "starting");
 
     let log_file = LogFile::open(&cli.browsed_file_path)?;
-    let mut terminal = Terminal::enter()?;
+    let mut terminal = Terminal::enter(ui::TERMINAL_BACKGROUND)?;
     runtime::run(&mut terminal, Model::new(log_file))?;
 
     tracing::info!("exiting");

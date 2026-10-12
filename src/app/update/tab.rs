@@ -171,7 +171,7 @@ mod tests {
 
         grep(&mut model, "three");
 
-        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR > three", "WARN"]);
+        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR › three", "WARN"]);
         assert_eq!(model.tabs.active_position(), 2);
         assert_eq!(active_row_count(&model), 1);
         assert_eq!(model.cursor_line(), Some(4));
@@ -189,7 +189,7 @@ mod tests {
         assert!(model.job_board.has_job(JobSlot::Grepping(parent_tab_id)));
         assert!(model.job_board.has_job(JobSlot::Grepping(child_tab_id)));
         model.finish_scheduled_jobs();
-        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR > three"]);
+        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR › three"]);
         assert_eq!(active_row_count(&model), 1);
     }
 
@@ -203,7 +203,7 @@ mod tests {
 
         close_tab(&mut model, parent_tab_id);
 
-        assert_eq!(tab_names(&model), ["all", "ERROR > three"]);
+        assert_eq!(tab_names(&model), ["all", "ERROR › three"]);
         assert!(model.job_board.has_job(JobSlot::Grepping(child_tab_id)));
         model.finish_scheduled_jobs();
         assert_eq!(model.tabs.active_tab().tab_id(), child_tab_id);

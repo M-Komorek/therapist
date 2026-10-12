@@ -7,7 +7,7 @@ use crate::domain::{
 };
 
 const ALL_LINES_TAB_NAME: &str = "all";
-const PHRASE_SEPARATOR: &str = " > ";
+const PHRASE_SEPARATOR: &str = " › ";
 
 #[derive(Debug, PartialEq)]
 pub struct TabRow {
@@ -348,7 +348,7 @@ mod tests {
         let phrases = vec!["ERROR".to_owned(), "user=42".to_owned()];
         let tab_state = TabState::for_grep(TabId(2), phrases, LogViewState::default());
 
-        assert_eq!(tab_state.name(), "ERROR > user=42");
+        assert_eq!(tab_state.name(), "ERROR › user=42");
         assert_eq!(
             tab_state.grep_phrases_with("took=5".to_owned()),
             ["ERROR", "user=42", "took=5"]

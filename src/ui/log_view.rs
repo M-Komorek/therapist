@@ -1,11 +1,24 @@
 use std::ops::Range;
 
-use ratatui::{Frame, layout::Rect, style::Stylize, text::Line};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Modifier, Style, Stylize},
+    text::{Line, Span},
+};
 
-use super::visible_row::visible_spans;
+use super::{palette, visible_row::visible_spans};
 use crate::domain::{bookmarks::Bookmarks, log_file::LogFile, tabs::TabState};
 
 const BOOKMARK_MARKER: char = '●';
+const LOG_VIEW_STYLE: Style = Style::new().fg(palette::FOREGROUND).bg(palette::BACKGROUND);
+const GUTTER_STYLE: Style = Style::new()
+    .fg(palette::FOREGROUND_FAINT)
+    .bg(palette::BACKGROUND);
+const BOOKMARK_MARKER_STYLE: Style = GUTTER_STYLE.fg(palette::YELLOW);
+const CURSOR_LINE_NUMBER_STYLE: Style = GUTTER_STYLE
+    .fg(palette::ORANGE)
+    .add_modifier(Modifier::BOLD);
 
 pub fn render(
     frame: &mut Frame,
@@ -15,6 +28,7 @@ pub fn render(
     highlighted_phrase: Option<&str>,
     bookmarks: &Bookmarks,
 ) {
+    frame.buffer_mut().set_style(area, LOG_VIEW_STYLE);
     let log_view_state = tab_state.log_view_state();
     let top_row = log_view_state.top_row();
     let tab_rows = match tab_state.read_rows(top_row..top_row + usize::from(area.height), log_file)
@@ -22,24 +36,32 @@ pub fn render(
         Ok(tab_rows) => tab_rows,
         Err(error) => {
             tracing::error!(%error, "reading visible lines failed");
-            frame.render_widget(Line::raw(error.to_string()), area);
+            frame.render_widget(Line::raw(error.to_string()).fg(palette::RED), area);
             return;
         }
     };
+
     let line_number_width = line_number_width(log_file.line_count());
     let left_column = log_view_state.left_column();
     let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
+
     for ((row_area, tab_row), row) in area.rows().zip(&tab_rows).zip(top_row..) {
         let is_bookmarked = bookmarks.contains(tab_row.line);
-        let mut display_line = Line::from(gutter(tab_row.line, line_number_width, is_bookmarked));
+        let is_cursor_row = row == log_view_state.cursor_row();
+        let mut display_line = gutter(
+            tab_row.line,
+            line_number_width,
+            is_bookmarked,
+            is_cursor_row,
+        );
         let highlight_ranges = highlight_ranges(&tab_row.text, highlighted_phrase);
         display_line.extend(visible_spans(
             &tab_row.text,
             visible_columns.clone(),
             &highlight_ranges,
         ));
-        if row == log_view_state.cursor_row() {
-            display_line = display_line.reversed();
+        if is_cursor_row {
+            display_line = display_line.bg(palette::BACKGROUND_HIGHLIGHT);
         }
         frame.render_widget(display_line, row_area);
     }
@@ -60,17 +82,32 @@ fn line_number_width(line_count: usize) -> usize {
     line_count.max(1).ilog10() as usize + 1
 }
 
-fn gutter(line: usize, line_number_width: usize, is_bookmarked: bool) -> String {
+fn gutter(
+    line: usize,
+    line_number_width: usize,
+    is_bookmarked: bool,
+    is_cursor_row: bool,
+) -> Line<'static> {
     let marker = if is_bookmarked { BOOKMARK_MARKER } else { ' ' };
-    format!("{marker} {:>line_number_width$} │ ", line + 1)
+    let line_number_style = if is_cursor_row {
+        CURSOR_LINE_NUMBER_STYLE
+    } else {
+        GUTTER_STYLE
+    };
+
+    Line::from(vec![
+        Span::styled(format!("{marker} "), BOOKMARK_MARKER_STYLE),
+        Span::styled(
+            format!("{:>line_number_width$}", line + 1),
+            line_number_style,
+        ),
+        Span::styled(" │ ", GUTTER_STYLE),
+    ])
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::{
-        buffer::Buffer,
-        style::{Color, Modifier},
-    };
+    use ratatui::buffer::Buffer;
 
     use super::*;
     use crate::{
@@ -155,7 +192,7 @@ mod tests {
             3,
         );
 
-        let is_highlighted = |column, row| buffer[(column, row)].bg == Color::Yellow;
+        let is_highlighted = |column, row| buffer[(column, row)].bg == palette::YELLOW;
         let gutter_width = 6;
         assert!(is_highlighted(gutter_width, 0) && is_highlighted(gutter_width + 12, 0));
         assert!(!is_highlighted(gutter_width + 6, 0));
@@ -169,7 +206,7 @@ mod tests {
 
         let buffer = render_log_view(&log_file, &make_tabs(20, 1), 20, 1);
 
-        assert_ne!(buffer[(6, 0)].bg, Color::Yellow);
+        assert_ne!(buffer[(6, 0)].bg, palette::YELLOW);
     }
 
     #[test]
@@ -186,15 +223,34 @@ mod tests {
         let buffer = render_with(&log_file, &make_tabs(20, 2), None, &bookmarks, 20, 2);
 
         assert_eq!(rendered_rows(&buffer), ["  1 │ a", "● 2 │ b"]);
+        assert_eq!(buffer[(0, 1)].fg, palette::YELLOW);
     }
 
     #[test]
-    fn given_cursor_line_when_rendering_then_its_whole_row_is_reversed() {
+    fn given_cursor_row_when_rendering_then_its_text_is_tinted_but_not_its_gutter() {
         let buffer = render_text("a\nb\nc\n", 1, 10, 3);
 
-        let is_reversed = |column, row| buffer[(column, row)].modifier.contains(Modifier::REVERSED);
-        assert!(is_reversed(0, 1) && is_reversed(9, 1));
-        assert!(!is_reversed(0, 0) && !is_reversed(0, 2));
+        let is_tinted = |column, row| buffer[(column, row)].bg == palette::BACKGROUND_HIGHLIGHT;
+        assert!(is_tinted(6, 1) && is_tinted(9, 1));
+        assert!(!is_tinted(0, 1) && !is_tinted(5, 1));
+        assert!(!is_tinted(6, 0) && !is_tinted(6, 2));
+    }
+
+    #[test]
+    fn given_cursor_row_when_rendering_then_only_its_line_number_is_orange_and_bold() {
+        let buffer = render_text("a\nb\nc\n", 1, 10, 3);
+
+        assert_eq!(buffer[(2, 1)].fg, palette::ORANGE);
+        assert!(buffer[(2, 1)].modifier.contains(Modifier::BOLD));
+        assert_eq!(buffer[(2, 0)].fg, palette::FOREGROUND_FAINT);
+    }
+
+    #[test]
+    fn given_rows_past_the_end_of_the_file_when_rendering_then_they_show_the_background() {
+        let buffer = render_text("a\n", 0, 10, 3);
+
+        assert_eq!(buffer[(0, 2)].bg, palette::BACKGROUND);
+        assert_eq!(buffer[(9, 2)].bg, palette::BACKGROUND);
     }
 
     #[test]
@@ -227,13 +283,13 @@ mod tests {
     }
 
     #[test]
-    fn given_control_characters_when_rendering_then_they_show_dimmed_in_caret_notation() {
+    fn given_control_characters_when_rendering_then_they_show_muted_in_caret_notation() {
         let buffer = render_text("a\x1b[31mb\rc\n", 0, 30, 1);
 
         assert_eq!(rendered_rows(&buffer), ["  1 │ a^[[31mb^Mc"]);
-        let is_dim = |column| buffer[(column, 0)].modifier.contains(Modifier::DIM);
-        assert!(is_dim(7) && is_dim(8));
-        assert!(!is_dim(6) && !is_dim(9));
+        let is_muted = |column| buffer[(column, 0)].fg == palette::FOREGROUND_MUTED;
+        assert!(is_muted(7) && is_muted(8));
+        assert!(!is_muted(6) && !is_muted(9));
     }
 
     #[test]

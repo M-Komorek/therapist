@@ -1,7 +1,25 @@
-use ratatui::{Frame, buffer::CellWidth, layout::Rect, text::Line};
+use ratatui::{
+    Frame,
+    buffer::CellWidth,
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
+
+use super::{BAR_STYLE, palette};
+
+const PREFIX_STYLE: Style = Style::new()
+    .fg(palette::YELLOW)
+    .add_modifier(Modifier::BOLD);
 
 pub fn render(frame: &mut Frame, area: Rect, prefix: char, text: &str, text_before_cursor: &str) {
-    frame.render_widget(Line::raw(format!("{prefix}{text}")), area);
+    let command_line = Line::from(vec![
+        Span::styled(prefix.to_string(), PREFIX_STYLE),
+        Span::raw(text),
+    ]);
+    frame.buffer_mut().set_style(area, BAR_STYLE);
+    frame.render_widget(command_line, area);
+
     let prefix_width = 1;
     let cursor_column = text_before_cursor.cell_width();
     frame.set_cursor_position((
@@ -18,6 +36,12 @@ mod tests {
     use crate::ui::tests::rendered_rows;
 
     fn render_command_line(text: &str, text_before_cursor: &str) -> (String, Position) {
+        let mut terminal = draw_command_line(text, text_before_cursor);
+        let rows = rendered_rows(terminal.backend().buffer());
+        (rows[1].clone(), terminal.get_cursor_position().unwrap())
+    }
+
+    fn draw_command_line(text: &str, text_before_cursor: &str) -> Terminal<TestBackend> {
         let mut terminal = Terminal::new(TestBackend::new(10, 2)).unwrap();
         terminal
             .draw(|frame| {
@@ -25,8 +49,7 @@ mod tests {
                 render(frame, bottom_row, ':', text, text_before_cursor);
             })
             .unwrap();
-        let rows = rendered_rows(terminal.backend().buffer());
-        (rows[1].clone(), terminal.get_cursor_position().unwrap())
+        terminal
     }
 
     #[test]
@@ -34,6 +57,17 @@ mod tests {
         let (row, _) = render_command_line("5000", "5000");
 
         assert_eq!(row, ":5000");
+    }
+
+    #[test]
+    fn given_text_when_rendering_then_the_prefix_is_yellow_and_bold_on_the_bar() {
+        let terminal = draw_command_line("5000", "5000");
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 1)].fg, palette::YELLOW);
+        assert!(buffer[(0, 1)].modifier.contains(Modifier::BOLD));
+        assert_eq!(buffer[(1, 1)].fg, palette::FOREGROUND_DARK);
+        assert_eq!(buffer[(9, 1)].bg, palette::BACKGROUND_DARK);
     }
 
     #[test]

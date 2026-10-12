@@ -11,16 +11,19 @@ use ratatui::{
         cursor::Show,
         event::{self, Event as CrosstermEvent, KeyEvent, KeyEventKind},
         execute, queue,
+        style::Print,
         terminal::{
             BeginSynchronizedUpdate, EndSynchronizedUpdate, EnterAlternateScreen,
             LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, is_raw_mode_enabled,
         },
     },
     layout::Size,
+    style::Color,
 };
 use rustix::process::{Signal, kill_current_process_group};
 
 const OUTPUT_BUFFER_SIZE: usize = 64 * 1024;
+const RESET_DEFAULT_BACKGROUND: &str = "\x1b]111\x1b\\";
 
 #[derive(Debug, PartialEq)]
 pub enum TerminalEvent {
@@ -28,21 +31,23 @@ pub enum TerminalEvent {
     Resize(Size),
 }
 
-/// The full-screen terminal. Creating it switches to raw mode and the alternate screen, and
-/// dropping it switches back.
+/// The full-screen terminal. Creating it switches to raw mode and the alternate screen and sets
+/// the terminal's default background, so its padding matches the app; dropping it switches back.
 pub struct Terminal {
     screen: ratatui::Terminal<CrosstermBackend<BufWriter<Stdout>>>,
+    background: Color,
 }
 
 impl Terminal {
-    pub fn enter() -> io::Result<Self> {
+    pub fn enter(background: Color) -> io::Result<Self> {
         let terminal = Self {
             screen: ratatui::Terminal::new(CrosstermBackend::new(BufWriter::with_capacity(
                 OUTPUT_BUFFER_SIZE,
                 stdout(),
             )))?,
+            background,
         };
-        enter_tui_mode()?;
+        enter_tui_mode(background)?;
         Ok(terminal)
     }
 
@@ -92,7 +97,7 @@ impl Terminal {
     pub fn suspend(&mut self) -> io::Result<()> {
         leave_tui_mode()?;
         kill_current_process_group(Signal::TSTP)?;
-        enter_tui_mode()?;
+        enter_tui_mode(self.background)?;
         self.screen.clear()
     }
 }
@@ -129,9 +134,13 @@ fn to_terminal_event(crossterm_event: CrosstermEvent) -> Option<TerminalEvent> {
     }
 }
 
-fn enter_tui_mode() -> io::Result<()> {
+fn enter_tui_mode(background: Color) -> io::Result<()> {
     enable_raw_mode()?;
-    execute!(stdout(), EnterAlternateScreen)
+    execute!(
+        stdout(),
+        EnterAlternateScreen,
+        Print(set_default_background(background))
+    )
 }
 
 fn leave_tui_mode() -> io::Result<()> {
@@ -139,7 +148,19 @@ fn leave_tui_mode() -> io::Result<()> {
         return Ok(());
     }
     disable_raw_mode()?;
-    execute!(stdout(), LeaveAlternateScreen, Show)
+    execute!(
+        stdout(),
+        Print(RESET_DEFAULT_BACKGROUND),
+        LeaveAlternateScreen,
+        Show
+    )
+}
+
+fn set_default_background(background: Color) -> String {
+    match background {
+        Color::Rgb(red, green, blue) => format!("\x1b]11;#{red:02x}{green:02x}{blue:02x}\x1b\\"),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +201,18 @@ mod tests {
     #[test]
     fn given_focus_change_when_converting_then_it_is_ignored() {
         assert_eq!(to_terminal_event(CrosstermEvent::FocusGained), None);
+    }
+
+    #[test]
+    fn given_rgb_background_when_building_the_sequence_then_it_is_osc_11_with_the_hex_color() {
+        assert_eq!(
+            set_default_background(Color::Rgb(0x1d, 0x1a, 0x18)),
+            "\x1b]11;#1d1a18\x1b\\"
+        );
+    }
+
+    #[test]
+    fn given_named_background_when_building_the_sequence_then_it_is_empty() {
+        assert_eq!(set_default_background(Color::Reset), "");
     }
 }

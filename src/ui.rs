@@ -1,5 +1,6 @@
 mod command_line;
 mod log_view;
+mod palette;
 mod status_bar;
 mod tab_bar;
 mod visible_row;
@@ -7,6 +8,7 @@ mod visible_row;
 use ratatui::{
     Frame,
     style::{Color, Style},
+    text::Span,
 };
 
 use crate::{
@@ -14,7 +16,12 @@ use crate::{
     control::Mode,
 };
 
-const BAR_STYLE: Style = Style::new().bg(Color::DarkGray);
+const BAR_STYLE: Style = Style::new()
+    .fg(palette::FOREGROUND_DARK)
+    .bg(palette::BACKGROUND_DARK);
+const SLANTED_EDGE: &str = "\u{1fb60}\u{1fb57}";
+
+pub const TERMINAL_BACKGROUND: Color = palette::BACKGROUND;
 
 pub fn render(frame: &mut Frame, model: &Model) {
     let screen_areas = ScreenAreas::new(frame.area());
@@ -43,6 +50,10 @@ pub fn render(frame: &mut Frame, model: &Model) {
     }
 }
 
+fn slanted_edge(left_color: Color, right_color: Color) -> Span<'static> {
+    Span::styled(SLANTED_EDGE, Style::new().fg(left_color).bg(right_color))
+}
+
 #[cfg(test)]
 mod tests {
     use ratatui::{
@@ -51,7 +62,6 @@ mod tests {
         buffer::Buffer,
         crossterm::event::KeyCode,
         layout::{Position, Size},
-        style::Color,
     };
 
     use super::*;
@@ -108,7 +118,12 @@ mod tests {
 
         assert_eq!(
             render_model(&model),
-            [" [all]", "  1 │ first", "  2 │ second", ":12"]
+            [
+                " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
+                "  1 │ first",
+                "  2 │ second",
+                ":12"
+            ]
         );
     }
 
@@ -139,14 +154,14 @@ mod tests {
         model.press(KeyCode::Enter);
         assert_eq!(
             render_model(&model)[3],
-            " app.log    Not a command: abc │ 1/2 (50%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}Not a command: abc \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
 
         model.press(KeyCode::Esc);
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log                 <Esc> │ 1/2 (50%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}            <Esc> \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 
@@ -157,10 +172,10 @@ mod tests {
         assert_eq!(
             render_model(&model),
             [
-                " [all]",
+                " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
                 "  1 │ first",
                 "  2 │ second",
-                " app.log                         1/2 (50%) │ 13 B"
+                " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}                  \u{1fb60}\u{1fb57} 1/2 (50%)"
             ]
         );
     }
@@ -173,7 +188,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log          searching 0% │ 1/2 (50%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 1searching ────────── 0% \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 
@@ -186,7 +201,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log           /sec [1/1] │ 2/2 (100%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}      /sec [1/1] \u{1fb60}\u{1fb57} 2/2 (100%)"
         );
     }
 
@@ -199,7 +214,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log Pattern not found: zz │ 1/2 (50%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 Pattern not found: zz \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 
@@ -211,7 +226,7 @@ mod tests {
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
             let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
-            buffer[(6, 2)].bg == Color::Yellow
+            buffer[(6, 2)].bg == palette::YELLOW
         };
         assert!(is_highlighted(&model));
 
@@ -219,7 +234,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log                <Esc> │ 2/2 (100%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}           <Esc> \u{1fb60}\u{1fb57} 2/2 (100%)"
         );
         assert!(!is_highlighted(&model));
     }
@@ -232,7 +247,7 @@ mod tests {
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
             let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
-            buffer[(6, 2)].bg == Color::Yellow
+            buffer[(6, 2)].bg == palette::YELLOW
         };
 
         model.type_keys("&s");
@@ -254,7 +269,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log                     5 │ 1/2 (50%) │ 13 B"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}                5 \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 }

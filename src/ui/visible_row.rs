@@ -1,13 +1,12 @@
 use std::ops::Range;
 
-use ratatui::{
-    buffer::CellWidth,
-    style::{Color, Style},
-    text::Span,
-};
+use ratatui::{buffer::CellWidth, style::Style, text::Span};
+
+use super::palette;
 
 const TAB_STOP: usize = 8;
-const HIGHLIGHT_STYLE: Style = Style::new().fg(Color::Black).bg(Color::Yellow);
+const HIGHLIGHT_STYLE: Style = Style::new().fg(palette::BACKGROUND).bg(palette::YELLOW);
+const CONTROL_CHARACTER_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
 
 pub(super) fn visible_spans(
     text: &str,
@@ -43,7 +42,7 @@ fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
 }
 
 /// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ASCII
-/// control characters show dimmed in caret notation (`^[`), and other control characters are
+/// control characters show muted in caret notation (`^[`), and other control characters are
 /// dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
 /// columns. Text inside the highlight ranges, which are byte ranges of the line in order, is
 /// highlighted.
@@ -98,7 +97,7 @@ impl<'a> VisibleRow<'a> {
             let tab_spaces = " ".repeat(spaces_to_tab_stop);
             self.push_symbol(&tab_spaces, spaces_to_tab_stop, Style::default());
         } else if control.is_ascii_control() {
-            self.push_symbol(&caret_notation(control), 2, Style::new().dim());
+            self.push_symbol(&caret_notation(control), 2, CONTROL_CHARACTER_STYLE);
         }
     }
 
@@ -229,6 +228,6 @@ mod tests {
 
         let span_texts: Vec<&str> = visible.iter().map(|span| span.content.as_ref()).collect();
         assert_eq!(span_texts, ["c", "^[", "de"]);
-        assert_eq!(visible[1].style, Style::new().dim());
+        assert_eq!(visible[1].style, CONTROL_CHARACTER_STYLE);
     }
 }
