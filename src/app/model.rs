@@ -20,7 +20,6 @@ pub enum LogFileIndexingStatus {
 /// All of the app's state. Only `update` changes it, and rendering only reads it. The fields are
 /// public so that `update` can borrow several of them at once.
 pub struct Model {
-    // TODO Consider adding a bag for States and a bag for Statuses
     pub bookmarks: Bookmarks,
     pub input_controller: InputController,
     pub job_board: JobBoard,
