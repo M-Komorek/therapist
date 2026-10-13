@@ -5,6 +5,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::action::Action;
 
 use bindings::{BindingMatch, apply_count, find_binding, plain};
+pub use bindings::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup};
 
 /// Turns normal-mode keys into actions. It remembers a count typed so far (`5` in `5j`), which
 /// replaces the number in the bound action, and the start of a key sequence (the first `g` of
@@ -47,7 +48,7 @@ impl Keymap {
     }
 
     pub(super) fn last_keys_text(&self) -> String {
-        self.last_keys.iter().map(key_name).collect()
+        key_sequence_text(&self.last_keys)
     }
 
     pub(super) fn reset(&mut self) {
@@ -102,6 +103,10 @@ impl Keymap {
 }
 
 const ESCAPE: KeyEvent = plain(KeyCode::Esc);
+
+pub fn key_sequence_text(key_sequence: &[KeyEvent]) -> String {
+    key_sequence.iter().map(key_name).collect()
+}
 
 fn key_name(key: &KeyEvent) -> String {
     let mut modifiers = String::new();
@@ -246,6 +251,14 @@ mod tests {
         assert_eq!(
             resolve_typed(&mut keymap, "j"),
             resolved_log_view(LogViewAction::MoveCursorDown(1))
+        );
+    }
+
+    #[test]
+    fn given_f1_when_resolving_then_the_help_opens() {
+        assert_eq!(
+            Keymap::default().resolve(plain(KeyCode::F(1))),
+            Some(app(AppAction::OpenHelp))
         );
     }
 

@@ -116,7 +116,7 @@ mod test_helpers {
     pub(super) fn command_line_text(model: &Model) -> Option<&str> {
         match model.input_controller.mode() {
             Mode::CommandLine(command_line) => Some(command_line.text()),
-            Mode::Normal => None,
+            Mode::Normal | Mode::Help => None,
         }
     }
 

@@ -12,6 +12,10 @@ pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
             model.input_controller.open_command_line(command_line_kind);
             Effect::Redraw
         }
+        AppAction::OpenHelp => {
+            model.input_controller.open_help();
+            Effect::Redraw
+        }
         AppAction::ShowError(error_text) => {
             show_error(model, error_text);
             Effect::Redraw
@@ -34,7 +38,14 @@ mod tests {
     use ratatui::crossterm::event::KeyCode;
 
     use super::*;
-    use crate::app::update::test_helpers::{command_line_text, make_model, run_command};
+    use crate::{
+        app::update::test_helpers::{command_line_text, make_model, run_command},
+        control::Mode,
+    };
+
+    fn is_help_open(model: &Model) -> bool {
+        matches!(model.input_controller.mode(), Mode::Help)
+    }
 
     #[test]
     fn given_app_when_colon_is_pressed_then_the_command_line_opens_empty() {
@@ -92,6 +103,38 @@ mod tests {
             Some(&StatusMessage::Error("Not a command: abc".to_owned()))
         );
         assert_eq!(command_line_text(&model), None);
+    }
+
+    #[test]
+    fn given_app_when_f1_is_pressed_then_the_help_opens() {
+        let mut model = make_model();
+
+        let effect = model.press(KeyCode::F(1));
+
+        assert_eq!(effect, Effect::Redraw);
+        assert!(is_help_open(&model));
+    }
+
+    #[test]
+    fn given_app_when_help_command_is_run_then_the_help_opens() {
+        let mut model = make_model();
+
+        let effect = run_command(&mut model, "help");
+
+        assert_eq!(effect, Effect::Redraw);
+        assert!(is_help_open(&model));
+    }
+
+    #[test]
+    fn given_open_help_when_j_and_q_are_typed_then_it_closes_without_moving_or_quitting() {
+        let mut model = make_model();
+        model.press(KeyCode::F(1));
+
+        let effect = model.type_keys("jq");
+
+        assert_eq!(effect, Effect::Redraw);
+        assert!(!is_help_open(&model));
+        assert_eq!(model.cursor_line(), Some(0));
     }
 
     #[test]

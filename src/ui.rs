@@ -1,4 +1,5 @@
 mod command_line;
+mod help;
 mod log_view;
 mod palette;
 mod status_bar;
@@ -48,6 +49,10 @@ pub fn render(frame: &mut Frame, model: &Model) {
             command_line.text_before_cursor(),
         ),
         Mode::Normal => status_bar::render(frame, screen_areas.bottom_row, model),
+        Mode::Help => {
+            status_bar::render(frame, screen_areas.bottom_row, model);
+            help::render(frame, screen_areas.log_view);
+        }
     }
 }
 
@@ -179,6 +184,23 @@ mod tests {
                 " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}                  \u{1fb60}\u{1fb57} 1/2 (50%)"
             ]
         );
+    }
+
+    #[test]
+    fn given_open_help_when_rendering_then_it_covers_the_log_view_and_the_status_bar_stays() {
+        let mut model =
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(40, 8));
+        model.finish_scheduled_jobs();
+        let render_rows =
+            |model: &Model| rendered_rows(&render_to_buffer(40, 8, |frame| render(frame, model)));
+        let rows_before_help = render_rows(&model);
+
+        model.press(KeyCode::F(1));
+
+        let rows = render_rows(&model);
+        assert_eq!(rows[1], "  1 │ first");
+        assert!(rows[2].starts_with("  ╭ Keys ─"));
+        assert_eq!(rows[7], rows_before_help[7]);
     }
 
     #[test]

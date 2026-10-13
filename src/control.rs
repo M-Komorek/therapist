@@ -1,19 +1,21 @@
 mod command_line;
 mod keymap;
 
-use ratatui::crossterm::event::KeyEvent;
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use crate::action::{Action, CommandLineKind};
 
-pub use command_line::CommandLine;
 use command_line::CommandLineOutcome;
+pub use command_line::{COMMAND_DESCRIPTIONS, CommandLine};
 use keymap::Keymap;
+pub use keymap::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequence_text};
 
 #[derive(Default)]
 pub enum Mode {
     #[default]
     Normal,
     CommandLine(CommandLine),
+    Help,
 }
 
 #[derive(Default)]
@@ -30,12 +32,21 @@ impl InputController {
                 let outcome = command_line.resolve(key);
                 self.apply_command_line_outcome(outcome)
             }
+            Mode::Help => {
+                self.resolve_help_key(key);
+                None
+            }
         }
     }
 
     pub fn open_command_line(&mut self, command_line_kind: CommandLineKind) {
         self.keymap.reset();
         self.mode = Mode::CommandLine(CommandLine::new(command_line_kind));
+    }
+
+    pub fn open_help(&mut self) {
+        self.keymap.reset();
+        self.mode = Mode::Help;
     }
 
     pub fn mode(&self) -> &Mode {
@@ -59,12 +70,20 @@ impl InputController {
             }
         }
     }
+
+    fn resolve_help_key(&mut self, key: KeyEvent) {
+        if is_help_closing_key(key) {
+            self.mode = Mode::Normal;
+        }
+    }
+}
+
+fn is_help_closing_key(key: KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::F(1))
 }
 
 #[cfg(test)]
 mod tests {
-    use ratatui::crossterm::event::KeyCode;
-
     use super::*;
     use crate::{action::LogViewAction, domain::search::SearchDirection};
 
@@ -90,8 +109,18 @@ mod tests {
     fn command_line_text(input_controller: &InputController) -> Option<&str> {
         match input_controller.mode() {
             Mode::CommandLine(command_line) => Some(command_line.text()),
-            Mode::Normal => None,
+            Mode::Normal | Mode::Help => None,
         }
+    }
+
+    fn make_open_help() -> InputController {
+        let mut input_controller = InputController::default();
+        input_controller.open_help();
+        input_controller
+    }
+
+    fn is_help_open(input_controller: &InputController) -> bool {
+        matches!(input_controller.mode(), Mode::Help)
     }
 
     #[test]
@@ -167,6 +196,37 @@ mod tests {
         press(&mut input_controller, KeyCode::Esc);
 
         assert_eq!(input_controller.last_keys_text(), "");
+        assert_eq!(
+            type_keys(&mut input_controller, "j"),
+            Some(Action::LogView(LogViewAction::MoveCursorDown(1)))
+        );
+    }
+
+    #[test]
+    fn given_open_help_when_esc_q_or_f1_is_pressed_then_it_closes() {
+        for closing_code in [KeyCode::Esc, KeyCode::Char('q'), KeyCode::F(1)] {
+            let mut input_controller = make_open_help();
+
+            assert_eq!(press(&mut input_controller, closing_code), None);
+            assert!(!is_help_open(&input_controller));
+        }
+    }
+
+    #[test]
+    fn given_open_help_when_bound_keys_are_typed_then_no_action_comes_out_and_it_stays_open() {
+        let mut input_controller = make_open_help();
+
+        assert_eq!(type_keys(&mut input_controller, "j:G"), None);
+        assert!(is_help_open(&input_controller));
+    }
+
+    #[test]
+    fn given_count_typed_when_the_help_opens_and_closes_then_the_count_is_gone() {
+        let mut input_controller = InputController::default();
+        type_keys(&mut input_controller, "5");
+        input_controller.open_help();
+        press(&mut input_controller, KeyCode::Esc);
+
         assert_eq!(
             type_keys(&mut input_controller, "j"),
             Some(Action::LogView(LogViewAction::MoveCursorDown(1)))

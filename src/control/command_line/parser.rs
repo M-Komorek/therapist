@@ -1,10 +1,17 @@
-use crate::action::{Action, HighlightAction, LogViewAction};
+use crate::action::{Action, AppAction, HighlightAction, LogViewAction};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub(super) enum CommandError {
     #[error("Not a command: {0}")]
     NotACommand(String),
 }
+
+pub const COMMAND_DESCRIPTIONS: &[(&str, &str)] = &[
+    (":{line}", "Go to line {line}"),
+    (":hl [phrase]", "Highlight a phrase, or the search phrase"),
+    (":unhl [phrase]", "Remove a highlight, or all of them"),
+    (":help :h", "Show this help"),
+];
 
 pub(super) fn parse_command(command_text: &str) -> Result<Option<Action>, CommandError> {
     let command_text = command_text.trim();
@@ -16,6 +23,9 @@ pub(super) fn parse_command(command_text: &str) -> Result<Option<Action>, Comman
         return Ok(Some(Action::LogView(
             LogViewAction::MoveCursorToLineNumber(line_number),
         )));
+    }
+    if matches!(command_text, "help" | "h") {
+        return Ok(Some(Action::App(AppAction::OpenHelp)));
     }
     if let Some(highlight_action) = parse_highlight_command(command_text) {
         return Ok(Some(Action::Highlight(highlight_action)));
@@ -147,6 +157,24 @@ mod tests {
     fn given_text_that_only_starts_like_a_highlight_command_when_parsing_then_it_is_not_a_command()
     {
         for command_text in ["hlERROR", "unhlx", "highlight ERROR", "HL ERROR"] {
+            assert_eq!(
+                parse_command(command_text),
+                Err(CommandError::NotACommand(command_text.to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    fn given_help_or_h_when_parsing_then_the_help_opens() {
+        let open_help = Ok(Some(Action::App(AppAction::OpenHelp)));
+
+        assert_eq!(parse_command("help"), open_help);
+        assert_eq!(parse_command(" h "), open_help);
+    }
+
+    #[test]
+    fn given_help_with_a_topic_when_parsing_then_it_is_not_a_command() {
+        for command_text in ["help j", "h hl", "helpme"] {
             assert_eq!(
                 parse_command(command_text),
                 Err(CommandError::NotACommand(command_text.to_owned()))

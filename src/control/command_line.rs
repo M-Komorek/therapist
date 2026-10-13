@@ -7,6 +7,7 @@ use crate::{
     domain::search::{SearchDirection, SearchQuery},
 };
 
+pub use parser::COMMAND_DESCRIPTIONS;
 use parser::parse_command;
 
 #[derive(Debug, PartialEq)]

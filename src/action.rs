@@ -15,6 +15,7 @@ pub enum AppAction {
     Quit,
     Suspend,
     OpenCommandLine(CommandLineKind),
+    OpenHelp,
     ShowError(String),
     #[cfg(debug_assertions)]
     DebugPanic,
