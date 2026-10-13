@@ -5,8 +5,9 @@ use super::{
 };
 use crate::{
     action::SearchAction,
-    app::{LogFileIndexingStatus, Model},
+    app::Model,
     domain::{
+        log_file::IndexingStatus,
         search::{MatchJump, SearchDirection, SearchError, SearchQuery},
         tabs::TabId,
     },
@@ -50,7 +51,7 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
 }
 
 fn search_refusal(model: &Model, tab_id: TabId) -> Option<SearchError> {
-    if model.log_file_indexing_status == LogFileIndexingStatus::Running {
+    if model.log_file.indexing_status() == IndexingStatus::Running {
         return Some(SearchError::StillIndexing);
     }
     let is_grepping = model.job_board.has_job(JobSlot::Grepping(tab_id));

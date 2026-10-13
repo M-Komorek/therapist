@@ -5,8 +5,11 @@ use super::{
 };
 use crate::{
     action::TabAction,
-    app::{LogFileIndexingStatus, Model},
-    domain::tabs::{GrepError, TabId},
+    app::Model,
+    domain::{
+        log_file::IndexingStatus,
+        tabs::{GrepError, TabId},
+    },
     jobs::{self, JobSlot},
 };
 
@@ -22,7 +25,7 @@ pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
 }
 
 fn schedule_grep(model: &mut Model, phrase: String) {
-    if model.log_file_indexing_status == LogFileIndexingStatus::Running {
+    if model.log_file.indexing_status() == IndexingStatus::Running {
         show_error(model, GrepError::StillIndexing.to_string());
         return;
     }

@@ -7,8 +7,8 @@ use ratatui::{
 
 use super::{BAR_STYLE, palette, slanted_edge};
 use crate::{
-    app::{LogFileIndexingStatus, Model, StatusMessage},
-    domain::{search::SearchState, tabs::GrepState},
+    app::{Model, StatusMessage},
+    domain::{log_file::IndexingStatus, search::SearchState, tabs::GrepState},
     jobs::JobSlot,
 };
 
@@ -33,14 +33,14 @@ pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
         .job_board
         .has_job(JobSlot::Grepping(active_tab.tab_id()));
     let is_row_count_final = if active_tab.shows_all_lines() {
-        model.log_file_indexing_status == LogFileIndexingStatus::Done
+        log_file.indexing_status() == IndexingStatus::Done
     } else {
         !is_grepping
     };
     let last_keys = model.input_controller.last_keys_text();
     let message_span = message_span(
         model.status_message.as_ref(),
-        model.log_file_indexing_status,
+        log_file.indexing_status(),
         log_file.percent_indexed(),
     );
     let search_span = search_span(
@@ -110,7 +110,7 @@ fn right_line(segments: Vec<Span<'_>>, position_text: String) -> Line<'_> {
 
 fn message_span(
     status_message: Option<&StatusMessage>,
-    log_file_indexing_status: LogFileIndexingStatus,
+    log_file_indexing_status: IndexingStatus,
     percent_indexed: u64,
 ) -> Option<Span<'_>> {
     match status_message {
@@ -173,15 +173,15 @@ fn position_text(cursor_row: usize, row_count: usize, is_row_count_final: bool) 
 }
 
 fn indexing_span(
-    log_file_indexing_status: LogFileIndexingStatus,
+    log_file_indexing_status: IndexingStatus,
     percent_indexed: u64,
 ) -> Option<Span<'static>> {
     match log_file_indexing_status {
-        LogFileIndexingStatus::Running => {
+        IndexingStatus::Running => {
             Some(progress_text("indexing", percent_indexed).fg(palette::ORANGE))
         }
-        LogFileIndexingStatus::Failed => Some("indexing failed".fg(palette::RED)),
-        LogFileIndexingStatus::Done => None,
+        IndexingStatus::Failed => Some("indexing failed".fg(palette::RED)),
+        IndexingStatus::Done => None,
     }
 }
 
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn given_indexing_failed_when_rendering_then_failure_is_shown_and_total_has_a_plus() {
         let mut model = make_model("a\nb\nc\nd\n");
-        model.log_file_indexing_status = LogFileIndexingStatus::Failed;
+        model.log_file.mark_indexing_failed();
 
         assert_eq!(
             render_status(&model),
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn given_indexing_running_when_building_progress_then_percent_is_shown_in_orange() {
         assert_eq!(
-            indexing_span(LogFileIndexingStatus::Running, 45),
+            indexing_span(IndexingStatus::Running, 45),
             Some("indexing ━━━━────── 45%".fg(palette::ORANGE))
         );
     }
@@ -523,14 +523,14 @@ mod tests {
     #[test]
     fn given_indexing_failed_when_building_progress_then_failure_is_shown_in_red() {
         assert_eq!(
-            indexing_span(LogFileIndexingStatus::Failed, 45),
+            indexing_span(IndexingStatus::Failed, 45),
             Some("indexing failed".fg(palette::RED))
         );
     }
 
     #[test]
     fn given_indexing_done_when_building_progress_then_nothing_is_shown() {
-        assert_eq!(indexing_span(LogFileIndexingStatus::Done, 100), None);
+        assert_eq!(indexing_span(IndexingStatus::Done, 100), None);
     }
 
     #[test]

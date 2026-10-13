@@ -10,13 +10,6 @@ pub enum StatusMessage {
     Error(String),
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum LogFileIndexingStatus {
-    Running,
-    Done,
-    Failed,
-}
-
 /// All of the app's state. Only `update` changes it, and rendering only reads it. The fields are
 /// public so that `update` can borrow several of them at once.
 pub struct Model {
@@ -26,8 +19,6 @@ pub struct Model {
     pub log_file: LogFile,
     pub tabs: Tabs,
     pub status_message: Option<StatusMessage>,
-    // TODO Cosider move to LogFile
-    pub log_file_indexing_status: LogFileIndexingStatus,
 }
 
 impl Model {
@@ -45,7 +36,6 @@ impl Model {
             log_file,
             tabs: Tabs::default(),
             status_message: None,
-            log_file_indexing_status: LogFileIndexingStatus::Running,
         }
     }
 }

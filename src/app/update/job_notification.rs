@@ -5,7 +5,7 @@ use super::{
     tab::close_tab,
 };
 use crate::{
-    app::{LogFileIndexingStatus, Model},
+    app::Model,
     domain::tabs::{GrepError, TabId},
     jobs::{JobError, JobNotification, JobSlot, JobStatus},
 };
@@ -43,7 +43,7 @@ fn mark_job_done(model: &mut Model, job_slot: JobSlot) {
                 file_size = model.log_file.file_size(),
                 "file indexed"
             );
-            model.log_file_indexing_status = LogFileIndexingStatus::Done;
+            model.log_file.mark_indexing_done();
         }
         JobSlot::Searching(tab_id) => mark_search_done(model, tab_id),
         JobSlot::Grepping(tab_id) => mark_grep_done(model, tab_id),
@@ -54,7 +54,7 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
     match job_slot {
         JobSlot::LogFileIndexing => {
             tracing::error!(error = %job_error, "indexing failed");
-            model.log_file_indexing_status = LogFileIndexingStatus::Failed;
+            model.log_file.mark_indexing_failed();
         }
         JobSlot::Searching(tab_id) => {
             tracing::error!(error = %job_error, "search failed");
@@ -104,7 +104,7 @@ mod tests {
             StatusMessage,
             update::test_helpers::{SEARCHED_TEXT, make_model_with_text},
         },
-        domain::log_file::LogFile,
+        domain::log_file::{IndexingStatus, LogFile},
     };
 
     fn make_indexing_model(text: &str) -> (Model, Vec<JobNotification>) {
@@ -118,10 +118,7 @@ mod tests {
     fn given_unindexed_file_when_app_starts_then_indexing_runs() {
         let model = Model::new(LogFile::unindexed_from_text("a\nb\n"));
 
-        assert_eq!(
-            model.log_file_indexing_status,
-            LogFileIndexingStatus::Running
-        );
+        assert_eq!(model.log_file.indexing_status(), IndexingStatus::Running);
         assert!(!model.job_board.is_empty());
     }
 
@@ -151,7 +148,7 @@ mod tests {
 
         model.handle_job_notifications(job_notifications);
 
-        assert_eq!(model.log_file_indexing_status, LogFileIndexingStatus::Done);
+        assert_eq!(model.log_file.indexing_status(), IndexingStatus::Done);
         assert!(model.job_board.is_empty());
     }
 
@@ -169,10 +166,7 @@ mod tests {
             },
         );
 
-        assert_eq!(
-            model.log_file_indexing_status,
-            LogFileIndexingStatus::Failed
-        );
+        assert_eq!(model.log_file.indexing_status(), IndexingStatus::Failed);
         assert_eq!(model.log_file.line_count(), 2);
     }
 
@@ -192,7 +186,7 @@ mod tests {
         );
 
         assert_eq!(effect, Effect::Nothing);
-        assert_eq!(model.log_file_indexing_status, LogFileIndexingStatus::Done);
+        assert_eq!(model.log_file.indexing_status(), IndexingStatus::Done);
     }
 
     #[test]

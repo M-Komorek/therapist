@@ -28,6 +28,13 @@ pub enum LogFileError {
     CannotRead { path: PathBuf, source: io::Error },
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum IndexingStatus {
+    Running,
+    Done,
+    Failed,
+}
+
 /// The browsed log file. It is read with `read_at`, so if another process truncates the file,
 /// reading returns fewer lines instead of crashing.
 pub struct LogFile {
@@ -35,6 +42,7 @@ pub struct LogFile {
     file: Arc<File>,
     file_size: u64,
     line_index: LineIndex,
+    indexing_status: IndexingStatus,
 }
 
 impl LogFile {
@@ -50,6 +58,7 @@ impl LogFile {
             file: Arc::new(file),
             file_size,
             line_index: LineIndex::default(),
+            indexing_status: IndexingStatus::Running,
         })
     }
 
@@ -63,6 +72,18 @@ impl LogFile {
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {
         self.line_index = line_index;
+    }
+
+    pub fn mark_indexing_done(&mut self) {
+        self.indexing_status = IndexingStatus::Done;
+    }
+
+    pub fn mark_indexing_failed(&mut self) {
+        self.indexing_status = IndexingStatus::Failed;
+    }
+
+    pub fn indexing_status(&self) -> IndexingStatus {
+        self.indexing_status
     }
 
     pub fn percent_indexed(&self) -> u64 {
@@ -143,6 +164,7 @@ impl LogFile {
             self.line_index = line_index;
             ControlFlow::Continue(())
         })?;
+        self.mark_indexing_done();
         Ok(())
     }
 }
