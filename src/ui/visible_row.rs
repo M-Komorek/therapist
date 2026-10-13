@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::ops::{Range, RangeInclusive};
 
 use ratatui::{buffer::CellWidth, style::Style, text::Span};
 
@@ -6,6 +6,9 @@ use super::palette;
 
 const TAB_STOP: usize = 8;
 const CONTROL_CHARACTER_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
+const CONTROL_SEQUENCE_INTRODUCER: &[u8] = b"\x1b[";
+const CONTROL_SEQUENCE_PARAMETER_BYTES: RangeInclusive<u8> = 0x20..=0x3f;
+const CONTROL_SEQUENCE_FINAL_BYTES: RangeInclusive<u8> = 0x40..=0x7e;
 
 pub(super) struct MatchLayer {
     pub(super) match_ranges: Vec<Range<usize>>,
@@ -31,8 +34,14 @@ pub(super) fn visible_spans(
         .filter(|(_, character)| character.is_control());
     for (control_offset, control) in controls {
         row.push_text(&text[plain_text_start..control_offset], plain_text_start);
-        row.push_control(control);
-        plain_text_start = control_offset + control.len_utf8();
+        let control_length = match control_sequence_length(&text[control_offset..]) {
+            Some(control_sequence_length) => control_sequence_length,
+            None => {
+                row.push_control(control);
+                control.len_utf8()
+            }
+        };
+        plain_text_start = control_offset + control_length;
     }
     row.push_text(&text[plain_text_start..], plain_text_start);
     row.spans
@@ -48,9 +57,23 @@ fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
     text[visible_start..visible_end].to_owned()
 }
 
-/// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ASCII
-/// control characters show muted in caret notation (`^[`), and other control characters are
-/// dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
+fn control_sequence_length(text_from_control: &str) -> Option<usize> {
+    let bytes_after_introducer = text_from_control
+        .as_bytes()
+        .strip_prefix(CONTROL_SEQUENCE_INTRODUCER)?;
+    let final_byte_offset = bytes_after_introducer
+        .iter()
+        .position(|byte| !CONTROL_SEQUENCE_PARAMETER_BYTES.contains(byte))?;
+    let final_byte = bytes_after_introducer[final_byte_offset];
+
+    CONTROL_SEQUENCE_FINAL_BYTES
+        .contains(&final_byte)
+        .then_some(CONTROL_SEQUENCE_INTRODUCER.len() + final_byte_offset + 1)
+}
+
+/// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ANSI
+/// escape sequences such as `ESC [31m` are hidden, other ASCII control characters show muted in
+/// caret notation (`^[`), and other control characters are dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
 /// columns. Each match layer holds byte ranges of the line in order. Text inside them takes the
 /// style of the first layer that covers it.
 struct VisibleRow<'a> {
@@ -317,5 +340,43 @@ mod tests {
         let span_texts: Vec<&str> = visible.iter().map(|span| span.content.as_ref()).collect();
         assert_eq!(span_texts, ["c", "^[", "de"]);
         assert_eq!(visible[1].style, CONTROL_CHARACTER_STYLE);
+    }
+
+    #[test]
+    fn given_color_escape_sequences_when_cutting_then_they_are_hidden() {
+        let visible = visible_spans("a\x1b[31mred\x1b[0m b", 0..20, &[]);
+
+        assert_eq!(span_texts(&visible), ["ared b"]);
+    }
+
+    #[test]
+    fn given_escape_sequence_before_the_visible_columns_when_scrolled_then_it_takes_no_columns() {
+        let visible = visible_spans("\x1b[1;31mabcdef", 2..4, &[]);
+
+        assert_eq!(span_texts(&visible), ["cd"]);
+    }
+
+    #[test]
+    fn given_match_between_escape_sequences_when_cutting_then_the_match_is_highlighted() {
+        let text = "\x1b[1mERROR\x1b[0m here";
+
+        let visible = visible_spans(text, 0..20, &top_layer(text, "ERROR"));
+
+        assert_eq!(span_texts(&visible), ["ERROR", " here"]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["ERROR"]);
+    }
+
+    #[test]
+    fn given_unterminated_escape_sequence_when_cutting_then_it_shows_in_caret_notation() {
+        let visible = visible_spans("a\x1b[31", 0..20, &[]);
+
+        assert_eq!(span_texts(&visible), ["a", "^[", "[31"]);
+    }
+
+    #[test]
+    fn given_escape_not_followed_by_a_bracket_when_cutting_then_it_shows_in_caret_notation() {
+        let visible = visible_spans("\x1b(B ok", 0..20, &[]);
+
+        assert_eq!(span_texts(&visible), ["^[", "(B ok"]);
     }
 }

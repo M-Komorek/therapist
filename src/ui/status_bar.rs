@@ -132,10 +132,7 @@ fn search_span(
         );
     }
     if search_state.match_count() == 0 {
-        return Some(Span::raw(format!(
-            "Pattern not found: {}",
-            search_query.phrase
-        )));
+        return Some(format!("Pattern not found: {}", search_query.phrase).fg(palette::RED));
     }
 
     Some(Span::raw(format!(
@@ -277,12 +274,13 @@ mod tests {
     }
 
     #[test]
-    fn given_search_without_matches_when_formatting_the_search_then_pattern_not_found_is_shown() {
+    fn given_search_without_matches_when_formatting_the_search_then_pattern_not_found_is_shown_in_red()
+     {
         let search_state = make_search_state("zzzz", SearchDirection::Forward, &[]);
 
         assert_eq!(
             search_span(&search_state, 0, false),
-            Some(Span::raw("Pattern not found: zzzz"))
+            Some("Pattern not found: zzzz".fg(palette::RED))
         );
     }
 

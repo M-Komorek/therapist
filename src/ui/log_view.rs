@@ -436,9 +436,9 @@ mod tests {
 
     #[test]
     fn given_control_characters_when_rendering_then_they_show_muted_in_caret_notation() {
-        let buffer = render_text("a\x1b[31mb\rc\n", 0, 30, 1);
+        let buffer = render_text("a\x1bb\rc\n", 0, 30, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ a^[[31mb^Mc"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a^[b^Mc"]);
         let is_muted = |column| buffer[(column, 0)].fg == palette::FOREGROUND_MUTED;
         assert!(is_muted(7) && is_muted(8));
         assert!(!is_muted(6) && !is_muted(9));
