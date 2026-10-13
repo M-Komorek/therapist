@@ -7,6 +7,7 @@ pub enum Action {
     Search(SearchAction),
     Bookmark(BookmarkAction),
     Tab(TabAction),
+    Highlight(HighlightAction),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,4 +67,12 @@ pub enum TabAction {
     SwitchToPrevious,
     CloseActive,
     ShowCursorLineInAllLinesTab,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum HighlightAction {
+    Add(String),
+    AddSearchPhrase,
+    Remove(String),
+    RemoveAll,
 }

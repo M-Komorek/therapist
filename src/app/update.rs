@@ -1,5 +1,6 @@
 mod app;
 mod bookmark;
+mod highlight;
 mod job_notification;
 mod log_view;
 mod search;
@@ -36,6 +37,9 @@ fn dispatch(model: &mut Model, action: Action) -> Effect {
         Action::Search(search_action) => search::dispatch_search(model, search_action),
         Action::Bookmark(bookmark_action) => bookmark::dispatch_bookmark(model, bookmark_action),
         Action::Tab(tab_action) => tab::dispatch_tab(model, tab_action),
+        Action::Highlight(highlight_action) => {
+            highlight::dispatch_highlight(model, highlight_action)
+        }
     }
 }
 

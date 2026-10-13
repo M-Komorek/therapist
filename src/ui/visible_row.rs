@@ -5,19 +5,26 @@ use ratatui::{buffer::CellWidth, style::Style, text::Span};
 use super::palette;
 
 const TAB_STOP: usize = 8;
-const HIGHLIGHT_STYLE: Style = Style::new().fg(palette::BACKGROUND).bg(palette::YELLOW);
 const CONTROL_CHARACTER_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
+
+pub(super) struct MatchLayer {
+    pub(super) match_ranges: Vec<Range<usize>>,
+    pub(super) style: Style,
+}
 
 pub(super) fn visible_spans(
     text: &str,
     visible_columns: Range<usize>,
-    highlight_ranges: &[Range<usize>],
+    match_layers: &[MatchLayer],
 ) -> Vec<Span<'static>> {
+    let has_matches = match_layers
+        .iter()
+        .any(|match_layer| !match_layer.match_ranges.is_empty());
     let bytes_before_visible_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
-    if highlight_ranges.is_empty() && is_printable_ascii(bytes_before_visible_end) {
+    if !has_matches && is_printable_ascii(bytes_before_visible_end) {
         return vec![Span::raw(visible_ascii_text(text, visible_columns))];
     }
-    let mut row = VisibleRow::new(visible_columns, highlight_ranges);
+    let mut row = VisibleRow::new(visible_columns, match_layers);
     let mut plain_text_start = 0;
     let controls = text
         .char_indices()
@@ -44,20 +51,25 @@ fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
 /// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ASCII
 /// control characters show muted in caret notation (`^[`), and other control characters are
 /// dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
-/// columns. Text inside the highlight ranges, which are byte ranges of the line in order, is
-/// highlighted.
+/// columns. Each match layer holds byte ranges of the line in order. Text inside them takes the
+/// style of the first layer that covers it.
 struct VisibleRow<'a> {
     visible_columns: Range<usize>,
-    highlight_ranges: &'a [Range<usize>],
+    match_layers: &'a [MatchLayer],
+    match_ranges_ahead: Vec<&'a [Range<usize>]>,
     current_column: usize,
     spans: Vec<Span<'static>>,
 }
 
 impl<'a> VisibleRow<'a> {
-    fn new(visible_columns: Range<usize>, highlight_ranges: &'a [Range<usize>]) -> Self {
+    fn new(visible_columns: Range<usize>, match_layers: &'a [MatchLayer]) -> Self {
         Self {
             visible_columns,
-            highlight_ranges,
+            match_layers,
+            match_ranges_ahead: match_layers
+                .iter()
+                .map(|match_layer| match_layer.match_ranges.as_slice())
+                .collect(),
             current_column: 0,
             spans: Vec::new(),
         }
@@ -79,16 +91,16 @@ impl<'a> VisibleRow<'a> {
     }
 
     fn style_at(&mut self, byte_offset: usize) -> Style {
-        while let Some((passed_range, later_ranges)) = self.highlight_ranges.split_first()
-            && passed_range.end <= byte_offset
-        {
-            self.highlight_ranges = later_ranges;
-        }
+        let layers = self.match_layers.iter().zip(&mut self.match_ranges_ahead);
 
-        match self.highlight_ranges.first() {
-            Some(highlight_range) if highlight_range.contains(&byte_offset) => HIGHLIGHT_STYLE,
-            _ => Style::default(),
+        for (match_layer, match_ranges_ahead) in layers {
+            drop_passed_ranges(match_ranges_ahead, byte_offset);
+            let next_range = match_ranges_ahead.first();
+            if next_range.is_some_and(|match_range| match_range.contains(&byte_offset)) {
+                return match_layer.style;
+            }
         }
+        Style::default()
     }
 
     fn push_control(&mut self, control: char) {
@@ -129,6 +141,14 @@ impl<'a> VisibleRow<'a> {
     }
 }
 
+fn drop_passed_ranges(match_ranges: &mut &[Range<usize>], byte_offset: usize) {
+    while let Some((passed_range, later_ranges)) = match_ranges.split_first()
+        && passed_range.end <= byte_offset
+    {
+        *match_ranges = later_ranges;
+    }
+}
+
 fn caret_notation(control: char) -> String {
     format!("^{}", char::from(control as u8 ^ 0x40))
 }
@@ -137,26 +157,38 @@ fn caret_notation(control: char) -> String {
 mod tests {
     use super::*;
 
+    const TOP_STYLE: Style = Style::new().bg(palette::YELLOW);
+    const LOWER_STYLE: Style = Style::new().bg(palette::PURPLE);
+
     #[test]
     fn given_nul_and_del_when_converting_then_they_use_standard_caret_notation() {
         assert_eq!(caret_notation('\0'), "^@");
         assert_eq!(caret_notation('\x7f'), "^?");
     }
 
-    fn match_ranges(text: &str, phrase: &str) -> Vec<Range<usize>> {
-        text.match_indices(phrase)
+    fn match_layer(text: &str, phrase: &str, style: Style) -> MatchLayer {
+        let match_ranges = text
+            .match_indices(phrase)
             .map(|(match_start, _)| match_start..match_start + phrase.len())
-            .collect()
+            .collect();
+        MatchLayer {
+            match_ranges,
+            style,
+        }
+    }
+
+    fn top_layer(text: &str, phrase: &str) -> [MatchLayer; 1] {
+        [match_layer(text, phrase, TOP_STYLE)]
     }
 
     fn span_texts(spans: &[Span]) -> Vec<String> {
         spans.iter().map(|span| span.content.to_string()).collect()
     }
 
-    fn highlighted_texts(spans: &[Span]) -> Vec<String> {
+    fn texts_in_style(spans: &[Span], style: Style) -> Vec<String> {
         spans
             .iter()
-            .filter(|span| span.style == HIGHLIGHT_STYLE)
+            .filter(|span| span.style == style)
             .map(|span| span.content.to_string())
             .collect()
     }
@@ -166,30 +198,30 @@ mod tests {
     {
         let text = "an ERROR, ERROR";
 
-        let visible = visible_spans(text, 0..20, &match_ranges(text, "ERROR"));
+        let visible = visible_spans(text, 0..20, &top_layer(text, "ERROR"));
 
         assert_eq!(span_texts(&visible), ["an ", "ERROR", ", ", "ERROR"]);
-        assert_eq!(highlighted_texts(&visible), ["ERROR", "ERROR"]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["ERROR", "ERROR"]);
     }
 
     #[test]
     fn given_match_cut_by_the_left_edge_when_scrolled_then_only_its_visible_part_is_highlighted() {
         let text = "an ERROR here";
 
-        let visible = visible_spans(text, 5..13, &match_ranges(text, "ERROR"));
+        let visible = visible_spans(text, 5..13, &top_layer(text, "ERROR"));
 
         assert_eq!(span_texts(&visible), ["ROR", " here"]);
-        assert_eq!(highlighted_texts(&visible), ["ROR"]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["ROR"]);
     }
 
     #[test]
     fn given_match_past_the_right_edge_when_cutting_then_nothing_is_highlighted() {
         let text = "abc ERROR";
 
-        let visible = visible_spans(text, 0..3, &match_ranges(text, "ERROR"));
+        let visible = visible_spans(text, 0..3, &top_layer(text, "ERROR"));
 
         assert_eq!(span_texts(&visible), ["abc"]);
-        assert!(highlighted_texts(&visible).is_empty());
+        assert!(texts_in_style(&visible, TOP_STYLE).is_empty());
     }
 
     #[test]
@@ -197,28 +229,84 @@ mod tests {
      {
         let text = "漢\tżółw x";
 
-        let visible = visible_spans(text, 0..30, &match_ranges(text, "żółw"));
+        let visible = visible_spans(text, 0..30, &top_layer(text, "żółw"));
 
-        assert_eq!(highlighted_texts(&visible), ["żółw"]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["żółw"]);
     }
 
     #[test]
     fn given_match_after_caret_notation_when_scrolled_then_the_highlight_keeps_its_columns() {
         let text = "\x1bab ERROR";
 
-        let visible = visible_spans(text, 2..20, &match_ranges(text, "ERROR"));
+        let visible = visible_spans(text, 2..20, &top_layer(text, "ERROR"));
 
         assert_eq!(span_texts(&visible), ["ab ", "ERROR"]);
-        assert_eq!(highlighted_texts(&visible), ["ERROR"]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["ERROR"]);
     }
 
     #[test]
     fn given_many_matches_on_a_line_when_cutting_then_each_one_is_highlighted() {
         let text = "x".repeat(1000);
 
-        let visible = visible_spans(&text, 990..1000, &match_ranges(&text, "x"));
+        let visible = visible_spans(&text, 990..1000, &top_layer(&text, "x"));
 
-        assert_eq!(highlighted_texts(&visible), ["x".repeat(10)]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["x".repeat(10)]);
+    }
+
+    #[test]
+    fn given_overlapping_layers_when_cutting_then_the_first_layer_wins_where_they_overlap() {
+        let text = "took=442ms";
+        let match_layers = [
+            match_layer(text, "442", TOP_STYLE),
+            match_layer(text, "took=4", LOWER_STYLE),
+        ];
+
+        let visible = visible_spans(text, 0..20, &match_layers);
+
+        assert_eq!(span_texts(&visible), ["took=", "442", "ms"]);
+        assert_eq!(texts_in_style(&visible, LOWER_STYLE), ["took="]);
+        assert_eq!(texts_in_style(&visible, TOP_STYLE), ["442"]);
+    }
+
+    #[test]
+    fn given_lower_layer_match_around_a_top_layer_match_when_cutting_then_it_shows_on_both_sides() {
+        let text = "a user=42 b";
+        let match_layers = [
+            match_layer(text, "er=4", TOP_STYLE),
+            match_layer(text, "user=42", LOWER_STYLE),
+        ];
+
+        let visible = visible_spans(text, 0..20, &match_layers);
+
+        assert_eq!(span_texts(&visible), ["a ", "us", "er=4", "2", " b"]);
+        assert_eq!(texts_in_style(&visible, LOWER_STYLE), ["us", "2"]);
+    }
+
+    #[test]
+    fn given_overlap_cut_by_the_left_edge_when_scrolled_then_each_layer_keeps_its_visible_part() {
+        let text = "took=442ms";
+        let match_layers = [
+            match_layer(text, "442", TOP_STYLE),
+            match_layer(text, "took=4", LOWER_STYLE),
+        ];
+
+        let visible = visible_spans(text, 3..8, &match_layers);
+
+        assert_eq!(span_texts(&visible), ["k=", "442"]);
+        assert_eq!(texts_in_style(&visible, LOWER_STYLE), ["k="]);
+    }
+
+    #[test]
+    fn given_layers_without_matches_on_the_line_when_cutting_then_the_text_is_plain() {
+        let text = "plain line";
+        let match_layers = [
+            match_layer(text, "ERROR", TOP_STYLE),
+            match_layer(text, "WARN", LOWER_STYLE),
+        ];
+
+        let visible = visible_spans(text, 0..20, &match_layers);
+
+        assert_eq!(visible, [Span::raw("plain line")]);
     }
 
     #[test]

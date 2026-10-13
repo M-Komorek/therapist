@@ -1,6 +1,6 @@
 use crate::{
     control::InputController,
-    domain::{bookmarks::Bookmarks, log_file::LogFile, tabs::Tabs},
+    domain::{bookmarks::Bookmarks, highlights::Highlights, log_file::LogFile, tabs::Tabs},
     jobs::{self, JobBoard, JobSlot},
 };
 
@@ -14,6 +14,7 @@ pub enum StatusMessage {
 /// public so that `update` can borrow several of them at once.
 pub struct Model {
     pub bookmarks: Bookmarks,
+    pub highlights: Highlights,
     pub input_controller: InputController,
     pub job_board: JobBoard,
     pub log_file: LogFile,
@@ -31,6 +32,7 @@ impl Model {
 
         Self {
             bookmarks: Bookmarks::default(),
+            highlights: Highlights::default(),
             input_controller: InputController::default(),
             job_board,
             log_file,

@@ -36,6 +36,7 @@ pub fn render(frame: &mut Frame, model: &Model) {
             .search_state()
             .query()
             .map(|search_query| search_query.phrase.as_str()),
+        &model.highlights,
         &model.bookmarks,
     );
     match model.input_controller.mode() {
@@ -259,6 +260,26 @@ mod tests {
         model.type_keys("tn");
         assert!(render_model(&model)[3].contains("/sec [1/1]"));
         assert!(is_highlighted(&model));
+    }
+
+    #[test]
+    fn given_highlight_added_in_a_grep_tab_when_switching_to_the_all_tab_then_both_tabs_show_it() {
+        let mut model = make_model();
+        let highlight_color = palette::CORAL;
+        let background_at = |model: &Model, column, row| {
+            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            buffer[(column, row)].bg
+        };
+        model.type_keys("&sec");
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+
+        model.type_keys(":hl sec");
+        model.press(KeyCode::Enter);
+        assert_eq!(background_at(&model, 6, 1), highlight_color);
+
+        model.type_keys("tn");
+        assert_eq!(background_at(&model, 6, 2), highlight_color);
     }
 
     #[test]
