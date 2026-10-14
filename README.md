@@ -16,7 +16,9 @@ cargo run -- path/to/file.log
 
 ## Roadmap
 
-- [ ] Searching
-- [ ] Bookmarking
-- [ ] Grepping
-- [ ] Highlighting
+- [x] Searching
+- [x] Bookmarking
+- [x] Grepping
+- [x] Highlighting
+- [ ] Reverse grepping
+- [ ] Configurable key bindings
