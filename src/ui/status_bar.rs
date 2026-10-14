@@ -13,6 +13,7 @@ use crate::{
 };
 
 const SEGMENT_SEPARATOR: &str = " · ";
+const HELP_HINT: &str = " F1 help ";
 const PROGRESS_METER_WIDTH: usize = 10;
 const ACCENT_SEGMENT_STYLE: Style = Style::new()
     .fg(palette::BACKGROUND_DARK)
@@ -52,17 +53,20 @@ pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
     );
     let percent_grepped = active_tab.grep_state().map(GrepState::percent_grepped);
     let grepping_span = grepping_span(percent_grepped, is_grepping);
-    let position_text = position_text(
+    let row_position_text = row_position_text(
         cursor_row,
         active_tab.row_count(line_count),
         is_row_count_final,
     );
+    let position_text = position_text(row_position_text, active_tab.log_view_state().left_column());
     let right_segments = right_segments(&last_keys, message_span, search_span, grepping_span);
+    let right_line = right_line(right_segments, position_text);
     let left_line = left_line(&log_file.file_name(), file_size_text(log_file.file_size()));
+    let left_line = with_help_hint_if_it_fits(left_line, right_line.width(), area.width);
 
     frame.buffer_mut().set_style(area, BAR_STYLE);
     frame.render_widget(left_line, area);
-    frame.render_widget(right_line(right_segments, position_text), area);
+    frame.render_widget(right_line, area);
 }
 
 fn left_line(file_name: &str, file_size_text: String) -> Line<'static> {
@@ -72,6 +76,18 @@ fn left_line(file_name: &str, file_size_text: String) -> Line<'static> {
         Span::styled(format!(" {file_size_text} "), FILE_SIZE_SEGMENT_STYLE),
         slanted_edge(palette::BACKGROUND_HIGHLIGHT, palette::BACKGROUND_DARK),
     ])
+}
+
+fn with_help_hint_if_it_fits(
+    mut left_line: Line<'static>,
+    right_line_width: usize,
+    area_width: u16,
+) -> Line<'static> {
+    let width_with_help_hint = left_line.width() + HELP_HINT.len() + right_line_width;
+    if width_with_help_hint <= usize::from(area_width) {
+        left_line.push_span(HELP_HINT.fg(palette::FOREGROUND_FAINT));
+    }
+    left_line
 }
 
 fn right_segments<'a>(
@@ -159,7 +175,18 @@ fn progress_text(activity: &str, percent: u64) -> String {
     )
 }
 
-fn position_text(cursor_row: usize, row_count: usize, is_row_count_final: bool) -> String {
+fn position_text(row_position_text: String, left_column: usize) -> String {
+    if left_column == 0 {
+        return row_position_text;
+    }
+
+    format!(
+        "{row_position_text}{SEGMENT_SEPARATOR}col {}",
+        left_column + 1
+    )
+}
+
+fn row_position_text(cursor_row: usize, row_count: usize, is_row_count_final: bool) -> String {
     let row_number = if row_count == 0 { 0 } else { cursor_row + 1 };
     let position = format!("{row_number}/{row_count}");
     match (is_row_count_final, row_count) {
@@ -366,7 +393,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57}                   \u{1fb60}\u{1fb57} 2/4 (50%)"
+            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57} F1 help           \u{1fb60}\u{1fb57} 2/4 (50%)"
         );
     }
 
@@ -412,7 +439,7 @@ mod tests {
     fn given_empty_file_when_rendering_then_position_is_zero_of_zero() {
         assert_eq!(
             render_status(&make_model("")),
-            " app.log \u{1fb60}\u{1fb57} 0 B \u{1fb60}\u{1fb57}                         \u{1fb60}\u{1fb57} 0/0"
+            " app.log \u{1fb60}\u{1fb57} 0 B \u{1fb60}\u{1fb57} F1 help                 \u{1fb60}\u{1fb57} 0/0"
         );
     }
 
@@ -424,13 +451,13 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57}                2j \u{1fb60}\u{1fb57} 3/4 (75%)"
+            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57} F1 help        2j \u{1fb60}\u{1fb57} 3/4 (75%)"
         );
     }
 
     #[test]
     fn given_large_file_when_formatting_position_then_percent_is_rounded_down() {
-        assert_eq!(position_text(1203, 88213, true), "1204/88213 (1%)");
+        assert_eq!(row_position_text(1203, 88213, true), "1204/88213 (1%)");
     }
 
     #[test]
@@ -454,7 +481,40 @@ mod tests {
 
     #[test]
     fn given_row_count_not_final_when_formatting_position_then_there_is_no_percent() {
-        assert_eq!(position_text(1203, 88213, false), "1204/88213+");
+        assert_eq!(row_position_text(1203, 88213, false), "1204/88213+");
+    }
+
+    #[test]
+    fn given_view_scrolled_right_when_formatting_position_then_the_first_visible_column_follows() {
+        assert_eq!(
+            position_text("51/5000000 (0%)".to_owned(), 11),
+            "51/5000000 (0%) · col 12"
+        );
+    }
+
+    #[test]
+    fn given_view_at_the_first_column_when_formatting_position_then_there_is_no_column() {
+        assert_eq!(
+            position_text("51/5000000 (0%)".to_owned(), 0),
+            "51/5000000 (0%)"
+        );
+    }
+
+    #[test]
+    fn given_room_on_the_bar_when_rendering_then_the_help_hint_follows_the_file_size_faintly() {
+        let buffer = render_status_buffer(&make_model("a\nb\n"));
+
+        assert!(rendered_rows(&buffer)[0].contains("\u{1fb60}\u{1fb57} F1 help "));
+        assert_eq!(buffer[(19, 0)].symbol(), "F");
+        assert_eq!(buffer[(19, 0)].fg, palette::FOREGROUND_FAINT);
+    }
+
+    #[test]
+    fn given_right_side_too_wide_for_the_help_hint_when_rendering_then_it_is_left_out() {
+        let mut model = make_model("a\nb\n");
+        model.status_message = Some(StatusMessage::Error("Not a command: x".to_owned()));
+
+        assert!(!render_status(&model).contains("F1 help"));
     }
 
     #[test]
@@ -509,7 +569,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 22 B \u{1fb60}\u{1fb57}               j \u{1fb60}\u{1fb57} 2/2 (100%)"
+            " app.log \u{1fb60}\u{1fb57} 22 B \u{1fb60}\u{1fb57} F1 help       j \u{1fb60}\u{1fb57} 2/2 (100%)"
         );
     }
 

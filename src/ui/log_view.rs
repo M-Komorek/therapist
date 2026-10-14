@@ -2,6 +2,7 @@ use std::ops::Range;
 
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::Rect,
     style::{Modifier, Style, Stylize},
     text::{Line, Span},
@@ -9,7 +10,7 @@ use ratatui::{
 
 use super::{
     palette,
-    visible_row::{MatchLayer, visible_spans},
+    visible_row::{MatchLayer, VisibleRow, visible_row},
 };
 use crate::domain::{
     bookmarks::Bookmarks,
@@ -19,10 +20,14 @@ use crate::domain::{
 };
 
 const BOOKMARK_MARKER: char = '●';
+const BOOKMARK_COLUMN_WIDTH: usize = 2;
+const GUTTER_SEPARATOR: &str = " │ ";
+const LEFT_CUT_MARKER: &str = "<";
+const RIGHT_CUT_MARKER: &str = ">";
+const EMPTY_FILE_TEXT: &str = "empty file";
 const LOG_VIEW_STYLE: Style = Style::new().fg(palette::FOREGROUND).bg(palette::BACKGROUND);
-const GUTTER_STYLE: Style = Style::new()
-    .fg(palette::FOREGROUND_FAINT)
-    .bg(palette::BACKGROUND);
+const FAINT_TEXT_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
+const GUTTER_STYLE: Style = FAINT_TEXT_STYLE.bg(palette::BACKGROUND);
 const BOOKMARK_MARKER_STYLE: Style = GUTTER_STYLE.fg(palette::YELLOW);
 const CURSOR_LINE_NUMBER_STYLE: Style = GUTTER_STYLE
     .fg(palette::ORANGE)
@@ -54,6 +59,10 @@ pub fn render(
     bookmarks: &Bookmarks,
 ) {
     frame.buffer_mut().set_style(area, LOG_VIEW_STYLE);
+    if log_file.file_size() == 0 {
+        render_empty_file_text(frame, area);
+        return;
+    }
     let log_view_state = tab_state.log_view_state();
     let top_row = log_view_state.top_row();
     let tab_rows = match tab_state.read_rows(top_row..top_row + usize::from(area.height), log_file)
@@ -67,12 +76,19 @@ pub fn render(
     };
 
     let line_number_width = line_number_width(log_file.line_count());
+    let gutter_width = gutter_width(line_number_width);
     let left_column = log_view_state.left_column();
-    let visible_columns = left_column..left_column.saturating_add(usize::from(area.width));
+    let text_width = usize::from(area.width).saturating_sub(gutter_width);
+    let visible_columns = left_column..left_column.saturating_add(text_width);
 
     for ((row_area, tab_row), row) in area.rows().zip(&tab_rows).zip(top_row..) {
         let is_bookmarked = bookmarks.contains(tab_row.line);
         let is_cursor_row = row == log_view_state.cursor_row();
+        let row_background = if is_cursor_row {
+            palette::BACKGROUND_HIGHLIGHT
+        } else {
+            palette::BACKGROUND
+        };
         let mut display_line = gutter(
             tab_row.line,
             line_number_width,
@@ -80,15 +96,66 @@ pub fn render(
             is_cursor_row,
         );
         let match_layers = match_layers(&tab_row.text, search_phrase, highlights);
-        display_line.extend(visible_spans(
-            &tab_row.text,
-            visible_columns.clone(),
-            &match_layers,
-        ));
+        let VisibleRow {
+            spans,
+            is_cut_on_the_left,
+            is_cut_on_the_right,
+        } = visible_row(&tab_row.text, visible_columns.clone(), &match_layers);
+        display_line.extend(spans);
         if is_cursor_row {
-            display_line = display_line.bg(palette::BACKGROUND_HIGHLIGHT);
+            display_line = display_line.bg(row_background);
         }
         frame.render_widget(display_line, row_area);
+
+        render_cut_markers(
+            frame.buffer_mut(),
+            row_text_area(row_area, gutter_width),
+            is_cut_on_the_left,
+            is_cut_on_the_right,
+            FAINT_TEXT_STYLE.bg(row_background),
+        );
+    }
+}
+
+fn render_empty_file_text(frame: &mut Frame, area: Rect) {
+    let Some(middle_row_area) = area.rows().nth(usize::from(area.height / 2)) else {
+        return;
+    };
+
+    let empty_file_line = Line::styled(EMPTY_FILE_TEXT, FAINT_TEXT_STYLE).centered();
+    frame.render_widget(empty_file_line, middle_row_area);
+}
+
+fn row_text_area(row_area: Rect, gutter_width: usize) -> Rect {
+    let gutter_width = u16::try_from(gutter_width).unwrap_or(u16::MAX);
+    Rect {
+        x: row_area.x.saturating_add(gutter_width),
+        width: row_area.width.saturating_sub(gutter_width),
+        ..row_area
+    }
+}
+
+fn render_cut_markers(
+    buffer: &mut Buffer,
+    row_text_area: Rect,
+    is_cut_on_the_left: bool,
+    is_cut_on_the_right: bool,
+    marker_style: Style,
+) {
+    if row_text_area.is_empty() {
+        return;
+    }
+
+    let row = row_text_area.y;
+    if is_cut_on_the_left {
+        buffer[(row_text_area.left(), row)]
+            .set_symbol(LEFT_CUT_MARKER)
+            .set_style(marker_style);
+    }
+    if is_cut_on_the_right {
+        buffer[(row_text_area.right() - 1, row)]
+            .set_symbol(RIGHT_CUT_MARKER)
+            .set_style(marker_style);
     }
 }
 
@@ -147,8 +214,12 @@ fn gutter(
             format!("{:>line_number_width$}", line + 1),
             line_number_style,
         ),
-        Span::styled(" │ ", GUTTER_STYLE),
+        Span::styled(GUTTER_SEPARATOR, GUTTER_STYLE),
     ])
+}
+
+fn gutter_width(line_number_width: usize) -> usize {
+    BOOKMARK_COLUMN_WIDTH + line_number_width + GUTTER_SEPARATOR.chars().count()
 }
 
 #[cfg(test)]
@@ -406,10 +477,11 @@ mod tests {
     }
 
     #[test]
-    fn given_line_wider_than_the_area_when_rendering_then_it_is_cut_at_the_edge() {
+    fn given_line_wider_than_the_area_when_rendering_then_a_faint_marker_covers_its_last_column() {
         let buffer = render_text("abcdefghij\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ab"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a›"]);
+        assert_eq!(buffer[(7, 0)].fg, palette::FOREGROUND_FAINT);
     }
 
     #[test]
@@ -456,29 +528,31 @@ mod tests {
     {
         let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ab"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a›"]);
     }
 
     #[test]
-    fn given_empty_file_when_rendering_then_the_view_is_blank() {
-        let buffer = render_text("", 0, 10, 2);
+    fn given_empty_file_when_rendering_then_empty_file_shows_faintly_in_the_middle() {
+        let buffer = render_text("", 0, 20, 3);
 
-        assert_eq!(rendered_rows(&buffer), ["", ""]);
+        assert_eq!(rendered_rows(&buffer), ["", "     empty file", ""]);
+        assert_eq!(buffer[(5, 1)].fg, palette::FOREGROUND_FAINT);
     }
 
     #[test]
     fn given_scrolled_view_when_rendering_then_every_line_is_cut_and_the_gutter_stays() {
         let buffer = render_scrolled("abcdef\nxyz\n", 2, 20, 2);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ cdef", "  2 │ z"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹def", "  2 │ ‹"]);
     }
 
     #[test]
-    fn given_wide_character_cut_by_the_left_edge_when_rendering_then_its_visible_half_is_a_space() {
+    fn given_wide_character_cut_by_the_left_edge_when_rendering_then_the_marker_covers_its_visible_half()
+     {
         let buffer = render_scrolled("漢字x\n", 1, 14, 1);
 
         let symbol_at = |column| buffer[(column, 0)].symbol().to_owned();
-        assert_eq!(symbol_at(6), " ");
+        assert_eq!(symbol_at(6), "‹");
         assert_eq!(symbol_at(7), "字");
         assert_eq!(symbol_at(9), "x");
     }
@@ -487,28 +561,48 @@ mod tests {
     fn given_tab_left_of_the_edge_when_scrolled_then_text_after_it_keeps_its_tab_stop() {
         let buffer = render_scrolled("a\tb\n", 4, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │     b"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹   b"]);
     }
 
     #[test]
     fn given_control_character_left_of_the_edge_when_scrolled_then_its_caret_notation_is_skipped() {
         let buffer = render_scrolled("\x1bXY\n", 2, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ XY"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹Y"]);
     }
 
     #[test]
-    fn given_view_scrolled_past_the_end_of_a_line_when_rendering_then_only_the_gutter_shows() {
+    fn given_view_scrolled_past_the_end_of_a_line_when_rendering_then_only_the_gutter_and_the_marker_show()
+     {
         let buffer = render_scrolled("abc\n", 10, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹"]);
     }
 
     #[test]
-    fn given_caret_notation_cut_by_the_left_edge_when_scrolled_then_its_visible_half_is_a_space() {
+    fn given_cursor_row_cut_on_both_sides_when_rendering_then_its_markers_keep_the_tint() {
+        let buffer = render_scrolled("abcdefghij\n", 2, 10, 1);
+
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹de›"]);
+        for column in [6, 9] {
+            assert_eq!(buffer[(column, 0)].fg, palette::FOREGROUND_FAINT);
+            assert_eq!(buffer[(column, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
+        }
+    }
+
+    #[test]
+    fn given_area_narrower_than_the_gutter_when_rendering_a_cut_line_then_no_marker_is_drawn() {
+        let buffer = render_scrolled("abcdef\n", 2, 4, 1);
+
+        assert_eq!(rendered_rows(&buffer), ["  1"]);
+    }
+
+    #[test]
+    fn given_caret_notation_cut_by_the_left_edge_when_scrolled_then_the_marker_covers_its_visible_half()
+     {
         let buffer = render_scrolled("\x1bXY\n", 1, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │  XY"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹XY"]);
     }
 
     #[test]

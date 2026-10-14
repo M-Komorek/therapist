@@ -15,46 +15,52 @@ pub(super) struct MatchLayer {
     pub(super) style: Style,
 }
 
-pub(super) fn visible_spans(
+pub(super) fn visible_row(
     text: &str,
     visible_columns: Range<usize>,
     match_layers: &[MatchLayer],
-) -> Vec<Span<'static>> {
+) -> VisibleRow {
     let has_matches = match_layers
         .iter()
         .any(|match_layer| !match_layer.match_ranges.is_empty());
-    let bytes_before_visible_end = &text.as_bytes()[..visible_columns.end.min(text.len())];
-    if !has_matches && is_printable_ascii(bytes_before_visible_end) {
-        return vec![Span::raw(visible_ascii_text(text, visible_columns))];
+    let bytes_through_visible_end =
+        &text.as_bytes()[..visible_columns.end.saturating_add(1).min(text.len())];
+    if !has_matches && is_printable_ascii(bytes_through_visible_end) {
+        return ascii_visible_row(text, visible_columns);
     }
-    let mut row = VisibleRow::new(visible_columns, match_layers);
+    let mut row_builder = VisibleRowBuilder::new(visible_columns, match_layers);
     let mut plain_text_start = 0;
     let controls = text
         .char_indices()
         .filter(|(_, character)| character.is_control());
     for (control_offset, control) in controls {
-        row.push_text(&text[plain_text_start..control_offset], plain_text_start);
+        row_builder.push_text(&text[plain_text_start..control_offset], plain_text_start);
         let control_length = match control_sequence_length(&text[control_offset..]) {
             Some(control_sequence_length) => control_sequence_length,
             None => {
-                row.push_control(control);
+                row_builder.push_control(control);
                 control.len_utf8()
             }
         };
         plain_text_start = control_offset + control_length;
     }
-    row.push_text(&text[plain_text_start..], plain_text_start);
-    row.spans
+    row_builder.push_text(&text[plain_text_start..], plain_text_start);
+    row_builder.visible_row
 }
 
 fn is_printable_ascii(bytes: &[u8]) -> bool {
     bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
 }
 
-fn visible_ascii_text(text: &str, visible_columns: Range<usize>) -> String {
+fn ascii_visible_row(text: &str, visible_columns: Range<usize>) -> VisibleRow {
     let visible_start = visible_columns.start.min(text.len());
     let visible_end = visible_columns.end.min(text.len());
-    text[visible_start..visible_end].to_owned()
+
+    VisibleRow {
+        spans: vec![Span::raw(text[visible_start..visible_end].to_owned())],
+        is_cut_on_the_left: visible_columns.start > 0 && !text.is_empty(),
+        is_cut_on_the_right: text.len() > visible_columns.end,
+    }
 }
 
 fn control_sequence_length(text_from_control: &str) -> Option<usize> {
@@ -73,18 +79,25 @@ fn control_sequence_length(text_from_control: &str) -> Option<usize> {
 
 /// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ANSI
 /// escape sequences such as `ESC [31m` are hidden, other ASCII control characters show muted in
-/// caret notation (`^[`), and other control characters are dropped. A wide character cut by the left edge becomes spaces, so the rest of the line keeps its
-/// columns. Each match layer holds byte ranges of the line in order. Text inside them takes the
-/// style of the first layer that covers it.
-struct VisibleRow<'a> {
+/// caret notation (`^[`), and other control characters are dropped. A wide character cut by the
+/// left edge becomes spaces, so the rest of the line keeps its columns. Each match layer holds
+/// byte ranges of the line in order. Text inside them takes the style of the first layer that
+/// covers it. The line is cut on a side when some of its text is hidden past that edge.
+pub(super) struct VisibleRow {
+    pub(super) spans: Vec<Span<'static>>,
+    pub(super) is_cut_on_the_left: bool,
+    pub(super) is_cut_on_the_right: bool,
+}
+
+struct VisibleRowBuilder<'a> {
     visible_columns: Range<usize>,
     match_layers: &'a [MatchLayer],
     match_ranges_ahead: Vec<&'a [Range<usize>]>,
     current_column: usize,
-    spans: Vec<Span<'static>>,
+    visible_row: VisibleRow,
 }
 
-impl<'a> VisibleRow<'a> {
+impl<'a> VisibleRowBuilder<'a> {
     fn new(visible_columns: Range<usize>, match_layers: &'a [MatchLayer]) -> Self {
         Self {
             visible_columns,
@@ -94,7 +107,11 @@ impl<'a> VisibleRow<'a> {
                 .map(|match_layer| match_layer.match_ranges.as_slice())
                 .collect(),
             current_column: 0,
-            spans: Vec::new(),
+            visible_row: VisibleRow {
+                spans: Vec::new(),
+                is_cut_on_the_left: false,
+                is_cut_on_the_right: false,
+            },
         }
     }
 
@@ -104,6 +121,7 @@ impl<'a> VisibleRow<'a> {
 
         for grapheme in span.styled_graphemes(Style::default()) {
             if self.is_full() {
+                self.visible_row.is_cut_on_the_right = true;
                 return;
             }
             let grapheme_width = usize::from(grapheme.symbol.cell_width());
@@ -138,9 +156,17 @@ impl<'a> VisibleRow<'a> {
 
     fn push_symbol(&mut self, symbol: &str, symbol_width: usize, style: Style) {
         if self.is_full() {
+            self.visible_row.is_cut_on_the_right = true;
             return;
         }
         let next_column = self.current_column + symbol_width;
+        if self.current_column < self.visible_columns.start {
+            self.visible_row.is_cut_on_the_left = true;
+        }
+        if next_column > self.visible_columns.end {
+            self.visible_row.is_cut_on_the_right = true;
+        }
+
         if self.current_column >= self.visible_columns.start {
             self.append(symbol, style);
         } else if next_column > self.visible_columns.start {
@@ -151,11 +177,12 @@ impl<'a> VisibleRow<'a> {
     }
 
     fn append(&mut self, text: &str, style: Style) {
-        match self.spans.last_mut() {
+        let spans = &mut self.visible_row.spans;
+        match spans.last_mut() {
             Some(last_span) if last_span.style == style => {
                 last_span.content.to_mut().push_str(text)
             }
-            _ => self.spans.push(Span::styled(text.to_owned(), style)),
+            _ => spans.push(Span::styled(text.to_owned(), style)),
         }
     }
 
@@ -182,6 +209,67 @@ mod tests {
 
     const TOP_STYLE: Style = Style::new().bg(palette::YELLOW);
     const LOWER_STYLE: Style = Style::new().bg(palette::PURPLE);
+
+    fn visible_spans(
+        text: &str,
+        visible_columns: Range<usize>,
+        match_layers: &[MatchLayer],
+    ) -> Vec<Span<'static>> {
+        visible_row(text, visible_columns, match_layers).spans
+    }
+
+    fn cut_sides(text: &str, visible_columns: Range<usize>) -> (bool, bool) {
+        let visible_row = visible_row(text, visible_columns, &[]);
+        (
+            visible_row.is_cut_on_the_left,
+            visible_row.is_cut_on_the_right,
+        )
+    }
+
+    #[test]
+    fn given_line_longer_than_the_visible_columns_when_cutting_then_it_is_cut_on_the_right() {
+        assert_eq!(cut_sides("abcdef", 0..4), (false, true));
+        assert_eq!(cut_sides("ab\tcdef", 0..4), (false, true));
+    }
+
+    #[test]
+    fn given_line_that_ends_at_the_right_edge_when_cutting_then_it_is_not_cut() {
+        assert_eq!(cut_sides("abcd", 0..4), (false, false));
+        assert_eq!(cut_sides("ab\tc", 0..10), (false, false));
+    }
+
+    #[test]
+    fn given_view_scrolled_right_when_cutting_then_lines_with_text_left_of_it_are_cut_on_the_left()
+    {
+        assert_eq!(cut_sides("abcdef", 2..6), (true, false));
+        assert_eq!(cut_sides("ab", 4..8), (true, false));
+        assert_eq!(cut_sides("\x1bXY", 1..8), (true, false));
+    }
+
+    #[test]
+    fn given_empty_line_or_only_escape_sequences_when_scrolled_then_nothing_is_cut() {
+        assert_eq!(cut_sides("", 2..6), (false, false));
+        assert_eq!(cut_sides("\x1b[0m", 2..6), (false, false));
+    }
+
+    #[test]
+    fn given_color_reset_just_past_the_right_edge_when_cutting_then_it_is_not_cut() {
+        assert_eq!(cut_sides("abcd\x1b[0m", 0..4), (false, false));
+    }
+
+    #[test]
+    fn given_wide_character_across_the_right_edge_when_cutting_then_it_is_cut_on_the_right() {
+        assert_eq!(cut_sides("a漢", 0..2), (false, true));
+    }
+
+    #[test]
+    fn given_match_layers_when_cutting_then_the_cut_sides_are_the_same_as_without_them() {
+        let text = "abcdef";
+
+        let visible_row = visible_row(text, 2..4, &top_layer(text, "c"));
+
+        assert!(visible_row.is_cut_on_the_left && visible_row.is_cut_on_the_right);
+    }
 
     #[test]
     fn given_nul_and_del_when_converting_then_they_use_standard_caret_notation() {

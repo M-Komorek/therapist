@@ -167,7 +167,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}            <Esc> \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help    <Esc> \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 
@@ -181,7 +181,7 @@ mod tests {
                 " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
                 "  1 │ first",
                 "  2 │ second",
-                " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}                  \u{1fb60}\u{1fb57} 1/2 (50%)"
+                " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help          \u{1fb60}\u{1fb57} 1/2 (50%)"
             ]
         );
     }
@@ -257,7 +257,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}           <Esc> \u{1fb60}\u{1fb57} 2/2 (100%)"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help   <Esc> \u{1fb60}\u{1fb57} 2/2 (100%)"
         );
         assert!(!is_highlighted(&model));
     }
@@ -312,7 +312,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}                5 \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help        5 \u{1fb60}\u{1fb57} 1/2 (50%)"
         );
     }
 }
