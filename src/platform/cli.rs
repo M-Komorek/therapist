@@ -5,6 +5,8 @@ use clap::{
     builder::{PathBufValueParser, TypedValueParser},
 };
 
+use super::paths;
+
 /// Browse and search large log files.
 #[derive(Debug, Parser)]
 #[command(version, about)]
@@ -17,7 +19,7 @@ pub struct Cli {
     #[arg(
         long = "therapist-log",
         value_name = "PATH",
-        default_value_os_t = default_therapist_log_path()
+        default_value_os_t = paths::default_therapist_log_path(|name| std::env::var_os(name))
     )]
     pub therapist_log_path: PathBuf,
 }
@@ -37,10 +39,6 @@ fn readable_file(path: PathBuf) -> Result<PathBuf, CliError> {
         return Err(CliError::NotARegularFile);
     }
     Ok(path)
-}
-
-fn default_therapist_log_path() -> PathBuf {
-    std::env::temp_dir().join("therapist.log")
 }
 
 #[cfg(test)]
@@ -89,14 +87,14 @@ mod tests {
     }
 
     #[test]
-    fn given_no_therapist_log_option_when_parsing_then_the_therapist_log_goes_to_temp_dir() {
+    fn given_no_therapist_log_option_when_parsing_then_the_default_therapist_log_path_is_used() {
         let browsed_file_path = manifest_dir().join("Cargo.toml");
 
         let cli = Cli::try_parse_from([Path::new("therapist"), &browsed_file_path]).unwrap();
 
         assert_eq!(
             cli.therapist_log_path,
-            std::env::temp_dir().join("therapist.log")
+            paths::default_therapist_log_path(|name| std::env::var_os(name))
         );
     }
 

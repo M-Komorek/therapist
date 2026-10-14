@@ -110,7 +110,7 @@ impl Drop for Terminal {
     }
 }
 
-pub fn install_panic_hook() {
+pub fn install_panic_hook(panic_note: String) {
     let main_thread = thread::current().id();
     let previous_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -118,6 +118,7 @@ pub fn install_panic_hook() {
         if thread::current().id() == main_thread {
             let _ = leave_tui_mode();
             previous_hook(panic_info);
+            eprintln!("{panic_note}");
         }
     }));
 }

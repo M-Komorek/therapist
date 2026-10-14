@@ -44,7 +44,10 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), TherapistError> {
     logging::init(&cli.therapist_log_path)?;
-    terminal::install_panic_hook();
+    terminal::install_panic_hook(format!(
+        "therapist: crashed, details in {}",
+        cli.therapist_log_path.display()
+    ));
     tracing::info!(browsed_file = %cli.browsed_file_path.display(), "starting");
 
     let log_file = LogFile::open(&cli.browsed_file_path)?;
