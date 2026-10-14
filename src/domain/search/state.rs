@@ -20,10 +20,14 @@ pub enum SearchError {
 
 /// The last search, the lines that match it and how much of the file the search has read. The lines
 /// are positions counted from 0 like the cursor line, in file order. A new query or clearing empties
-/// them, so they always belong to the query. Jumps between them use a binary search.
+/// them, so they always belong to the query. Jumps between them use a binary search. A search starts
+/// from the cursor line and makes its first jump only while the cursor is still there. The lines
+/// arrive in file order, so a forward search's first match below its start is settled as soon as it
+/// arrives; any other first jump is known only when the search is done.
 #[derive(Default)]
 pub struct SearchState {
     query: Option<SearchQuery>,
+    start_line: usize,
     matching_lines: Vec<usize>,
     percent_searched: u64,
 }
@@ -33,8 +37,9 @@ impl SearchState {
         self.query.as_ref()
     }
 
-    pub fn replace_query(&mut self, query: SearchQuery) {
+    pub fn replace_query(&mut self, query: SearchQuery, start_line: usize) {
         self.query = Some(query);
+        self.start_line = start_line;
         self.matching_lines.clear();
         self.percent_searched = 0;
     }
@@ -67,6 +72,24 @@ impl SearchState {
     pub fn previous_match_from(&self, line: usize) -> Result<Option<MatchJump>, SearchError> {
         let direction = self.direction()?;
         Ok(self.jump_from(line, direction.reversed()))
+    }
+
+    pub fn started_from(&self, line: usize) -> bool {
+        self.query.is_some() && line == self.start_line
+    }
+
+    pub fn settled_first_jump(&self, cursor_line: usize) -> Option<MatchJump> {
+        let is_forward = self.direction() == Ok(SearchDirection::Forward);
+        if !is_forward || !self.started_from(cursor_line) {
+            return None;
+        }
+
+        let first_match_below = *self.matches_below(cursor_line).first()?;
+        Some(MatchJump {
+            line: first_match_below,
+            direction: SearchDirection::Forward,
+            wrapped: false,
+        })
     }
 
     pub fn match_count(&self) -> usize {
@@ -136,8 +159,16 @@ mod tests {
     }
 
     fn make_search_state(direction: SearchDirection, matching_lines: &[usize]) -> SearchState {
+        make_search_started_from(0, direction, matching_lines)
+    }
+
+    fn make_search_started_from(
+        start_line: usize,
+        direction: SearchDirection,
+        matching_lines: &[usize],
+    ) -> SearchState {
         let mut search_state = SearchState::default();
-        search_state.replace_query(make_query("ERROR", direction));
+        search_state.replace_query(make_query("ERROR", direction), start_line);
         search_state.add_batch(batch(matching_lines, 100));
         search_state
     }
@@ -171,7 +202,7 @@ mod tests {
      {
         let mut search_state = make_search_state(Forward, &[3, 7]);
 
-        search_state.replace_query(make_query("WARN", Forward));
+        search_state.replace_query(make_query("WARN", Forward), 0);
 
         assert_eq!(search_state.match_count(), 0);
         assert_eq!(search_state.percent_searched(), 0);
@@ -221,7 +252,7 @@ mod tests {
     #[test]
     fn given_batch_when_it_is_added_then_the_percent_searched_is_the_batch_s() {
         let mut search_state = SearchState::default();
-        search_state.replace_query(make_query("ERROR", Forward));
+        search_state.replace_query(make_query("ERROR", Forward), 0);
 
         search_state.add_batch(batch(&[3], 40));
 
@@ -326,6 +357,50 @@ mod tests {
 
         assert_eq!(search_state.jump_from(0, Forward), None);
         assert_eq!(search_state.jump_from(0, Backward), None);
+    }
+
+    #[test]
+    fn given_forward_search_started_from_the_cursor_line_when_a_match_is_below_then_the_first_jump_is_settled_on_it()
+     {
+        let search_state = make_search_started_from(2, Forward, &[1, 4, 9]);
+
+        assert_eq!(search_state.settled_first_jump(2), jump_to(4, Forward));
+    }
+
+    #[test]
+    fn given_forward_search_with_matches_only_above_its_start_when_asking_for_the_settled_first_jump_then_there_is_none()
+     {
+        let search_state = make_search_started_from(2, Forward, &[1]);
+
+        assert_eq!(search_state.settled_first_jump(2), None);
+    }
+
+    #[test]
+    fn given_backward_search_when_asking_for_the_settled_first_jump_then_there_is_none() {
+        let search_state = make_search_started_from(2, Backward, &[1, 4]);
+
+        assert_eq!(search_state.settled_first_jump(2), None);
+    }
+
+    #[test]
+    fn given_cursor_moved_off_the_start_line_when_asking_for_the_settled_first_jump_then_there_is_none()
+     {
+        let search_state = make_search_started_from(2, Forward, &[1, 4, 9]);
+
+        assert!(!search_state.started_from(5));
+        assert_eq!(search_state.settled_first_jump(5), None);
+    }
+
+    #[test]
+    fn given_no_query_or_a_cleared_one_when_asking_where_it_started_then_it_started_nowhere() {
+        let mut search_state = make_search_started_from(0, Forward, &[1, 4]);
+        assert!(search_state.started_from(0));
+
+        search_state.clear();
+
+        assert!(!search_state.started_from(0));
+        assert!(!SearchState::default().started_from(0));
+        assert_eq!(search_state.settled_first_jump(0), None);
     }
 
     #[test]

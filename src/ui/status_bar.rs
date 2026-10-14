@@ -247,10 +247,13 @@ mod tests {
         matching_lines: &[usize],
     ) -> SearchState {
         let mut search_state = SearchState::default();
-        search_state.replace_query(SearchQuery {
-            phrase: phrase.to_owned(),
-            direction,
-        });
+        search_state.replace_query(
+            SearchQuery {
+                phrase: phrase.to_owned(),
+                direction,
+            },
+            0,
+        );
         search_state.add_batch(MatchingLinesBatch {
             matching_lines: matching_lines.to_vec(),
             percent_scanned: 40,

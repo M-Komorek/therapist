@@ -39,6 +39,7 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
         return;
     }
 
+    let start_line = cursor_line(model).unwrap_or_default();
     let active_tab = model.tabs.active_tab_mut();
     let phrases = active_tab.grep_phrases_with(search_query.phrase.clone());
     let log_file = &model.log_file;
@@ -47,7 +48,9 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
     model
         .job_board
         .schedule(JobSlot::Searching(active_tab_id), searching_work);
-    active_tab.search_state_mut().replace_query(search_query);
+    active_tab
+        .search_state_mut()
+        .replace_query(search_query, start_line);
 }
 
 fn search_refusal(model: &Model, tab_id: TabId) -> Option<SearchError> {
@@ -77,6 +80,22 @@ fn jump_to_previous_match(model: &mut Model) {
     let search_state = model.tabs.active_tab().search_state();
     let match_jump = search_state.previous_match_from(cursor_line);
     apply_match_jump(model, match_jump);
+}
+
+pub(super) fn jump_to_settled_first_match(model: &mut Model) {
+    let cursor_line = cursor_line(model).unwrap_or_default();
+    let search_state = model.tabs.active_tab().search_state();
+    if let Some(match_jump) = search_state.settled_first_jump(cursor_line) {
+        jump_cursor_to_match(model, match_jump);
+    }
+}
+
+pub(super) fn jump_to_first_match(model: &mut Model) {
+    let cursor_line = cursor_line(model).unwrap_or_default();
+    let search_state = model.tabs.active_tab().search_state();
+    if search_state.started_from(cursor_line) {
+        jump_to_next_match(model);
+    }
 }
 
 fn apply_match_jump(model: &mut Model, match_jump: Result<Option<MatchJump>, SearchError>) {
@@ -115,7 +134,7 @@ mod tests {
             },
         },
         domain::{log_file::LogFile, phrase_matching::MatchingLinesBatch, search::SearchState},
-        jobs::{JobNotification, JobStatus},
+        jobs::{JobId, JobNotification, JobStatus},
     };
 
     fn search(model: &mut Model, typed: &str) {
@@ -300,27 +319,126 @@ mod tests {
         );
     }
 
-    #[test]
-    fn given_search_still_running_when_n_is_pressed_then_it_uses_the_matches_found_so_far() {
-        let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("/ERROR");
+    fn start_search(model: &mut Model, typed: &str) -> JobId {
+        model.type_keys(typed);
         model.press(KeyCode::Enter);
-        let search_job_id = model.job_board.run_scheduled_jobs()[0].job_id;
+        model.job_board.run_scheduled_jobs()[0].job_id
+    }
+
+    fn send_search_batch(model: &mut Model, search_job_id: JobId, matching_lines: &[usize]) {
         handle_job_notification(
-            &mut model,
+            model,
             JobNotification {
                 job_id: search_job_id,
                 job_status: JobStatus::Searching(MatchingLinesBatch {
-                    matching_lines: vec![1],
+                    matching_lines: matching_lines.to_vec(),
                     percent_scanned: 20,
                 }),
             },
         );
+    }
+
+    fn search_holding_back_done(model: &mut Model, typed: &str) -> JobNotification {
+        model.type_keys(typed);
+        model.press(KeyCode::Enter);
+        let mut job_notifications = model.job_board.run_scheduled_jobs();
+        let done_notification = job_notifications.pop().unwrap();
+        model.handle_job_notifications(job_notifications);
+        done_notification
+    }
+
+    #[test]
+    fn given_search_still_running_when_n_is_pressed_then_it_uses_the_matches_found_so_far() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        let search_job_id = start_search(&mut model, "?ERROR");
+        send_search_batch(&mut model, search_job_id, &[1]);
+        assert_eq!(model.cursor_line(), Some(0));
 
         model.type_keys("n");
 
         assert_eq!(model.cursor_line(), Some(1));
         assert!(!model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_forward_search_running_when_a_match_below_the_cursor_arrives_then_the_cursor_jumps_to_it()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        search_holding_back_done(&mut model, "/ERROR");
+
+        assert_eq!(model.cursor_line(), Some(1));
+        assert!(!model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_cursor_on_the_first_match_already_when_the_search_is_done_then_the_cursor_stays() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        let done_notification = search_holding_back_done(&mut model, "/ERROR");
+
+        handle_job_notification(&mut model, done_notification);
+
+        assert_eq!(model.cursor_line(), Some(1));
+        assert!(model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_backward_search_running_when_its_matches_arrive_then_the_cursor_waits_for_done() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("G");
+        let done_notification = search_holding_back_done(&mut model, "?ERROR");
+        assert_eq!(model.cursor_line(), Some(5));
+
+        handle_job_notification(&mut model, done_notification);
+
+        assert_eq!(model.cursor_line(), Some(4));
+    }
+
+    #[test]
+    fn given_forward_search_with_matches_only_above_when_it_is_done_then_it_wraps_to_the_first() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("G");
+        let done_notification = search_holding_back_done(&mut model, "/ERROR");
+        assert_eq!(model.cursor_line(), Some(5));
+
+        handle_job_notification(&mut model, done_notification);
+
+        assert_eq!(model.cursor_line(), Some(1));
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Info(
+                "search hit BOTTOM, continuing at TOP".to_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn given_n_pressed_while_the_search_runs_when_a_match_below_arrives_then_the_cursor_stays() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("3G");
+        let search_job_id = start_search(&mut model, "/ERROR");
+        send_search_batch(&mut model, search_job_id, &[1]);
+        model.type_keys("n");
+        assert_eq!(model.cursor_line(), Some(1));
+
+        send_search_batch(&mut model, search_job_id, &[4]);
+
+        assert_eq!(model.cursor_line(), Some(1));
+    }
+
+    #[test]
+    fn given_cursor_moved_while_the_search_runs_when_its_matches_and_done_arrive_then_the_cursor_stays()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+        let job_notifications = model.job_board.run_scheduled_jobs();
+
+        model.type_keys("G");
+        model.handle_job_notifications(job_notifications);
+
+        assert_eq!(model.cursor_line(), Some(5));
+        assert_eq!(active_search_state(&model).match_count(), 2);
     }
 
     #[test]

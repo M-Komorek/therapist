@@ -1,12 +1,15 @@
 use super::{
     Effect,
     app::show_error,
-    search::{clear_search, jump_to_next_match},
+    search::{clear_search, jump_to_first_match, jump_to_settled_first_match},
     tab::close_tab,
 };
 use crate::{
     app::Model,
-    domain::tabs::{GrepError, TabId},
+    domain::{
+        phrase_matching::MatchingLinesBatch,
+        tabs::{GrepError, TabId},
+    },
     jobs::{JobError, JobNotification, JobSlot, JobStatus},
 };
 
@@ -18,10 +21,8 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
     match job_status {
         JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
         JobStatus::Searching(matching_lines_batch) => {
-            if let JobSlot::Searching(tab_id) = job_slot
-                && let Some(search_state) = model.tabs.search_state_mut(tab_id)
-            {
-                search_state.add_batch(matching_lines_batch);
+            if let JobSlot::Searching(tab_id) = job_slot {
+                add_search_batch(model, tab_id, matching_lines_batch);
             }
         }
         JobStatus::Grepping(matching_lines_batch) => {
@@ -69,6 +70,17 @@ fn mark_job_failed(model: &mut Model, job_slot: JobSlot, job_error: JobError) {
     }
 }
 
+fn add_search_batch(model: &mut Model, tab_id: TabId, matching_lines_batch: MatchingLinesBatch) {
+    let Some(search_state) = model.tabs.search_state_mut(tab_id) else {
+        return;
+    };
+
+    search_state.add_batch(matching_lines_batch);
+    if model.tabs.active_tab().tab_id() == tab_id {
+        jump_to_settled_first_match(model);
+    }
+}
+
 fn mark_search_done(model: &mut Model, tab_id: TabId) {
     let Some(search_state) = model.tabs.search_state(tab_id) else {
         return;
@@ -76,7 +88,7 @@ fn mark_search_done(model: &mut Model, tab_id: TabId) {
 
     tracing::debug!(match_count = search_state.match_count(), "search done");
     if model.tabs.active_tab().tab_id() == tab_id {
-        jump_to_next_match(model);
+        jump_to_first_match(model);
     }
 }
 
