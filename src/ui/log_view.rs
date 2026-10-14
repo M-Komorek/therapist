@@ -480,7 +480,7 @@ mod tests {
     fn given_line_wider_than_the_area_when_rendering_then_a_faint_marker_covers_its_last_column() {
         let buffer = render_text("abcdefghij\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ a›"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a>"]);
         assert_eq!(buffer[(7, 0)].fg, palette::FOREGROUND_FAINT);
     }
 
@@ -528,7 +528,7 @@ mod tests {
     {
         let buffer = render_text("abcdefgh\t漢\x1b\n", 0, 8, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ a›"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ a>"]);
     }
 
     #[test]
@@ -543,7 +543,7 @@ mod tests {
     fn given_scrolled_view_when_rendering_then_every_line_is_cut_and_the_gutter_stays() {
         let buffer = render_scrolled("abcdef\nxyz\n", 2, 20, 2);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹def", "  2 │ ‹"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <def", "  2 │ <"]);
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
         let buffer = render_scrolled("漢字x\n", 1, 14, 1);
 
         let symbol_at = |column| buffer[(column, 0)].symbol().to_owned();
-        assert_eq!(symbol_at(6), "‹");
+        assert_eq!(symbol_at(6), "<");
         assert_eq!(symbol_at(7), "字");
         assert_eq!(symbol_at(9), "x");
     }
@@ -561,14 +561,14 @@ mod tests {
     fn given_tab_left_of_the_edge_when_scrolled_then_text_after_it_keeps_its_tab_stop() {
         let buffer = render_scrolled("a\tb\n", 4, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹   b"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <   b"]);
     }
 
     #[test]
     fn given_control_character_left_of_the_edge_when_scrolled_then_its_caret_notation_is_skipped() {
         let buffer = render_scrolled("\x1bXY\n", 2, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹Y"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <Y"]);
     }
 
     #[test]
@@ -576,14 +576,14 @@ mod tests {
      {
         let buffer = render_scrolled("abc\n", 10, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <"]);
     }
 
     #[test]
     fn given_cursor_row_cut_on_both_sides_when_rendering_then_its_markers_keep_the_tint() {
         let buffer = render_scrolled("abcdefghij\n", 2, 10, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹de›"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <de>"]);
         for column in [6, 9] {
             assert_eq!(buffer[(column, 0)].fg, palette::FOREGROUND_FAINT);
             assert_eq!(buffer[(column, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
@@ -602,7 +602,7 @@ mod tests {
      {
         let buffer = render_scrolled("\x1bXY\n", 1, 14, 1);
 
-        assert_eq!(rendered_rows(&buffer), ["  1 │ ‹XY"]);
+        assert_eq!(rendered_rows(&buffer), ["  1 │ <XY"]);
     }
 
     #[test]
