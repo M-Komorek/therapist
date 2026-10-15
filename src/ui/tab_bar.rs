@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use ratatui::{
     Frame,
     layout::Rect,
@@ -19,16 +21,44 @@ const ACTIVE_TAB_BRACKET_STYLE: Style = Style::new()
 const ACTIVE_TAB_NAME_STYLE: Style = ACTIVE_TAB_BRACKET_STYLE.add_modifier(Modifier::BOLD);
 const INACTIVE_TAB_NAME_STYLE: Style = Style::new().fg(palette::FOREGROUND_DARK);
 const INACTIVE_TAB_BRACKET_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
+const LEFT_HIDDEN_TABS_MARKER: &str = " < ";
+const RIGHT_HIDDEN_TABS_MARKER: &str = " >";
+const HIDDEN_TABS_MARKER_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
 
 pub fn render(frame: &mut Frame, area: Rect, tabs: &Tabs) {
+    let visible_positions = visible_tab_positions(tabs, usize::from(area.width));
     frame.buffer_mut().set_style(area, BAR_STYLE);
-    frame.render_widget(tab_bar_line(tabs), area);
+    frame.render_widget(tab_bar_line(tabs, visible_positions), area);
 }
 
-fn tab_bar_line(tabs: &Tabs) -> Line<'static> {
+fn visible_tab_positions(tabs: &Tabs, width: usize) -> RangeInclusive<usize> {
+    let last_position = tabs.tab_states().len() - 1;
+    let fits = |positions| tab_bar_line(tabs, positions).width() <= width;
+    let mut first_visible = tabs.active_position();
+    let mut last_visible = tabs.active_position();
+
+    while first_visible > 0 && fits(first_visible - 1..=last_visible) {
+        first_visible -= 1;
+    }
+    while last_visible < last_position && fits(first_visible..=last_visible + 1) {
+        last_visible += 1;
+    }
+    first_visible..=last_visible
+}
+
+fn tab_bar_line(tabs: &Tabs, visible_positions: RangeInclusive<usize>) -> Line<'static> {
     let mut tab_bar_line = Line::from(Span::styled(WORDMARK, WORDMARK_STYLE));
     let mut left_background = palette::YELLOW;
-    for (position, tab_state) in tabs.tab_states().iter().enumerate() {
+    if *visible_positions.start() > 0 {
+        tab_bar_line.extend(edge_between(left_background, palette::BACKGROUND_DARK));
+        tab_bar_line.push_span(Span::styled(
+            LEFT_HIDDEN_TABS_MARKER,
+            HIDDEN_TABS_MARKER_STYLE,
+        ));
+        left_background = palette::BACKGROUND_DARK;
+    }
+    let tab_states = &tabs.tab_states()[visible_positions.clone()];
+    for (position, tab_state) in visible_positions.clone().zip(tab_states) {
         let is_active = position == tabs.active_position();
         let tab_background = if is_active {
             palette::BACKGROUND_HIGHLIGHT
@@ -41,6 +71,12 @@ fn tab_bar_line(tabs: &Tabs) -> Line<'static> {
     }
 
     tab_bar_line.extend(edge_between(left_background, palette::BACKGROUND_DARK));
+    if *visible_positions.end() < tabs.tab_states().len() - 1 {
+        tab_bar_line.push_span(Span::styled(
+            RIGHT_HIDDEN_TABS_MARKER,
+            HIDDEN_TABS_MARKER_STYLE,
+        ));
+    }
     tab_bar_line
 }
 
@@ -121,6 +157,58 @@ mod tests {
         assert_eq!(
             rendered_rows(&buffer),
             [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57} [ERROR]  [WARN]"]
+        );
+    }
+
+    fn make_four_tabs() -> Tabs {
+        let mut tabs = Tabs::default();
+        for phrase in ["ERROR", "WARN", "INFO"] {
+            tabs.open_grep_tab(vec![phrase.to_owned()]);
+        }
+        tabs
+    }
+
+    #[test]
+    fn given_tabs_too_wide_and_the_last_one_active_when_rendering_then_it_shows_after_a_left_marker()
+     {
+        let tabs = make_four_tabs();
+
+        let buffer = render_tab_bar(&tabs, 30);
+
+        assert_eq!(
+            rendered_rows(&buffer),
+            [" therapist \u{1fb60}\u{1fb57} < \u{1fb60}\u{1fb57} [INFO] \u{1fb60}\u{1fb57}"]
+        );
+        assert_eq!(buffer[(14, 0)].fg, palette::FOREGROUND_FAINT);
+    }
+
+    #[test]
+    fn given_tabs_too_wide_and_the_first_one_active_when_rendering_then_a_right_marker_follows_it()
+    {
+        let mut tabs = make_four_tabs();
+        tabs.switch_to_all_lines_tab();
+
+        let buffer = render_tab_bar(&tabs, 30);
+
+        assert_eq!(
+            rendered_rows(&buffer),
+            [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57} >"]
+        );
+    }
+
+    #[test]
+    fn given_tabs_too_wide_and_a_middle_one_active_when_rendering_then_its_left_neighbour_shows_between_markers()
+     {
+        let mut tabs = make_four_tabs();
+        tabs.switch_to_previous();
+
+        let buffer = render_tab_bar(&tabs, 40);
+
+        assert_eq!(
+            rendered_rows(&buffer),
+            [
+                " therapist \u{1fb60}\u{1fb57} <  [ERROR] \u{1fb60}\u{1fb57} [WARN] \u{1fb60}\u{1fb57} >"
+            ]
         );
     }
 
