@@ -72,13 +72,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::{
-            StatusMessage,
-            update::{
-                handle_job_notification, resize_log_view,
-                test_helpers::{
-                    SEARCHED_TEXT, grep, make_model_with_text, run_command, start_grep,
-                },
+        app::update::{
+            handle_job_notification, resize_log_view,
+            test_helpers::{
+                SEARCHED_TEXT, error_message, grep, make_model_with_text, run_command, start_grep,
             },
         },
         domain::{
@@ -95,10 +92,6 @@ mod tests {
     fn active_row_count(model: &Model) -> usize {
         let line_count = model.log_file.line_count();
         model.tabs.active_tab().row_count(line_count)
-    }
-
-    fn error_message(error_text: impl ToString) -> Option<StatusMessage> {
-        Some(StatusMessage::Error(error_text.to_string()))
     }
 
     #[test]

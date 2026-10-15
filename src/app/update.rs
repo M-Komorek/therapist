@@ -51,7 +51,12 @@ mod test_helpers {
     };
 
     use super::{Effect, handle_job_notification, handle_key, log_view, resize_log_view};
-    use crate::{app::Model, control::Mode, domain::log_file::LogFile, jobs::JobNotification};
+    use crate::{
+        app::{Model, StatusMessage},
+        control::Mode,
+        domain::log_file::LogFile,
+        jobs::JobNotification,
+    };
 
     pub(super) const SEARCHED_TEXT: &str = "ok\nERROR one\nok\nWARN two\nERROR three\nok\n";
 
@@ -133,6 +138,16 @@ mod test_helpers {
     pub(super) fn grep(model: &mut Model, phrase: &str) {
         start_grep(model, phrase);
         model.finish_scheduled_jobs();
+    }
+
+    pub(super) fn search(model: &mut Model, typed: &str) {
+        model.type_keys(typed);
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+    }
+
+    pub(super) fn error_message(error_text: impl ToString) -> Option<StatusMessage> {
+        Some(StatusMessage::Error(error_text.to_string()))
     }
 }
 

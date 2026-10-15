@@ -35,13 +35,10 @@ fn remove_highlight(model: &mut Model, phrase: &str) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::crossterm::event::KeyCode;
-
     use super::*;
     use crate::{
-        app::{
-            StatusMessage,
-            update::test_helpers::{SEARCHED_TEXT, grep, make_model_with_text, run_command},
+        app::update::test_helpers::{
+            SEARCHED_TEXT, error_message, grep, make_model_with_text, run_command, search,
         },
         domain::highlights::HighlightError,
     };
@@ -50,22 +47,12 @@ mod tests {
         make_model_with_text(SEARCHED_TEXT)
     }
 
-    fn search(model: &mut Model, typed: &str) {
-        model.type_keys(typed);
-        model.press(KeyCode::Enter);
-        model.finish_scheduled_jobs();
-    }
-
     fn highlighted_phrases(model: &Model) -> Vec<&str> {
         model
             .highlights
             .oldest_first()
             .map(|highlight| highlight.phrase.as_str())
             .collect()
-    }
-
-    fn error_message(error_text: impl ToString) -> Option<StatusMessage> {
-        Some(StatusMessage::Error(error_text.to_string()))
     }
 
     #[test]

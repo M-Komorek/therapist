@@ -130,18 +130,12 @@ mod tests {
             StatusMessage,
             update::{
                 handle_job_notification,
-                test_helpers::{SEARCHED_TEXT, grep, make_model_with_text, start_grep},
+                test_helpers::{SEARCHED_TEXT, grep, make_model_with_text, search, start_grep},
             },
         },
         domain::{log_file::LogFile, phrase_matching::MatchingLinesBatch, search::SearchState},
         jobs::{JobId, JobNotification, JobStatus},
     };
-
-    fn search(model: &mut Model, typed: &str) {
-        model.type_keys(typed);
-        model.press(KeyCode::Enter);
-        model.finish_scheduled_jobs();
-    }
 
     fn active_search_state(model: &Model) -> &SearchState {
         model.tabs.active_tab().search_state()
