@@ -15,6 +15,18 @@ pub(super) struct MatchLayer {
     pub(super) style: Style,
 }
 
+/// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ANSI
+/// escape sequences such as `ESC [31m` are hidden, other ASCII control characters show muted in
+/// caret notation (`^[`), and other control characters are dropped. A wide character cut by the
+/// left edge becomes spaces, so the rest of the line keeps its columns. Each match layer holds
+/// byte ranges of the line in order. Text inside them takes the style of the first layer that
+/// covers it. The line is cut on a side when some of its text is hidden past that edge.
+pub(super) struct VisibleRow {
+    pub(super) spans: Vec<Span<'static>>,
+    pub(super) is_cut_on_the_left: bool,
+    pub(super) is_cut_on_the_right: bool,
+}
+
 pub(super) fn visible_row(
     text: &str,
     visible_columns: Range<usize>,
@@ -75,18 +87,6 @@ fn control_sequence_length(text_from_control: &str) -> Option<usize> {
     CONTROL_SEQUENCE_FINAL_BYTES
         .contains(&final_byte)
         .then_some(CONTROL_SEQUENCE_INTRODUCER.len() + final_byte_offset + 1)
-}
-
-/// One log line as it appears in the visible columns. Tabs expand to the next tab stop, ANSI
-/// escape sequences such as `ESC [31m` are hidden, other ASCII control characters show muted in
-/// caret notation (`^[`), and other control characters are dropped. A wide character cut by the
-/// left edge becomes spaces, so the rest of the line keeps its columns. Each match layer holds
-/// byte ranges of the line in order. Text inside them takes the style of the first layer that
-/// covers it. The line is cut on a side when some of its text is hidden past that edge.
-pub(super) struct VisibleRow {
-    pub(super) spans: Vec<Span<'static>>,
-    pub(super) is_cut_on_the_left: bool,
-    pub(super) is_cut_on_the_right: bool,
 }
 
 struct VisibleRowBuilder<'a> {

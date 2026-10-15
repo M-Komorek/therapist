@@ -22,7 +22,7 @@ use crate::{
 };
 
 #[derive(Debug, thiserror::Error)]
-enum TherapistError {
+enum RunError {
     #[error(transparent)]
     Logging(#[from] LoggingError),
     #[error(transparent)]
@@ -42,7 +42,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), TherapistError> {
+fn run(cli: Cli) -> Result<(), RunError> {
     logging::init(&cli.therapist_log_path)?;
     terminal::install_panic_hook(format!(
         "therapist: crashed, details in {}",

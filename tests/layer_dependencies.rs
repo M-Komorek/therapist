@@ -10,7 +10,7 @@ const MAY_USE: &[(&str, &[&str])] = &[
     ("action", &["domain"]),
     ("platform", &[]),
     ("control", &["domain", "action"]),
-    ("jobs", &["domain", "action"]),
+    ("jobs", &["domain"]),
     ("app", &["domain", "action", "control", "jobs"]),
     ("ui", &["domain", "action", "control", "jobs", "app"]),
     (

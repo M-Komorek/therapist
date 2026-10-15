@@ -82,7 +82,7 @@ fn jump_to_previous_match(model: &mut Model) {
     apply_match_jump(model, match_jump);
 }
 
-pub(super) fn jump_to_settled_first_match(model: &mut Model) {
+pub(super) fn jump_to_first_match_when_settled(model: &mut Model) {
     let cursor_line = cursor_line(model).unwrap_or_default();
     let search_state = model.tabs.active_tab().search_state();
     if let Some(match_jump) = search_state.settled_first_jump(cursor_line) {
@@ -90,7 +90,7 @@ pub(super) fn jump_to_settled_first_match(model: &mut Model) {
     }
 }
 
-pub(super) fn jump_to_first_match(model: &mut Model) {
+pub(super) fn jump_to_first_match_when_done(model: &mut Model) {
     let cursor_line = cursor_line(model).unwrap_or_default();
     let search_state = model.tabs.active_tab().search_state();
     if search_state.started_from(cursor_line) {

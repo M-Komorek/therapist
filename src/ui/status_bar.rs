@@ -182,7 +182,7 @@ fn position_text(row_position_text: String, left_column: usize) -> String {
 
     format!(
         "{row_position_text}{SEGMENT_SEPARATOR}col {}",
-        left_column + 1
+        left_column.saturating_add(1)
     )
 }
 
@@ -489,6 +489,15 @@ mod tests {
         assert_eq!(
             position_text("51/5000000 (0%)".to_owned(), 11),
             "51/5000000 (0%) · col 12"
+        );
+    }
+
+    #[test]
+    fn given_view_scrolled_to_the_largest_column_when_formatting_position_then_its_number_does_not_overflow()
+     {
+        assert_eq!(
+            position_text("1/1 (100%)".to_owned(), usize::MAX),
+            format!("1/1 (100%) · col {}", usize::MAX)
         );
     }
 

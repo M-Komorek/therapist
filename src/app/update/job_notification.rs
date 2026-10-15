@@ -1,7 +1,7 @@
 use super::{
     Effect,
     app::show_error,
-    search::{clear_search, jump_to_first_match, jump_to_settled_first_match},
+    search::{clear_search, jump_to_first_match_when_done, jump_to_first_match_when_settled},
     tab::close_tab,
 };
 use crate::{
@@ -77,7 +77,7 @@ fn add_search_batch(model: &mut Model, tab_id: TabId, matching_lines_batch: Matc
 
     search_state.add_batch(matching_lines_batch);
     if model.tabs.active_tab().tab_id() == tab_id {
-        jump_to_settled_first_match(model);
+        jump_to_first_match_when_settled(model);
     }
 }
 
@@ -88,7 +88,7 @@ fn mark_search_done(model: &mut Model, tab_id: TabId) {
 
     tracing::debug!(match_count = search_state.match_count(), "search done");
     if model.tabs.active_tab().tab_id() == tab_id {
-        jump_to_first_match(model);
+        jump_to_first_match_when_done(model);
     }
 }
 
