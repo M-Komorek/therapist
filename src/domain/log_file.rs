@@ -26,6 +26,8 @@ pub enum LogFileError {
     CannotOpen { path: PathBuf, source: io::Error },
     #[error("cannot read {}: {source}", path.display())]
     CannotRead { path: PathBuf, source: io::Error },
+    #[error("Still indexing, try again")]
+    StillIndexing,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -66,8 +68,12 @@ impl LogFile {
         LineIndexer::new(self.path.clone(), Arc::clone(&self.file), self.file_size)
     }
 
-    pub fn line_scanner(&self) -> LineScanner {
-        LineScanner::new(self.path.clone(), Arc::clone(&self.file))
+    pub fn line_scanner(&self) -> Result<LineScanner, LogFileError> {
+        if self.indexing_status == IndexingStatus::Running {
+            return Err(LogFileError::StillIndexing);
+        }
+
+        Ok(LineScanner::new(self.path.clone(), Arc::clone(&self.file)))
     }
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {
@@ -196,6 +202,30 @@ mod tests {
 
         assert_eq!(log_file.line_count(), 0);
         assert!(log_file.read_lines(0..2).unwrap().is_empty());
+    }
+
+    #[test]
+    fn given_indexing_still_running_when_asking_for_a_line_scanner_then_it_is_refused() {
+        let (_temp_file, log_file) = open_unindexed_with(b"a\nb\n");
+
+        assert!(matches!(
+            log_file.line_scanner(),
+            Err(LogFileError::StillIndexing)
+        ));
+        assert_eq!(
+            LogFileError::StillIndexing.to_string(),
+            "Still indexing, try again"
+        );
+    }
+
+    #[test]
+    fn given_indexing_done_or_failed_when_asking_for_a_line_scanner_then_there_is_one() {
+        let (_temp_file, mut log_file) = open_with(b"a\nb\n");
+        assert!(log_file.line_scanner().is_ok());
+
+        log_file.mark_indexing_failed();
+
+        assert!(log_file.line_scanner().is_ok());
     }
 
     #[test]

@@ -66,7 +66,7 @@ mod tests {
         job_board.schedule(
             job_slot,
             work_constructor(
-                log_file.line_scanner(),
+                log_file.line_scanner().unwrap(),
                 log_file.file_size(),
                 vec![phrase.to_owned()],
             ),

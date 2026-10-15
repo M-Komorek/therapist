@@ -7,7 +7,6 @@ use crate::{
     action::SearchAction,
     app::Model,
     domain::{
-        log_file::IndexingStatus,
         search::{MatchJump, SearchDirection, SearchError, SearchQuery},
         tabs::TabId,
     },
@@ -33,32 +32,30 @@ pub(super) fn dispatch_search(model: &mut Model, search_action: SearchAction) ->
 }
 
 fn schedule_search(model: &mut Model, search_query: SearchQuery) {
+    let line_scanner = match model.log_file.line_scanner() {
+        Ok(line_scanner) => line_scanner,
+        Err(log_file_error) => {
+            show_error(model, log_file_error.to_string());
+            return;
+        }
+    };
+
     let active_tab_id = model.tabs.active_tab().tab_id();
-    if let Some(search_error) = search_refusal(model, active_tab_id) {
-        show_error(model, search_error.to_string());
+    if model.job_board.has_job(JobSlot::Grepping(active_tab_id)) {
+        show_error(model, SearchError::StillGrepping.to_string());
         return;
     }
 
     let start_line = cursor_line(model).unwrap_or_default();
     let active_tab = model.tabs.active_tab_mut();
     let phrases = active_tab.grep_phrases_with(search_query.phrase.clone());
-    let log_file = &model.log_file;
-    let searching_work =
-        jobs::searching_work(log_file.line_scanner(), log_file.file_size(), phrases);
+    let searching_work = jobs::searching_work(line_scanner, model.log_file.file_size(), phrases);
     model
         .job_board
         .schedule(JobSlot::Searching(active_tab_id), searching_work);
     active_tab
         .search_state_mut()
         .replace_query(search_query, start_line);
-}
-
-fn search_refusal(model: &Model, tab_id: TabId) -> Option<SearchError> {
-    if model.log_file.indexing_status() == IndexingStatus::Running {
-        return Some(SearchError::StillIndexing);
-    }
-    let is_grepping = model.job_board.has_job(JobSlot::Grepping(tab_id));
-    is_grepping.then_some(SearchError::StillGrepping)
 }
 
 pub(super) fn clear_search(model: &mut Model, tab_id: TabId) {
@@ -133,7 +130,11 @@ mod tests {
                 test_helpers::{SEARCHED_TEXT, grep, make_model_with_text, search, start_grep},
             },
         },
-        domain::{log_file::LogFile, phrase_matching::MatchingLinesBatch, search::SearchState},
+        domain::{
+            log_file::{LogFile, LogFileError},
+            phrase_matching::MatchingLinesBatch,
+            search::SearchState,
+        },
         jobs::{JobId, JobNotification, JobStatus},
     };
 
@@ -203,7 +204,9 @@ mod tests {
 
         assert_eq!(
             model.status_message,
-            Some(StatusMessage::Error(SearchError::StillIndexing.to_string()))
+            Some(StatusMessage::Error(
+                LogFileError::StillIndexing.to_string()
+            ))
         );
         assert_eq!(active_search_state(&model).query(), None);
         let all_lines_tab_id = model.tabs.active_tab().tab_id();

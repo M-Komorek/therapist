@@ -4,8 +4,6 @@ use crate::domain::phrase_matching::MatchingLinesBatch;
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum GrepError {
-    #[error("Still indexing, try again")]
-    StillIndexing,
     #[error("Pattern not found: {0}")]
     PatternNotFound(String),
 }
@@ -134,11 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn given_grep_errors_when_displayed_then_they_say_what_happened() {
-        assert_eq!(
-            GrepError::StillIndexing.to_string(),
-            "Still indexing, try again"
-        );
+    fn given_grep_error_when_displayed_then_it_names_the_phrase() {
         assert_eq!(
             GrepError::PatternNotFound("zzz".to_owned()).to_string(),
             "Pattern not found: zzz"

@@ -12,8 +12,6 @@ pub struct MatchJump {
 pub enum SearchError {
     #[error("No previous search")]
     NoPreviousSearch,
-    #[error("Still indexing, try again")]
-    StillIndexing,
     #[error("Still grepping, try again")]
     StillGrepping,
 }
@@ -419,10 +417,6 @@ mod tests {
         assert_eq!(
             SearchError::NoPreviousSearch.to_string(),
             "No previous search"
-        );
-        assert_eq!(
-            SearchError::StillIndexing.to_string(),
-            "Still indexing, try again"
         );
         assert_eq!(
             SearchError::StillGrepping.to_string(),

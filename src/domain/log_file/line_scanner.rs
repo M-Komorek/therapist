@@ -102,13 +102,14 @@ fn count_newlines(text: &[u8]) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::log_file::tests::open_unindexed_with;
+    use crate::domain::log_file::tests::open_with;
 
     fn chunks_of(content: &[u8], chunk_size: usize) -> Vec<(String, usize)> {
-        let (_temp_file, log_file) = open_unindexed_with(content);
+        let (_temp_file, log_file) = open_with(content);
         let mut chunks = Vec::new();
         log_file
             .line_scanner()
+            .unwrap()
             .scan_in_chunks(chunk_size, |chunk, chunk_first_line| {
                 chunks.push((
                     String::from_utf8_lossy(chunk).into_owned(),
@@ -157,11 +158,12 @@ mod tests {
 
     #[test]
     fn given_scan_told_to_stop_when_scanning_then_no_more_chunks_come() {
-        let (_temp_file, log_file) = open_unindexed_with(b"a\nb\nc\n");
+        let (_temp_file, log_file) = open_with(b"a\nb\nc\n");
         let mut chunk_count = 0;
 
         log_file
             .line_scanner()
+            .unwrap()
             .scan_in_chunks(2, |_chunk, _chunk_first_line| {
                 chunk_count += 1;
                 ControlFlow::Break(())

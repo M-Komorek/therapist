@@ -6,10 +6,7 @@ use super::{
 use crate::{
     action::TabAction,
     app::Model,
-    domain::{
-        log_file::IndexingStatus,
-        tabs::{GrepError, TabId},
-    },
+    domain::tabs::TabId,
     jobs::{self, JobSlot},
 };
 
@@ -25,18 +22,17 @@ pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
 }
 
 fn schedule_grep(model: &mut Model, phrase: String) {
-    if model.log_file.indexing_status() == IndexingStatus::Running {
-        show_error(model, GrepError::StillIndexing.to_string());
-        return;
-    }
+    let line_scanner = match model.log_file.line_scanner() {
+        Ok(line_scanner) => line_scanner,
+        Err(log_file_error) => {
+            show_error(model, log_file_error.to_string());
+            return;
+        }
+    };
 
     let phrases = model.tabs.active_tab().grep_phrases_with(phrase);
-    let log_file = &model.log_file;
-    let grepping_work = jobs::grepping_work(
-        log_file.line_scanner(),
-        log_file.file_size(),
-        phrases.clone(),
-    );
+    let grepping_work =
+        jobs::grepping_work(line_scanner, model.log_file.file_size(), phrases.clone());
     let tab_id = model.tabs.open_grep_tab(phrases);
     model
         .job_board
@@ -79,8 +75,8 @@ mod tests {
             },
         },
         domain::{
-            log_file::LogFile,
-            tabs::{TabError, TabState},
+            log_file::{LogFile, LogFileError},
+            tabs::{GrepError, TabError, TabState},
         },
         jobs::{JobError, JobNotification, JobStatus},
     };
@@ -133,7 +129,7 @@ mod tests {
 
         assert_eq!(
             model.status_message,
-            error_message(GrepError::StillIndexing)
+            error_message(LogFileError::StillIndexing)
         );
         assert_eq!(tab_names(&model), ["all"]);
     }
