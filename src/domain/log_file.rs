@@ -38,7 +38,8 @@ pub enum IndexingStatus {
 }
 
 /// The browsed log file. It is read with `read_at`, so if another process truncates the file,
-/// reading returns fewer lines instead of crashing.
+/// reading returns fewer lines instead of crashing. Reading keeps at most the first 64 KiB of a
+/// line.
 pub struct LogFile {
     path: PathBuf,
     file: Arc<File>,
@@ -181,7 +182,7 @@ mod tests {
 
     use tempfile::NamedTempFile;
 
-    use super::*;
+    use super::{line_collector::KEPT_BYTES_PER_LINE, *};
 
     pub(super) fn open_unindexed_with(content: &[u8]) -> (NamedTempFile, LogFile) {
         let mut temp_file = NamedTempFile::new().unwrap();
@@ -272,13 +273,15 @@ mod tests {
     }
 
     #[test]
-    fn given_line_longer_than_read_buffer_when_reading_then_it_comes_back_whole() {
+    fn given_line_longer_than_the_kept_bytes_when_reading_then_it_comes_back_cut_and_the_next_line_whole()
+     {
         let long_line = "x".repeat(READ_LINES_CHUNK_SIZE * 2 + 1);
         let (_temp_file, log_file) = open_with(format!("short\n{long_line}\nafter").as_bytes());
 
+        let cut_line = "x".repeat(KEPT_BYTES_PER_LINE);
         assert_eq!(
             log_file.read_lines(1..3).unwrap(),
-            [long_line.as_str(), "after"]
+            [cut_line.as_str(), "after"]
         );
     }
 

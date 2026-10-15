@@ -1,5 +1,7 @@
 use std::ops::ControlFlow;
 
+pub(super) const KEPT_BYTES_PER_LINE: usize = 64 * 1024;
+
 pub(super) struct LineCollector {
     lines_to_skip: usize,
     lines_to_keep: usize,
@@ -32,6 +34,10 @@ impl LineCollector {
             line_start = newline_position + 1;
         }
         self.push_line_part(&chunk[line_start..]);
+        if self.is_last_line_to_keep_at_the_cap() {
+            self.finish_line();
+            return ControlFlow::Break(());
+        }
         ControlFlow::Continue(())
     }
 
@@ -46,10 +52,19 @@ impl LineCollector {
         self.lines.len() >= self.lines_to_keep
     }
 
+    fn is_last_line_to_keep_at_the_cap(&self) -> bool {
+        self.lines.len() + 1 == self.lines_to_keep && self.partial_line.len() == KEPT_BYTES_PER_LINE
+    }
+
     fn push_line_part(&mut self, line_part: &[u8]) {
-        if self.lines_to_skip == 0 {
-            self.partial_line.extend_from_slice(line_part);
+        if self.lines_to_skip > 0 {
+            return;
         }
+
+        let room_in_partial_line = KEPT_BYTES_PER_LINE - self.partial_line.len();
+        let bytes_to_keep = line_part.len().min(room_in_partial_line);
+        self.partial_line
+            .extend_from_slice(&line_part[..bytes_to_keep]);
     }
 
     fn finish_line(&mut self) {
@@ -79,6 +94,10 @@ mod tests {
             }
         }
         line_collector.finish()
+    }
+
+    fn kept_text() -> String {
+        "x".repeat(KEPT_BYTES_PER_LINE)
     }
 
     #[test]
@@ -129,5 +148,43 @@ mod tests {
     #[test]
     fn given_cr_before_the_newline_in_the_next_chunk_when_collecting_then_the_cr_is_stripped() {
         assert_eq!(collect(0, 2, &[b"a\r", b"\nb\r\n"]), ["a", "b"]);
+    }
+
+    #[test]
+    fn given_line_longer_than_the_kept_bytes_when_collecting_then_its_start_comes_back_and_the_next_line_is_whole()
+     {
+        let long_line = [b'x'; 70_000];
+
+        let lines = collect(0, 2, &[&long_line, b"\nafter\n"]);
+
+        assert_eq!(lines, [kept_text(), "after".to_owned()]);
+    }
+
+    #[test]
+    fn given_last_line_to_keep_longer_than_the_kept_bytes_when_adding_its_chunk_then_it_asks_to_stop_before_its_end()
+     {
+        let mut line_collector = LineCollector::new(0, 1);
+
+        let flow = line_collector.add_chunk(&[b'x'; 70_000]);
+
+        assert!(flow.is_break());
+        assert_eq!(line_collector.finish(), [kept_text()]);
+    }
+
+    #[test]
+    fn given_unterminated_last_line_longer_than_the_kept_bytes_when_finishing_then_its_start_comes_back()
+     {
+        let long_line = [b'x'; 70_000];
+
+        let lines = collect(0, 5, &[b"a\n", &long_line]);
+
+        assert_eq!(lines, ["a".to_owned(), kept_text()]);
+    }
+
+    #[test]
+    fn given_skipped_line_longer_than_the_kept_bytes_when_collecting_then_the_next_line_is_whole() {
+        let long_line = [b'x'; 70_000];
+
+        assert_eq!(collect(1, 1, &[&long_line, b"\nafter\n"]), ["after"]);
     }
 }
