@@ -32,7 +32,7 @@ fn schedule_grep(model: &mut Model, phrase: String) {
 
     let phrases = model.tabs.active_tab().grep_phrases_with(phrase);
     let grepping_work =
-        jobs::grepping_work(line_scanner, model.log_file.file_size(), phrases.clone());
+        jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), phrases.clone());
     let tab_id = model.tabs.open_grep_tab(phrases);
     model
         .job_board

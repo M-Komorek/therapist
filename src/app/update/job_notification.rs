@@ -18,20 +18,22 @@ pub fn handle_job_notification(model: &mut Model, job_notification: JobNotificat
         return Effect::Nothing;
     };
 
-    match job_status {
-        JobStatus::LogFileIndexing(line_index) => model.log_file.set_line_index(line_index),
-        JobStatus::Searching(matching_lines_batch) => {
-            if let JobSlot::Searching(tab_id) = job_slot {
-                add_search_batch(model, tab_id, matching_lines_batch);
-            }
+    match (job_slot, job_status) {
+        (JobSlot::LogFileIndexing, JobStatus::LogFileIndexing(line_index)) => {
+            model.log_file.set_line_index(line_index);
         }
-        JobStatus::Grepping(matching_lines_batch) => {
-            if let JobSlot::Grepping(tab_id) = job_slot {
-                model.tabs.add_grep_batch(tab_id, matching_lines_batch);
-            }
+        (JobSlot::Searching(tab_id), JobStatus::PhraseScanning(matching_lines_batch)) => {
+            add_search_batch(model, tab_id, matching_lines_batch);
         }
-        JobStatus::Done => mark_job_done(model, job_slot),
-        JobStatus::Failed(job_error) => mark_job_failed(model, job_slot, job_error),
+        (JobSlot::Grepping(tab_id), JobStatus::PhraseScanning(matching_lines_batch)) => {
+            model.tabs.add_grep_batch(tab_id, matching_lines_batch);
+        }
+        (_, JobStatus::Done) => mark_job_done(model, job_slot),
+        (_, JobStatus::Failed(job_error)) => mark_job_failed(model, job_slot, job_error),
+        _ => {
+            tracing::error!(?job_slot, "job status doesn't fit its slot");
+            return Effect::Nothing;
+        }
     }
     Effect::Redraw
 }
@@ -116,7 +118,7 @@ mod tests {
             StatusMessage,
             update::test_helpers::{SEARCHED_TEXT, make_model_with_text},
         },
-        domain::log_file::{IndexingStatus, LogFile},
+        domain::log_file::{IndexingStatus, LineIndex, LogFile},
     };
 
     fn make_indexing_model(text: &str) -> (Model, Vec<JobNotification>) {
@@ -227,5 +229,24 @@ mod tests {
         assert_eq!(search_state.query(), None);
         assert_eq!(search_state.match_count(), 0);
         assert!(model.job_board.is_empty());
+    }
+
+    #[test]
+    fn given_running_search_when_it_sends_a_line_index_then_it_is_ignored_without_a_redraw() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        model.type_keys("/ERROR");
+        model.press(KeyCode::Enter);
+        let search_job_id = model.job_board.run_scheduled_jobs()[0].job_id;
+
+        let effect = handle_job_notification(
+            &mut model,
+            JobNotification {
+                job_id: search_job_id,
+                job_status: JobStatus::LogFileIndexing(LineIndex::default()),
+            },
+        );
+
+        assert_eq!(effect, Effect::Nothing);
+        assert_eq!(model.log_file.line_count(), 6);
     }
 }

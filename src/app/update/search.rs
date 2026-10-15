@@ -49,7 +49,8 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
     let start_line = cursor_line(model).unwrap_or_default();
     let active_tab = model.tabs.active_tab_mut();
     let phrases = active_tab.grep_phrases_with(search_query.phrase.clone());
-    let searching_work = jobs::searching_work(line_scanner, model.log_file.file_size(), phrases);
+    let searching_work =
+        jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), phrases);
     model
         .job_board
         .schedule(JobSlot::Searching(active_tab_id), searching_work);
@@ -327,7 +328,7 @@ mod tests {
             model,
             JobNotification {
                 job_id: search_job_id,
-                job_status: JobStatus::Searching(MatchingLinesBatch {
+                job_status: JobStatus::PhraseScanning(MatchingLinesBatch {
                     matching_lines: matching_lines.to_vec(),
                     percent_scanned: 20,
                 }),

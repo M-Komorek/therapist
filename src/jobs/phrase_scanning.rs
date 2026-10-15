@@ -6,25 +6,16 @@ use crate::domain::{
     phrase_matching::{MatchingLinesBatch, find_matching_lines},
 };
 
-pub fn searching_work(line_scanner: LineScanner, file_size: u64, phrases: Vec<String>) -> JobWork {
-    phrase_scanning_work(line_scanner, file_size, phrases, JobStatus::Searching)
-}
-
-pub fn grepping_work(line_scanner: LineScanner, file_size: u64, phrases: Vec<String>) -> JobWork {
-    phrase_scanning_work(line_scanner, file_size, phrases, JobStatus::Grepping)
-}
-
-fn phrase_scanning_work(
+pub fn phrase_scanning_work(
     line_scanner: LineScanner,
     file_size: u64,
     phrases: Vec<String>,
-    job_status_for_batch: fn(MatchingLinesBatch) -> JobStatus,
 ) -> JobWork {
     Box::new(move |job_context: &JobContext| {
         let mut bytes_scanned = 0;
         line_scanner.scan(|chunk, chunk_first_line| {
             bytes_scanned += chunk.len() as u64;
-            job_context.notify(job_status_for_batch(MatchingLinesBatch {
+            job_context.notify(JobStatus::PhraseScanning(MatchingLinesBatch {
                 matching_lines: find_matching_lines(chunk, chunk_first_line, &phrases),
                 percent_scanned: percent_scanned(bytes_scanned, file_size),
             }));
@@ -53,19 +44,13 @@ mod tests {
         jobs::{JobBoard, JobSlot},
     };
 
-    type WorkConstructor = fn(LineScanner, u64, Vec<String>) -> JobWork;
-
-    fn job_statuses(
-        job_slot: JobSlot,
-        work_constructor: WorkConstructor,
-        text: &str,
-        phrase: &str,
-    ) -> Vec<JobStatus> {
+    fn phrase_scanning_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {
         let log_file = LogFile::from_text(text);
+        let tab_id = Tabs::default().active_tab().tab_id();
         let mut job_board = JobBoard::default();
         job_board.schedule(
-            job_slot,
-            work_constructor(
+            JobSlot::Searching(tab_id),
+            phrase_scanning_work(
                 log_file.line_scanner().unwrap(),
                 log_file.file_size(),
                 vec![phrase.to_owned()],
@@ -79,65 +64,29 @@ mod tests {
             .collect()
     }
 
-    fn search_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {
-        let tab_id = Tabs::default().active_tab().tab_id();
-        job_statuses(JobSlot::Searching(tab_id), searching_work, text, phrase)
-    }
-
-    fn grep_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {
-        let tab_id = Tabs::default().active_tab().tab_id();
-        job_statuses(JobSlot::Grepping(tab_id), grepping_work, text, phrase)
-    }
-
     #[test]
-    fn given_phrase_in_the_file_when_its_searching_work_runs_then_the_matching_lines_arrive_before_done()
+    fn given_phrase_in_the_file_when_its_phrase_scanning_work_runs_then_the_matching_lines_arrive_before_done()
      {
-        let job_statuses = search_statuses("ok\nERROR a\nok\nERROR b\n", "ERROR");
+        let job_statuses = phrase_scanning_statuses("ok\nERROR a\nok\nERROR b\n", "ERROR");
 
         assert!(matches!(
             job_statuses.as_slice(),
             [
-                JobStatus::Searching(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
+                JobStatus::PhraseScanning(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
                 JobStatus::Done
             ] if matching_lines == &[1, 3]
         ));
     }
 
     #[test]
-    fn given_phrase_not_in_the_file_when_its_searching_work_runs_then_only_the_progress_arrives() {
-        let job_statuses = search_statuses("ok\nok\n", "ERROR");
-
-        assert!(matches!(
-            job_statuses.as_slice(),
-            [
-                JobStatus::Searching(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
-                JobStatus::Done
-            ] if matching_lines.is_empty()
-        ));
-    }
-
-    #[test]
-    fn given_phrase_in_the_file_when_its_grepping_work_runs_then_the_matching_lines_arrive_before_done()
+    fn given_phrase_not_in_the_file_when_its_phrase_scanning_work_runs_then_only_the_progress_arrives()
      {
-        let job_statuses = grep_statuses("ok\nERROR a\nok\nERROR b\n", "ERROR");
+        let job_statuses = phrase_scanning_statuses("ok\nok\n", "ERROR");
 
         assert!(matches!(
             job_statuses.as_slice(),
             [
-                JobStatus::Grepping(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
-                JobStatus::Done
-            ] if matching_lines == &[1, 3]
-        ));
-    }
-
-    #[test]
-    fn given_phrase_not_in_the_file_when_its_grepping_work_runs_then_only_the_progress_arrives() {
-        let job_statuses = grep_statuses("ok\nok\n", "ERROR");
-
-        assert!(matches!(
-            job_statuses.as_slice(),
-            [
-                JobStatus::Grepping(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
+                JobStatus::PhraseScanning(MatchingLinesBatch { matching_lines, percent_scanned: 100 }),
                 JobStatus::Done
             ] if matching_lines.is_empty()
         ));

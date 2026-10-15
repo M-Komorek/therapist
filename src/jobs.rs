@@ -7,7 +7,7 @@ use std::sync::mpsc::Sender;
 use job::{Job, JobHandle};
 pub use job::{JobContext, JobError, JobId, JobNotification, JobStatus, JobWork};
 pub use log_file_indexing::log_file_indexing_work;
-pub use phrase_scanning::{grepping_work, searching_work};
+pub use phrase_scanning::phrase_scanning_work;
 
 use crate::domain::tabs::TabId;
 

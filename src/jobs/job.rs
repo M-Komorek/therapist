@@ -28,8 +28,7 @@ pub struct JobNotification {
 #[derive(Debug)]
 pub enum JobStatus {
     LogFileIndexing(LineIndex),
-    Searching(MatchingLinesBatch),
-    Grepping(MatchingLinesBatch),
+    PhraseScanning(MatchingLinesBatch),
     Done,
     Failed(JobError),
 }
