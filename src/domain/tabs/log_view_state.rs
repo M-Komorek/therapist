@@ -1,4 +1,4 @@
-const WIDE_SCROLL_PERCENT: usize = 20;
+const WIDE_SCROLL_PERCENT: usize = 10;
 const CURSOR_CONTEXT_ROWS: usize = 5;
 
 #[derive(Default)]
