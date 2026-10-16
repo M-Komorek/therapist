@@ -140,7 +140,7 @@ fn is_text_input(modifiers: KeyModifiers) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::LogViewAction;
+    use crate::action::HighlightAction;
 
     fn type_text(command_line: &mut CommandLine, typed: &str) {
         for character in typed.chars() {
@@ -252,15 +252,15 @@ mod tests {
     }
 
     #[test]
-    fn given_line_number_when_enter_is_pressed_then_it_is_submitted_as_going_to_that_line() {
-        let mut command_line = make_command_line("5000");
+    fn given_command_when_enter_is_pressed_then_its_action_is_submitted() {
+        let mut command_line = make_command_line("hl ERROR");
 
         let outcome = press(&mut command_line, KeyCode::Enter);
 
         assert_eq!(
             outcome,
-            CommandLineOutcome::Submitted(Action::LogView(LogViewAction::MoveCursorToLineNumber(
-                5000
+            CommandLineOutcome::Submitted(Action::Highlight(HighlightAction::Add(
+                "ERROR".to_owned()
             )))
         );
     }

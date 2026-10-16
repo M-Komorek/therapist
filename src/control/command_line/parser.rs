@@ -1,4 +1,4 @@
-use crate::action::{Action, AppAction, HighlightAction, LogViewAction};
+use crate::action::{Action, AppAction, HighlightAction};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub(super) enum CommandError {
@@ -7,7 +7,6 @@ pub(super) enum CommandError {
 }
 
 pub const COMMAND_DESCRIPTIONS: &[(&str, &str)] = &[
-    (":{line}", "Go to line {line}"),
     (":hl [phrase]", "Highlight a phrase, or the search phrase"),
     (":unhl [phrase]", "Remove a highlight, or all of them"),
     (":help :h", "Show this help"),
@@ -17,12 +16,6 @@ pub(super) fn parse_command(command_text: &str) -> Result<Option<Action>, Comman
     let command_text = command_text.trim();
     if command_text.is_empty() {
         return Ok(None);
-    }
-    if is_line_number(command_text) {
-        let line_number = saturating_line_number(command_text);
-        return Ok(Some(Action::LogView(
-            LogViewAction::MoveCursorToLineNumber(line_number),
-        )));
     }
     if matches!(command_text, "help" | "h") {
         return Ok(Some(Action::App(AppAction::OpenHelp)));
@@ -46,47 +39,9 @@ fn parse_highlight_command(command_text: &str) -> Option<HighlightAction> {
     }
 }
 
-fn is_line_number(command_text: &str) -> bool {
-    command_text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn saturating_line_number(digits: &str) -> usize {
-    digits.parse().unwrap_or(usize::MAX)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn move_cursor_to(line_number: usize) -> Result<Option<Action>, CommandError> {
-        Ok(Some(Action::LogView(
-            LogViewAction::MoveCursorToLineNumber(line_number),
-        )))
-    }
-
-    #[test]
-    fn given_line_number_when_parsing_then_it_goes_to_that_line() {
-        assert_eq!(parse_command("5000"), move_cursor_to(5000));
-        assert_eq!(parse_command("1"), move_cursor_to(1));
-    }
-
-    #[test]
-    fn given_zero_when_parsing_then_it_goes_to_line_zero_for_the_tab_to_clamp() {
-        assert_eq!(parse_command("0"), move_cursor_to(0));
-    }
-
-    #[test]
-    fn given_number_too_big_for_usize_when_parsing_then_it_goes_to_the_largest_line_number() {
-        assert_eq!(
-            parse_command("99999999999999999999999"),
-            move_cursor_to(usize::MAX)
-        );
-    }
-
-    #[test]
-    fn given_surrounding_spaces_when_parsing_then_they_are_ignored() {
-        assert_eq!(parse_command("  42 "), move_cursor_to(42));
-    }
 
     #[test]
     fn given_empty_or_blank_text_when_parsing_then_there_is_no_command() {
@@ -95,8 +50,8 @@ mod tests {
     }
 
     #[test]
-    fn given_text_that_is_not_only_digits_when_parsing_then_it_is_not_a_command() {
-        for command_text in ["abc", "+5", "-5", "5x", "1 2"] {
+    fn given_line_number_when_parsing_then_it_is_not_a_command() {
+        for command_text in ["5000", "0", "abc"] {
             assert_eq!(
                 parse_command(command_text),
                 Err(CommandError::NotACommand(command_text.to_owned()))

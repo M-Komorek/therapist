@@ -70,9 +70,7 @@ mod tests {
     use crate::{
         app::update::{
             handle_job_notification, resize_log_view,
-            test_helpers::{
-                SEARCHED_TEXT, error_message, grep, make_model_with_text, run_command, start_grep,
-            },
+            test_helpers::{SEARCHED_TEXT, error_message, grep, make_model_with_text, start_grep},
         },
         domain::{
             log_file::{LogFile, LogFileError},
@@ -287,12 +285,12 @@ mod tests {
     }
 
     #[test]
-    fn given_grep_tab_when_going_to_a_line_number_that_it_does_not_show_then_the_cursor_goes_to_the_next_shown_line()
+    fn given_grep_tab_when_going_to_a_line_number_with_g_that_it_does_not_show_then_the_cursor_goes_to_the_next_shown_line()
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         grep(&mut model, "ERROR");
 
-        run_command(&mut model, "3");
+        model.type_keys("3G");
 
         assert_eq!(model.cursor_line(), Some(4));
     }

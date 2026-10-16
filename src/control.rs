@@ -85,7 +85,10 @@ fn is_help_closing_key(key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action::LogViewAction, domain::search::SearchDirection};
+    use crate::{
+        action::{HighlightAction, LogViewAction},
+        domain::search::SearchDirection,
+    };
 
     fn type_keys(input_controller: &mut InputController, typed: &str) -> Option<Action> {
         let mut resolution = None;
@@ -166,15 +169,15 @@ mod tests {
     }
 
     #[test]
-    fn given_line_number_on_the_command_line_when_enter_is_pressed_then_its_action_comes_out_and_it_closes()
+    fn given_command_on_the_command_line_when_enter_is_pressed_then_its_action_comes_out_and_it_closes()
      {
-        let mut input_controller = make_open_command_line("2");
+        let mut input_controller = make_open_command_line("hl ERROR");
 
         let resolution = press(&mut input_controller, KeyCode::Enter);
 
         assert_eq!(
             resolution,
-            Some(Action::LogView(LogViewAction::MoveCursorToLineNumber(2)))
+            Some(Action::Highlight(HighlightAction::Add("ERROR".to_owned())))
         );
         assert_eq!(command_line_text(&input_controller), None);
     }

@@ -65,37 +65,7 @@ pub(super) fn jump_cursor_to_line(model: &mut Model, line: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::update::test_helpers::{command_line_text, make_model, run_command};
-
-    #[test]
-    fn given_line_number_when_submitted_then_cursor_goes_there_and_the_command_line_closes() {
-        let mut model = make_model();
-
-        let effect = run_command(&mut model, "2");
-
-        assert_eq!(effect, Effect::Redraw);
-        assert_eq!(model.cursor_line(), Some(1));
-        assert_eq!(command_line_text(&model), None);
-    }
-
-    #[test]
-    fn given_number_past_the_end_when_submitted_then_cursor_goes_to_the_last_line() {
-        let mut model = make_model();
-
-        run_command(&mut model, "99");
-
-        assert_eq!(model.cursor_line(), Some(2));
-    }
-
-    #[test]
-    fn given_cursor_below_first_line_when_zero_is_submitted_then_cursor_goes_to_the_first_line() {
-        let mut model = make_model();
-        model.type_keys("j");
-
-        run_command(&mut model, "0");
-
-        assert_eq!(model.cursor_line(), Some(0));
-    }
+    use crate::app::update::test_helpers::{command_line_text, make_model};
 
     #[test]
     fn given_open_command_line_when_terminal_is_resized_then_it_stays_open_with_its_text() {
@@ -173,6 +143,16 @@ mod tests {
         model.type_keys("G");
 
         assert_eq!(model.cursor_line(), Some(1));
+    }
+
+    #[test]
+    fn given_count_past_the_end_when_capital_g_is_pressed_then_cursor_goes_to_the_last_line() {
+        let mut model = make_model();
+        model.type_keys("99");
+
+        model.type_keys("G");
+
+        assert_eq!(model.cursor_line(), Some(2));
     }
 
     #[test]
