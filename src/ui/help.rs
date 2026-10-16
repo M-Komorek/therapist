@@ -10,6 +10,8 @@ use super::palette;
 use crate::control::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequence_text};
 
 const POPUP_MARGIN: Margin = Margin::new(2, 1);
+const POPUP_PADDING: Padding = Padding::symmetric(2, 1);
+const BORDER_THICKNESS: u16 = 1;
 const COLUMN_GAP: u16 = 4;
 const ENTRY_INDENT: &str = " ";
 const TYPED_TEXT_GAP: usize = 2;
@@ -35,14 +37,15 @@ struct HelpEntry {
 }
 
 pub fn render(frame: &mut Frame, log_view_area: Rect) {
-    let popup_area = log_view_area.inner(POPUP_MARGIN);
+    let help_groups = help_groups();
+    let (left_groups, right_groups) = help_groups.split_at(balanced_split_position(&help_groups));
+
+    let popup_area = popup_area(log_view_area, left_groups, right_groups);
     let popup_block = popup_block();
     let content_area = popup_block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block, popup_area);
 
-    let help_groups = help_groups();
-    let (left_groups, right_groups) = help_groups.split_at(balanced_split_position(&help_groups));
     let [left_column, right_column] = Layout::horizontal([Constraint::Fill(1); 2])
         .spacing(COLUMN_GAP)
         .areas(content_area);
@@ -50,12 +53,31 @@ pub fn render(frame: &mut Frame, log_view_area: Rect) {
     render_column(frame, right_column, right_groups);
 }
 
+fn popup_area(log_view_area: Rect, left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> Rect {
+    let column_width = column_width(left_groups).max(column_width(right_groups));
+    let content_width = 2 * cell_count(column_width) + COLUMN_GAP;
+    let content_height =
+        cell_count(column_row_count(left_groups).max(column_row_count(right_groups)));
+    let popup_width =
+        content_width + 2 * BORDER_THICKNESS + POPUP_PADDING.left + POPUP_PADDING.right;
+    let popup_height =
+        content_height + 2 * BORDER_THICKNESS + POPUP_PADDING.top + POPUP_PADDING.bottom;
+    log_view_area.inner(POPUP_MARGIN).centered(
+        Constraint::Length(popup_width),
+        Constraint::Length(popup_height),
+    )
+}
+
+fn cell_count(length: usize) -> u16 {
+    u16::try_from(length).unwrap_or(u16::MAX)
+}
+
 fn popup_block() -> Block<'static> {
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(BORDER_STYLE)
         .style(POPUP_STYLE)
-        .padding(Padding::horizontal(1))
+        .padding(POPUP_PADDING)
         .title_top(Line::styled(" Keys ", TITLE_STYLE))
         .title_bottom(Line::styled(" Esc close ", CLOSING_HINT_STYLE).right_aligned())
 }
@@ -102,6 +124,18 @@ fn column_row_count(help_groups: &[HelpGroup]) -> usize {
         .sum();
     let blank_row_count = help_groups.len().saturating_sub(1);
     group_row_count + blank_row_count
+}
+
+fn column_width(help_groups: &[HelpGroup]) -> usize {
+    let entry_prefix_width = ENTRY_INDENT.len() + typed_text_width(help_groups);
+    let title_widths = help_groups
+        .iter()
+        .map(|help_group| help_group.title.chars().count());
+    let entry_widths = help_groups
+        .iter()
+        .flat_map(|help_group| &help_group.entries)
+        .map(|help_entry| entry_prefix_width + help_entry.description.chars().count());
+    title_widths.chain(entry_widths).max().unwrap_or(0)
 }
 
 fn render_column(frame: &mut Frame, column_area: Rect, help_groups: &[HelpGroup]) {
@@ -236,13 +270,40 @@ mod tests {
     }
 
     #[test]
+    fn given_groups_when_measuring_the_column_width_then_it_fits_the_widest_entry() {
+        assert_eq!(column_width(&make_help_groups(&[2, 1])), 1 + (1 + 2) + 6);
+    }
+
+    #[test]
+    fn given_groups_without_entries_when_measuring_the_column_width_then_it_fits_the_title() {
+        assert_eq!(column_width(&make_help_groups(&[0])), "Group".len());
+        assert_eq!(column_width(&[]), 0);
+    }
+
+    #[test]
     fn given_wide_area_when_rendering_then_the_groups_sit_in_two_columns() {
         let rows = render_help(100, 28);
 
         assert!(rows[1].starts_with("  ╭ Keys ─"));
-        assert!(rows[2].contains("Moving") && rows[2].contains("Bookmarks"));
-        assert!(rows[3].contains(" j         Move the cursor down"));
+        assert_eq!(rows[2].trim_matches(['│', ' ']), "");
+        assert!(rows[3].contains("Moving") && rows[3].contains("Bookmarks"));
+        assert!(rows[4].contains(" j         Move the cursor down"));
         assert!(rows[26].ends_with("─ Esc close ╯"));
+    }
+
+    #[test]
+    fn given_area_bigger_than_the_content_when_rendering_then_the_popup_fits_the_content_and_is_centered()
+     {
+        let rows = render_help(160, 40);
+
+        let popup_rows = 7..=32;
+        let popup_left_edge = " ".repeat(22);
+        assert!(rows[7].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
+        assert!(rows[32].ends_with("─ Esc close ╯"));
+        assert_eq!(rows[32].chars().count(), 22 + 116);
+        for (row_index, row) in rows.iter().enumerate() {
+            assert_eq!(row.is_empty(), !popup_rows.contains(&row_index));
+        }
     }
 
     #[test]
