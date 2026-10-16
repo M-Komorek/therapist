@@ -112,7 +112,7 @@ pub fn render(
             row_text_area(row_area, gutter_width),
             is_cut_on_the_left,
             is_cut_on_the_right,
-            FAINT_TEXT_STYLE.bg(row_background),
+            CURSOR_LINE_NUMBER_STYLE.bg(row_background),
         );
     }
 }
@@ -477,11 +477,12 @@ mod tests {
     }
 
     #[test]
-    fn given_line_wider_than_the_area_when_rendering_then_a_faint_marker_covers_its_last_column() {
+    fn given_line_wider_than_the_area_when_rendering_then_an_orange_marker_covers_its_last_column()
+    {
         let buffer = render_text("abcdefghij\n", 0, 8, 1);
 
         assert_eq!(rendered_rows(&buffer), ["  1 │ a>"]);
-        assert_eq!(buffer[(7, 0)].fg, palette::FOREGROUND_FAINT);
+        assert_eq!(buffer[(7, 0)].fg, palette::ORANGE);
     }
 
     #[test]
@@ -580,12 +581,12 @@ mod tests {
     }
 
     #[test]
-    fn given_cursor_row_cut_on_both_sides_when_rendering_then_its_markers_keep_the_tint() {
+    fn given_cursor_row_cut_on_both_sides_when_rendering_then_its_orange_markers_keep_the_tint() {
         let buffer = render_scrolled("abcdefghij\n", 2, 10, 1);
 
         assert_eq!(rendered_rows(&buffer), ["  1 │ <de>"]);
         for column in [6, 9] {
-            assert_eq!(buffer[(column, 0)].fg, palette::FOREGROUND_FAINT);
+            assert_eq!(buffer[(column, 0)].fg, palette::ORANGE);
             assert_eq!(buffer[(column, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
         }
     }
