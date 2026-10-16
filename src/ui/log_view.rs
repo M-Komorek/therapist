@@ -281,7 +281,7 @@ mod tests {
         let log_file = LogFile::from_text(text);
         let mut highlights = Highlights::default();
         for phrase in highlighted_phrases {
-            highlights.add((*phrase).to_owned()).unwrap();
+            highlights.toggle((*phrase).to_owned());
         }
         render_with(
             &log_file,
@@ -410,7 +410,7 @@ mod tests {
     fn given_highlight_on_the_cursor_row_when_rendering_then_it_keeps_its_color_over_the_tint() {
         let log_file = LogFile::from_text("an ERROR\n");
         let mut highlights = Highlights::default();
-        highlights.add("ERROR".to_owned()).unwrap();
+        highlights.toggle("ERROR".to_owned());
 
         let buffer = render_with(
             &log_file,

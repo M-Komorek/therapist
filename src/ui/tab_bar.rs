@@ -151,7 +151,7 @@ mod tests {
         tabs.open_grep_tab(vec!["ERROR".to_owned()]);
         tabs.open_grep_tab(vec!["WARN".to_owned()]);
 
-        tabs.switch_to_all_lines_tab();
+        tabs.switch_to_next();
 
         let buffer = render_tab_bar(&tabs, 40);
         assert_eq!(
@@ -186,7 +186,7 @@ mod tests {
     fn given_tabs_too_wide_and_the_first_one_active_when_rendering_then_a_right_marker_follows_it()
     {
         let mut tabs = make_four_tabs();
-        tabs.switch_to_all_lines_tab();
+        tabs.switch_to_next();
 
         let buffer = render_tab_bar(&tabs, 30);
 

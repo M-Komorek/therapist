@@ -16,16 +16,15 @@ pub enum AppAction {
     Suspend,
     OpenCommandLine(CommandLineKind),
     OpenHelp,
-    ShowError(String),
     #[cfg(debug_assertions)]
     DebugPanic,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CommandLineKind {
-    Command,
     Search(SearchDirection),
     Grep,
+    Highlight,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,10 +37,8 @@ pub enum LogViewAction {
     ScrollHalfPageDown,
     ScrollPageUp,
     ScrollPageDown,
-    ScrollLeft(usize),
-    ScrollRight(usize),
-    ScrollLeftWide,
-    ScrollRightWide,
+    ScrollLeftWide(usize),
+    ScrollRightWide(usize),
     ScrollToFirstColumn,
 }
 
@@ -57,6 +54,7 @@ pub enum SearchAction {
 #[derive(Debug, Clone, PartialEq)]
 pub enum BookmarkAction {
     Toggle,
+    RemoveAll,
     JumpToNext,
     JumpToPrevious,
 }
@@ -67,13 +65,11 @@ pub enum TabAction {
     SwitchToNext,
     SwitchToPrevious,
     CloseActive,
-    ShowCursorLineInAllLinesTab,
+    CloseAllGrepTabs,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HighlightAction {
-    Add(String),
-    AddSearchPhrase,
-    Remove(String),
+    Toggle(String),
     RemoveAll,
 }

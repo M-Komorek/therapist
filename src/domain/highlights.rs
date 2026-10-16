@@ -1,13 +1,5 @@
 pub const HIGHLIGHT_COLOR_COUNT: usize = 12;
 
-#[derive(Debug, PartialEq, thiserror::Error)]
-pub enum HighlightError {
-    #[error("Already highlighted: {0}")]
-    AlreadyHighlighted(String),
-    #[error("Not highlighted: {0}")]
-    NotHighlighted(String),
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Highlight {
     pub phrase: String,
@@ -23,26 +15,17 @@ pub struct Highlights {
 }
 
 impl Highlights {
-    pub fn add(&mut self, phrase: String) -> Result<(), HighlightError> {
-        if self.position_of(&phrase).is_some() {
-            return Err(HighlightError::AlreadyHighlighted(phrase));
+    pub fn toggle(&mut self, phrase: String) {
+        match self.position_of(&phrase) {
+            Some(position) => {
+                self.highlights_oldest_first.remove(position);
+            }
+            None => self.add(phrase),
         }
-
-        let color_index = self.least_used_color_index();
-        self.highlights_oldest_first.push(Highlight {
-            phrase,
-            color_index,
-        });
-        Ok(())
     }
 
-    pub fn remove(&mut self, phrase: &str) -> Result<(), HighlightError> {
-        let position = self
-            .position_of(phrase)
-            .ok_or_else(|| HighlightError::NotHighlighted(phrase.to_owned()))?;
-
-        self.highlights_oldest_first.remove(position);
-        Ok(())
+    pub fn contains(&self, phrase: &str) -> bool {
+        self.position_of(phrase).is_some()
     }
 
     pub fn remove_all(&mut self) {
@@ -51,6 +34,14 @@ impl Highlights {
 
     pub fn oldest_first(&self) -> std::slice::Iter<'_, Highlight> {
         self.highlights_oldest_first.iter()
+    }
+
+    fn add(&mut self, phrase: String) {
+        let color_index = self.least_used_color_index();
+        self.highlights_oldest_first.push(Highlight {
+            phrase,
+            color_index,
+        });
     }
 
     fn position_of(&self, phrase: &str) -> Option<usize> {
@@ -78,7 +69,7 @@ mod tests {
     fn make_highlights(phrases: &[&str]) -> Highlights {
         let mut highlights = Highlights::default();
         for phrase in phrases {
-            highlights.add((*phrase).to_owned()).unwrap();
+            highlights.toggle((*phrase).to_owned());
         }
         highlights
     }
@@ -103,9 +94,9 @@ mod tests {
     #[test]
     fn given_a_removed_highlight_when_a_phrase_is_added_then_it_takes_the_freed_color() {
         let mut highlights = make_highlights(&["ERROR", "WARN", "user=42"]);
-        highlights.remove("WARN").unwrap();
+        highlights.toggle("WARN".to_owned());
 
-        highlights.add("took=4".to_owned()).unwrap();
+        highlights.toggle("took=4".to_owned());
 
         assert_eq!(
             colors_by_phrase(&highlights),
@@ -118,11 +109,11 @@ mod tests {
     {
         let mut highlights = Highlights::default();
         for phrase_number in 0..HIGHLIGHT_COLOR_COUNT {
-            highlights.add(format!("phrase {phrase_number}")).unwrap();
+            highlights.toggle(format!("phrase {phrase_number}"));
         }
 
-        highlights.add("one more".to_owned()).unwrap();
-        highlights.add("two more".to_owned()).unwrap();
+        highlights.toggle("one more".to_owned());
+        highlights.toggle("two more".to_owned());
 
         let colors: Vec<usize> = colors_by_phrase(&highlights)
             .into_iter()
@@ -134,16 +125,21 @@ mod tests {
     }
 
     #[test]
-    fn given_highlighted_phrase_when_it_is_added_again_then_it_is_refused_and_kept_once() {
-        let mut highlights = make_highlights(&["ERROR"]);
+    fn given_one_highlight_when_checking_phrases_then_only_that_exact_phrase_is_contained() {
+        let highlights = make_highlights(&["ERROR"]);
 
-        let result = highlights.add("ERROR".to_owned());
+        assert!(highlights.contains("ERROR"));
+        assert!(!highlights.contains("error"));
+        assert!(!highlights.contains("ERR"));
+    }
 
-        assert_eq!(
-            result,
-            Err(HighlightError::AlreadyHighlighted("ERROR".to_owned()))
-        );
-        assert_eq!(colors_by_phrase(&highlights), [("ERROR", 0)]);
+    #[test]
+    fn given_highlighted_phrase_when_toggled_then_it_is_removed() {
+        let mut highlights = make_highlights(&["ERROR", "WARN"]);
+
+        highlights.toggle("ERROR".to_owned());
+
+        assert_eq!(colors_by_phrase(&highlights), [("WARN", 1)]);
     }
 
     #[test]
@@ -158,7 +154,7 @@ mod tests {
      {
         let mut highlights = make_highlights(&["ERROR", "WARN", "user=42"]);
 
-        highlights.remove("WARN").unwrap();
+        highlights.toggle("WARN".to_owned());
 
         assert_eq!(
             colors_by_phrase(&highlights),
@@ -167,37 +163,12 @@ mod tests {
     }
 
     #[test]
-    fn given_phrase_that_is_not_highlighted_when_removing_then_it_is_refused() {
-        let mut highlights = make_highlights(&["ERROR"]);
-
-        let result = highlights.remove("WARN");
-
-        assert_eq!(
-            result,
-            Err(HighlightError::NotHighlighted("WARN".to_owned()))
-        );
-        assert_eq!(colors_by_phrase(&highlights), [("ERROR", 0)]);
-    }
-
-    #[test]
     fn given_highlights_when_all_are_removed_then_the_next_phrase_takes_the_first_color() {
         let mut highlights = make_highlights(&["ERROR", "WARN"]);
 
         highlights.remove_all();
-        highlights.add("user=42".to_owned()).unwrap();
+        highlights.toggle("user=42".to_owned());
 
         assert_eq!(colors_by_phrase(&highlights), [("user=42", 0)]);
-    }
-
-    #[test]
-    fn given_highlight_errors_when_displayed_then_they_name_the_phrase() {
-        assert_eq!(
-            HighlightError::AlreadyHighlighted("ERROR".to_owned()).to_string(),
-            "Already highlighted: ERROR"
-        );
-        assert_eq!(
-            HighlightError::NotHighlighted("WARN".to_owned()).to_string(),
-            "Not highlighted: WARN"
-        );
     }
 }

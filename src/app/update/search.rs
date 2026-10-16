@@ -521,11 +521,11 @@ mod tests {
                 .map(|search_query| search_query.phrase.clone())
         };
 
-        model.type_keys("tn");
+        model.type_keys("L");
         assert_eq!(active_phrase(&model), Some("WARN".to_owned()));
         assert_eq!(model.cursor_line(), Some(3));
 
-        model.type_keys("tn");
+        model.type_keys("L");
         assert_eq!(active_phrase(&model), Some("three".to_owned()));
         assert_eq!(model.cursor_line(), Some(4));
     }
@@ -586,7 +586,7 @@ mod tests {
         model.press(KeyCode::Enter);
         let late_job_notifications = model.job_board.run_scheduled_jobs();
 
-        model.type_keys("tc");
+        model.type_keys(" x");
         model.handle_job_notifications(late_job_notifications);
 
         assert!(!model.job_board.has_job(JobSlot::Searching(grep_tab_id)));

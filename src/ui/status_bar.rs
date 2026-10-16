@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn given_running_grep_tab_when_rendering_then_the_progress_and_its_rows_so_far_are_shown() {
         let mut model = make_model("ok\nERROR a\nok\nERROR b\n");
-        model.type_keys("&ERROR");
+        model.type_keys(" gERROR");
         model.press(KeyCode::Enter);
         let mut job_notifications = model.job_board.run_scheduled_jobs();
         let _done_notification = job_notifications.pop();
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn given_finished_grep_tab_when_rendering_then_the_position_counts_its_rows() {
         let mut model = make_model("ok\nERROR a\nok\nERROR b\n");
-        model.type_keys("&ERROR");
+        model.type_keys(" gERROR");
         model.press(KeyCode::Enter);
         model.finish_scheduled_jobs();
         model.type_keys("j");

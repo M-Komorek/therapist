@@ -15,6 +15,7 @@ const WRAPPED_TO_BOTTOM_MESSAGE: &str = "bookmarks hit TOP, continuing at BOTTOM
 pub(super) fn dispatch_bookmark(model: &mut Model, bookmark_action: BookmarkAction) -> Effect {
     match bookmark_action {
         BookmarkAction::Toggle => toggle_bookmark(model),
+        BookmarkAction::RemoveAll => model.bookmarks.remove_all(),
         BookmarkAction::JumpToNext => jump_to_next_bookmark(model),
         BookmarkAction::JumpToPrevious => jump_to_previous_bookmark(model),
     }
@@ -76,11 +77,11 @@ mod tests {
     };
 
     #[test]
-    fn given_cursor_on_the_second_line_when_bb_is_pressed_then_that_line_is_bookmarked() {
+    fn given_cursor_on_the_second_line_when_space_b_is_pressed_then_that_line_is_bookmarked() {
         let mut model = make_model();
         model.type_keys("j");
 
-        let effect = model.type_keys("bb");
+        let effect = model.type_keys(" b");
 
         assert_eq!(effect, Effect::Redraw);
         assert!(model.bookmarks.contains(1));
@@ -88,44 +89,57 @@ mod tests {
     }
 
     #[test]
-    fn given_bookmarked_cursor_line_when_bb_is_pressed_again_then_the_bookmark_is_removed() {
+    fn given_bookmarked_cursor_line_when_space_b_is_pressed_again_then_the_bookmark_is_removed() {
         let mut model = make_model();
-        model.type_keys("bb");
+        model.type_keys(" b");
 
-        model.type_keys("bb");
+        model.type_keys(" b");
 
         assert!(!model.bookmarks.contains(0));
     }
 
     #[test]
-    fn given_empty_file_when_bb_is_pressed_then_nothing_is_bookmarked() {
+    fn given_two_bookmarks_when_space_capital_b_is_pressed_then_both_are_removed() {
+        let mut model = make_model();
+        model.type_keys(" bj b");
+
+        let effect = model.type_keys(" B");
+
+        assert_eq!(effect, Effect::Redraw);
+        assert!(!model.bookmarks.contains(0));
+        assert!(!model.bookmarks.contains(1));
+    }
+
+    #[test]
+    fn given_empty_file_when_space_b_is_pressed_then_nothing_is_bookmarked() {
         let mut model = make_model_with_text("");
 
-        model.type_keys("bb");
+        model.type_keys(" b");
 
         assert!(!model.bookmarks.contains(0));
     }
 
     #[test]
-    fn given_bookmarks_above_and_below_when_bn_then_bp_are_pressed_then_cursor_goes_down_then_up() {
+    fn given_bookmarks_above_and_below_when_right_then_left_bracket_are_pressed_then_cursor_goes_down_then_up()
+     {
         let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("2Gbb5Gbb3G");
+        model.type_keys("2G b5G b3G");
 
-        model.type_keys("bn");
+        model.type_keys("]");
         assert_eq!(model.cursor_line(), Some(4));
 
-        model.type_keys("bp");
+        model.type_keys("[");
         assert_eq!(model.cursor_line(), Some(1));
         assert_eq!(model.status_message, None);
     }
 
     #[test]
-    fn given_cursor_on_the_last_bookmark_when_bn_is_pressed_then_it_wraps_to_the_first_with_a_message()
+    fn given_cursor_on_the_last_bookmark_when_right_bracket_is_pressed_then_it_wraps_to_the_first_with_a_message()
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("2Gbb5Gbb");
+        model.type_keys("2G b5G b");
 
-        model.type_keys("bn");
+        model.type_keys("]");
 
         assert_eq!(model.cursor_line(), Some(1));
         assert_eq!(
@@ -135,12 +149,12 @@ mod tests {
     }
 
     #[test]
-    fn given_cursor_on_the_first_bookmark_when_bp_is_pressed_then_it_wraps_to_the_last_with_a_message()
+    fn given_cursor_on_the_first_bookmark_when_left_bracket_is_pressed_then_it_wraps_to_the_last_with_a_message()
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("2Gbb5Gbb2G");
+        model.type_keys("2G b5G b2G");
 
-        model.type_keys("bp");
+        model.type_keys("[");
 
         assert_eq!(model.cursor_line(), Some(4));
         assert_eq!(
@@ -150,29 +164,30 @@ mod tests {
     }
 
     #[test]
-    fn given_bookmark_on_a_line_not_in_the_grep_tab_when_bn_is_pressed_there_then_it_is_skipped() {
+    fn given_bookmark_on_a_line_not_in_the_grep_tab_when_right_bracket_is_pressed_there_then_it_is_skipped()
+     {
         let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("3Gbb5Gbb");
-        model.type_keys("&ERROR");
+        model.type_keys("3G b5G b");
+        model.type_keys(" gERROR");
         model.press(KeyCode::Enter);
         model.finish_scheduled_jobs();
 
-        model.type_keys("bn");
+        model.type_keys("]");
 
         assert_eq!(model.cursor_line(), Some(4));
         assert_eq!(model.status_message, None);
     }
 
     #[test]
-    fn given_bookmarks_only_on_lines_not_in_the_grep_tab_when_bn_is_pressed_there_then_an_error_says_so()
+    fn given_bookmarks_only_on_lines_not_in_the_grep_tab_when_right_bracket_is_pressed_there_then_an_error_says_so()
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("3Gbb");
-        model.type_keys("&ERROR");
+        model.type_keys("3G b");
+        model.type_keys(" gERROR");
         model.press(KeyCode::Enter);
         model.finish_scheduled_jobs();
 
-        model.type_keys("bn");
+        model.type_keys("]");
 
         assert_eq!(
             model.status_message,
@@ -183,14 +198,14 @@ mod tests {
     }
 
     #[test]
-    fn given_no_bookmarks_when_bn_or_bp_is_pressed_then_an_error_says_so() {
+    fn given_no_bookmarks_when_a_bracket_is_pressed_then_an_error_says_so() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         let no_bookmarks = Some(StatusMessage::Error(BookmarkError::NoBookmarks.to_string()));
 
-        model.type_keys("bn");
+        model.type_keys("]");
         assert_eq!(model.status_message, no_bookmarks);
 
-        model.type_keys("bp");
+        model.type_keys("[");
         assert_eq!(model.status_message, no_bookmarks);
         assert_eq!(model.cursor_line(), Some(0));
     }

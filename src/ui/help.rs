@@ -7,9 +7,7 @@ use ratatui::{
 };
 
 use super::palette;
-use crate::control::{
-    COMMAND_DESCRIPTIONS, KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequence_text,
-};
+use crate::control::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequence_text};
 
 const POPUP_MARGIN: Margin = Margin::new(2, 1);
 const COLUMN_GAP: u16 = 4;
@@ -66,7 +64,6 @@ fn help_groups() -> Vec<HelpGroup> {
     KEY_BINDING_GROUPS
         .iter()
         .map(key_binding_help_group)
-        .chain([command_help_group()])
         .collect()
 }
 
@@ -82,27 +79,9 @@ fn key_binding_help_group(key_binding_group: &KeyBindingGroup) -> HelpGroup {
 }
 
 fn key_binding_help_entry(key_binding: &KeyBinding) -> HelpEntry {
-    let key_sequence_texts: Vec<String> = key_binding
-        .key_sequences
-        .iter()
-        .map(|key_sequence| key_sequence_text(key_sequence))
-        .collect();
     HelpEntry {
-        typed_text: key_sequence_texts.join(" "),
+        typed_text: key_sequence_text(key_binding.key_sequence),
         description: key_binding.description,
-    }
-}
-
-fn command_help_group() -> HelpGroup {
-    HelpGroup {
-        title: "Commands",
-        entries: COMMAND_DESCRIPTIONS
-            .iter()
-            .map(|&(command, description)| HelpEntry {
-                typed_text: command.to_owned(),
-                description,
-            })
-            .collect(),
     }
 }
 
@@ -262,7 +241,7 @@ mod tests {
 
         assert!(rows[1].starts_with("  ╭ Keys ─"));
         assert!(rows[2].contains("Moving") && rows[2].contains("Bookmarks"));
-        assert!(rows[3].contains(" j <Down>   Move the cursor down"));
+        assert!(rows[3].contains(" j         Move the cursor down"));
         assert!(rows[26].ends_with("─ Esc close ╯"));
     }
 
@@ -272,8 +251,8 @@ mod tests {
 
         let bookmark_row = rows
             .iter()
-            .find(|row| row.contains(" bb "))
-            .expect("the bb row is shown");
+            .find(|row| row.contains(" <Space>b "))
+            .expect("the <Space>b row is shown");
         assert!(
             bookmark_row
                 .trim_end_matches(['│', ' '])

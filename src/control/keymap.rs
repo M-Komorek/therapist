@@ -23,10 +23,10 @@ impl Keymap {
             self.reset();
             return None;
         }
-        self.remember_key(key);
         if self.breaks_started_sequence(key) {
-            self.started_sequence.clear();
+            self.drop_started_sequence();
         }
+        self.remember_key(key);
         if let Some(digit) = self.count_digit(key) {
             self.add_count_digit(digit);
             return None;
@@ -61,6 +61,12 @@ impl Keymap {
             self.last_keys.clear();
         }
         self.last_keys.push(key);
+    }
+
+    fn drop_started_sequence(&mut self) {
+        let kept_key_count = self.last_keys.len() - self.started_sequence.len();
+        self.last_keys.truncate(kept_key_count);
+        self.started_sequence.clear();
     }
 
     fn breaks_started_sequence(&self, key: KeyEvent) -> bool {
@@ -117,6 +123,7 @@ fn key_name(key: &KeyEvent) -> String {
         modifiers.push_str("Alt-");
     }
     match key.code {
+        KeyCode::Char(' ') if modifiers.is_empty() => "<Space>".to_owned(),
         KeyCode::Char(character) if modifiers.is_empty() => character.to_string(),
         code => format!("<{modifiers}{code}>"),
     }
@@ -125,12 +132,13 @@ fn key_name(key: &KeyEvent) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bindings::{app, bookmark, char_key, ctrl, log_view, search, tab},
+        bindings::{app, bookmark, char_key, ctrl, highlight, log_view, search, space, tab},
         *,
     };
     use crate::{
         action::{
-            AppAction, BookmarkAction, CommandLineKind, LogViewAction, SearchAction, TabAction,
+            AppAction, BookmarkAction, CommandLineKind, HighlightAction, LogViewAction,
+            SearchAction, TabAction,
         },
         domain::search::SearchDirection,
     };
@@ -157,19 +165,8 @@ mod tests {
     }
 
     #[test]
-    fn given_q_or_ctrl_c_when_resolving_then_app_quits() {
-        let quit = Some(app(AppAction::Quit));
-
-        assert_eq!(resolve_fresh("q"), quit);
-        assert_eq!(Keymap::default().resolve(ctrl('c')), quit);
-    }
-
-    #[test]
-    fn given_colon_when_resolving_then_the_command_line_opens() {
-        assert_eq!(
-            resolve_fresh(":"),
-            Some(app(AppAction::OpenCommandLine(CommandLineKind::Command)))
-        );
+    fn given_q_when_resolving_then_app_quits() {
+        assert_eq!(resolve_fresh("q"), Some(app(AppAction::Quit)));
     }
 
     #[test]
@@ -203,40 +200,60 @@ mod tests {
     }
 
     #[test]
-    fn given_bb_when_resolving_then_the_bookmark_on_the_cursor_line_toggles() {
-        assert_eq!(resolve_fresh("b"), None);
-        assert_eq!(resolve_fresh("bb"), Some(bookmark(BookmarkAction::Toggle)));
+    fn given_space_alone_when_resolving_then_it_waits_for_the_next_key() {
+        assert_eq!(resolve_fresh(" "), None);
     }
 
     #[test]
-    fn given_bn_or_bp_when_resolving_then_it_jumps_to_the_next_or_previous_bookmark() {
+    fn given_space_b_or_capital_b_when_resolving_then_one_bookmark_toggles_or_all_are_removed() {
+        assert_eq!(resolve_fresh(" b"), Some(bookmark(BookmarkAction::Toggle)));
         assert_eq!(
-            resolve_fresh("bn"),
+            resolve_fresh(" B"),
+            Some(bookmark(BookmarkAction::RemoveAll))
+        );
+    }
+
+    #[test]
+    fn given_brackets_when_resolving_then_it_jumps_to_the_next_or_previous_bookmark() {
+        assert_eq!(
+            resolve_fresh("]"),
             Some(bookmark(BookmarkAction::JumpToNext))
         );
         assert_eq!(
-            resolve_fresh("bp"),
+            resolve_fresh("["),
             Some(bookmark(BookmarkAction::JumpToPrevious))
         );
     }
 
     #[test]
-    fn given_ampersand_when_resolving_then_a_grep_line_opens() {
+    fn given_space_g_when_resolving_then_a_grep_line_opens() {
         assert_eq!(
-            resolve_fresh("&"),
+            resolve_fresh(" g"),
             Some(app(AppAction::OpenCommandLine(CommandLineKind::Grep)))
         );
     }
 
     #[test]
-    fn given_tn_tp_tc_or_ta_when_resolving_then_it_switches_or_closes_tabs() {
-        assert_eq!(resolve_fresh("t"), None);
-        assert_eq!(resolve_fresh("tn"), Some(tab(TabAction::SwitchToNext)));
-        assert_eq!(resolve_fresh("tp"), Some(tab(TabAction::SwitchToPrevious)));
-        assert_eq!(resolve_fresh("tc"), Some(tab(TabAction::CloseActive)));
+    fn given_capital_h_or_l_when_resolving_then_it_switches_to_the_previous_or_next_tab() {
+        assert_eq!(resolve_fresh("H"), Some(tab(TabAction::SwitchToPrevious)));
+        assert_eq!(resolve_fresh("L"), Some(tab(TabAction::SwitchToNext)));
+    }
+
+    #[test]
+    fn given_space_x_or_capital_x_when_resolving_then_the_active_tab_or_every_grep_tab_closes() {
+        assert_eq!(resolve_fresh(" x"), Some(tab(TabAction::CloseActive)));
+        assert_eq!(resolve_fresh(" X"), Some(tab(TabAction::CloseAllGrepTabs)));
+    }
+
+    #[test]
+    fn given_space_h_or_capital_h_when_resolving_then_a_highlight_line_opens_or_all_are_removed() {
         assert_eq!(
-            resolve_fresh("ta"),
-            Some(tab(TabAction::ShowCursorLineInAllLinesTab))
+            resolve_fresh(" h"),
+            Some(app(AppAction::OpenCommandLine(CommandLineKind::Highlight)))
+        );
+        assert_eq!(
+            resolve_fresh(" H"),
+            Some(highlight(HighlightAction::RemoveAll))
         );
     }
 
@@ -280,25 +297,22 @@ mod tests {
     }
 
     #[test]
-    fn given_j_or_down_arrow_when_resolving_then_cursor_moves_down_one_line() {
-        let move_cursor_down = resolved_log_view(LogViewAction::MoveCursorDown(1));
-
-        assert_eq!(resolve_fresh("j"), move_cursor_down);
+    fn given_j_or_k_when_resolving_then_cursor_moves_down_or_up_one_line() {
         assert_eq!(
-            Keymap::default().resolve(plain(KeyCode::Down)),
-            move_cursor_down
+            resolve_fresh("j"),
+            resolved_log_view(LogViewAction::MoveCursorDown(1))
+        );
+        assert_eq!(
+            resolve_fresh("k"),
+            resolved_log_view(LogViewAction::MoveCursorUp(1))
         );
     }
 
     #[test]
-    fn given_k_or_up_arrow_when_resolving_then_cursor_moves_up_one_line() {
-        let move_cursor_up = resolved_log_view(LogViewAction::MoveCursorUp(1));
-
-        assert_eq!(resolve_fresh("k"), move_cursor_up);
-        assert_eq!(
-            Keymap::default().resolve(plain(KeyCode::Up)),
-            move_cursor_up
-        );
+    fn given_arrow_keys_when_resolving_then_nothing_is_bound() {
+        for code in [KeyCode::Down, KeyCode::Up, KeyCode::Left, KeyCode::Right] {
+            assert_eq!(Keymap::default().resolve(plain(code)), None);
+        }
     }
 
     #[test]
@@ -310,28 +324,26 @@ mod tests {
     }
 
     #[test]
-    fn given_count_when_h_or_l_is_pressed_then_view_scrolls_that_many_columns() {
+    fn given_h_or_l_when_resolving_then_view_scrolls_one_wide_step() {
         assert_eq!(
-            resolve_fresh("3h"),
-            resolved_log_view(LogViewAction::ScrollLeft(3))
+            resolve_fresh("h"),
+            resolved_log_view(LogViewAction::ScrollLeftWide(1))
         );
         assert_eq!(
-            resolve_fresh("3l"),
-            resolved_log_view(LogViewAction::ScrollRight(3))
+            resolve_fresh("l"),
+            resolved_log_view(LogViewAction::ScrollRightWide(1))
         );
     }
 
     #[test]
-    fn given_left_or_right_arrow_when_resolving_then_view_scrolls_one_column() {
-        let resolve = |code| Keymap::default().resolve(plain(code));
-
+    fn given_count_when_h_or_l_is_pressed_then_view_scrolls_that_many_wide_steps() {
         assert_eq!(
-            resolve(KeyCode::Left),
-            resolved_log_view(LogViewAction::ScrollLeft(1))
+            resolve_fresh("3h"),
+            resolved_log_view(LogViewAction::ScrollLeftWide(3))
         );
         assert_eq!(
-            resolve(KeyCode::Right),
-            resolved_log_view(LogViewAction::ScrollRight(1))
+            resolve_fresh("3l"),
+            resolved_log_view(LogViewAction::ScrollRightWide(3))
         );
     }
 
@@ -353,10 +365,10 @@ mod tests {
     }
 
     #[test]
-    fn given_count_when_gg_is_pressed_then_cursor_goes_to_that_line() {
+    fn given_count_when_gg_is_pressed_then_count_is_ignored_and_cursor_goes_to_first_line() {
         assert_eq!(
             resolve_fresh("5gg"),
-            resolved_log_view(LogViewAction::MoveCursorToLineNumber(5))
+            resolved_log_view(LogViewAction::MoveCursorToLineNumber(1))
         );
     }
 
@@ -415,18 +427,6 @@ mod tests {
         assert_eq!(
             resolution,
             resolved_log_view(LogViewAction::ScrollHalfPageDown)
-        );
-    }
-
-    #[test]
-    fn given_capital_h_or_l_when_resolving_then_view_scrolls_wide() {
-        assert_eq!(
-            resolve_fresh("H"),
-            resolved_log_view(LogViewAction::ScrollLeftWide)
-        );
-        assert_eq!(
-            resolve_fresh("L"),
-            resolved_log_view(LogViewAction::ScrollRightWide)
         );
     }
 
@@ -582,6 +582,44 @@ mod tests {
     }
 
     #[test]
+    fn given_space_pressed_again_and_again_when_reading_last_keys_then_only_one_space_is_shown() {
+        let mut keymap = Keymap::default();
+
+        resolve_keys(&mut keymap, &[space(), space(), space()]);
+
+        assert_eq!(keymap.last_keys_text(), "<Space>");
+    }
+
+    #[test]
+    fn given_count_and_space_pressed_twice_when_reading_last_keys_then_the_count_and_one_space_are_shown()
+     {
+        let mut keymap = Keymap::default();
+
+        resolve_keys(&mut keymap, &[char_key('3'), space(), space()]);
+
+        assert_eq!(keymap.last_keys_text(), "3<Space>");
+    }
+
+    #[test]
+    fn given_space_pressed_twice_when_b_is_pressed_then_the_bookmark_toggles() {
+        let mut keymap = Keymap::default();
+
+        let resolution = resolve_keys(&mut keymap, &[space(), space(), char_key('b')]);
+
+        assert_eq!(resolution, Some(bookmark(BookmarkAction::Toggle)));
+        assert_eq!(keymap.last_keys_text(), "<Space>b");
+    }
+
+    #[test]
+    fn given_started_g_when_j_is_pressed_then_last_keys_show_only_the_j() {
+        let mut keymap = Keymap::default();
+
+        resolve_typed(&mut keymap, "gj");
+
+        assert_eq!(keymap.last_keys_text(), "j");
+    }
+
+    #[test]
     fn given_keys_with_modifiers_or_names_when_reading_last_keys_then_they_use_key_notation() {
         let last_keys_text = |key| {
             let mut keymap = Keymap::default();
@@ -591,6 +629,7 @@ mod tests {
 
         assert_eq!(last_keys_text(ctrl('d')), "<Ctrl-d>");
         assert_eq!(last_keys_text(plain(KeyCode::Down)), "<Down>");
+        assert_eq!(last_keys_text(space()), "<Space>");
         let alt_x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::ALT);
         assert_eq!(last_keys_text(alt_x), "<Alt-x>");
         let shift_g = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);

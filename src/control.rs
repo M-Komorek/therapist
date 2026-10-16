@@ -5,8 +5,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 use crate::action::{Action, CommandLineKind};
 
+pub use command_line::CommandLine;
 use command_line::CommandLineOutcome;
-pub use command_line::{COMMAND_DESCRIPTIONS, CommandLine};
 use keymap::Keymap;
 pub use keymap::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequence_text};
 
@@ -79,14 +79,14 @@ impl InputController {
 }
 
 fn is_help_closing_key(key: KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::F(1))
+    key.code == KeyCode::Esc
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        action::{HighlightAction, LogViewAction},
+        action::{LogViewAction, TabAction},
         domain::search::SearchDirection,
     };
 
@@ -104,7 +104,7 @@ mod tests {
 
     fn make_open_command_line(typed: &str) -> InputController {
         let mut input_controller = InputController::default();
-        input_controller.open_command_line(CommandLineKind::Command);
+        input_controller.open_command_line(CommandLineKind::Grep);
         type_keys(&mut input_controller, typed);
         input_controller
     }
@@ -140,7 +140,7 @@ mod tests {
     fn given_normal_mode_when_the_command_line_opens_then_it_is_empty() {
         let mut input_controller = InputController::default();
 
-        input_controller.open_command_line(CommandLineKind::Command);
+        input_controller.open_command_line(CommandLineKind::Grep);
 
         assert_eq!(command_line_text(&input_controller), Some(""));
     }
@@ -169,15 +169,15 @@ mod tests {
     }
 
     #[test]
-    fn given_command_on_the_command_line_when_enter_is_pressed_then_its_action_comes_out_and_it_closes()
+    fn given_phrase_on_the_command_line_when_enter_is_pressed_then_its_action_comes_out_and_it_closes()
      {
-        let mut input_controller = make_open_command_line("hl ERROR");
+        let mut input_controller = make_open_command_line("ERROR");
 
         let resolution = press(&mut input_controller, KeyCode::Enter);
 
         assert_eq!(
             resolution,
-            Some(Action::Highlight(HighlightAction::Add("ERROR".to_owned())))
+            Some(Action::Tab(TabAction::Grep("ERROR".to_owned())))
         );
         assert_eq!(command_line_text(&input_controller), None);
     }
@@ -194,8 +194,8 @@ mod tests {
     fn given_count_typed_when_the_command_line_opens_and_closes_then_the_count_and_last_keys_are_gone()
      {
         let mut input_controller = InputController::default();
-        type_keys(&mut input_controller, "2:");
-        input_controller.open_command_line(CommandLineKind::Command);
+        type_keys(&mut input_controller, "2/");
+        input_controller.open_command_line(CommandLineKind::Grep);
         press(&mut input_controller, KeyCode::Esc);
 
         assert_eq!(input_controller.last_keys_text(), "");
@@ -206,12 +206,20 @@ mod tests {
     }
 
     #[test]
-    fn given_open_help_when_esc_q_or_f1_is_pressed_then_it_closes() {
-        for closing_code in [KeyCode::Esc, KeyCode::Char('q'), KeyCode::F(1)] {
+    fn given_open_help_when_esc_is_pressed_then_it_closes() {
+        let mut input_controller = make_open_help();
+
+        assert_eq!(press(&mut input_controller, KeyCode::Esc), None);
+        assert!(!is_help_open(&input_controller));
+    }
+
+    #[test]
+    fn given_open_help_when_q_or_f1_is_pressed_then_it_stays_open() {
+        for other_code in [KeyCode::Char('q'), KeyCode::F(1)] {
             let mut input_controller = make_open_help();
 
-            assert_eq!(press(&mut input_controller, closing_code), None);
-            assert!(!is_help_open(&input_controller));
+            assert_eq!(press(&mut input_controller, other_code), None);
+            assert!(is_help_open(&input_controller));
         }
     }
 
@@ -219,7 +227,7 @@ mod tests {
     fn given_open_help_when_bound_keys_are_typed_then_no_action_comes_out_and_it_stays_open() {
         let mut input_controller = make_open_help();
 
-        assert_eq!(type_keys(&mut input_controller, "j:G"), None);
+        assert_eq!(type_keys(&mut input_controller, "j/G"), None);
         assert!(is_help_open(&input_controller));
     }
 

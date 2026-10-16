@@ -1,8 +1,4 @@
-use super::{
-    Effect,
-    app::show_error,
-    log_view::{cursor_line, jump_cursor_to_line},
-};
+use super::{Effect, app::show_error};
 use crate::{
     action::TabAction,
     app::Model,
@@ -16,7 +12,7 @@ pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
         TabAction::SwitchToNext => model.tabs.switch_to_next(),
         TabAction::SwitchToPrevious => model.tabs.switch_to_previous(),
         TabAction::CloseActive => close_active_tab(model),
-        TabAction::ShowCursorLineInAllLinesTab => show_cursor_line_in_all_lines_tab(model),
+        TabAction::CloseAllGrepTabs => close_all_grep_tabs(model),
     }
     Effect::Redraw
 }
@@ -44,11 +40,17 @@ fn close_active_tab(model: &mut Model) {
     close_tab(model, active_tab_id);
 }
 
-fn show_cursor_line_in_all_lines_tab(model: &mut Model) {
-    let cursor_line = cursor_line(model);
-    model.tabs.switch_to_all_lines_tab();
-    if let Some(cursor_line) = cursor_line {
-        jump_cursor_to_line(model, cursor_line);
+fn close_all_grep_tabs(model: &mut Model) {
+    let grep_tab_ids: Vec<TabId> = model
+        .tabs
+        .tab_states()
+        .iter()
+        .filter(|tab_state| !tab_state.shows_all_lines())
+        .map(|tab_state| tab_state.tab_id())
+        .collect();
+
+    for grep_tab_id in grep_tab_ids {
+        close_tab(model, grep_tab_id);
     }
 }
 
@@ -136,7 +138,7 @@ mod tests {
     fn given_two_greps_when_their_batches_arrive_together_then_each_fills_its_own_tab() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         start_grep(&mut model, "ERROR");
-        model.type_keys("tp");
+        model.type_keys("H");
         start_grep(&mut model, "WARN");
 
         model.finish_scheduled_jobs();
@@ -156,7 +158,7 @@ mod tests {
      {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         grep(&mut model, "WARN");
-        model.type_keys("tp");
+        model.type_keys("H");
         grep(&mut model, "ERROR");
 
         grep(&mut model, "three");
@@ -218,56 +220,16 @@ mod tests {
     }
 
     #[test]
-    fn given_cursor_in_a_grep_tab_when_ta_is_pressed_then_the_all_tab_shows_the_same_line() {
-        let mut model = make_model_with_text(SEARCHED_TEXT);
-        grep(&mut model, "ERROR");
-        model.type_keys("j");
-
-        model.type_keys("ta");
-
-        assert!(model.tabs.active_tab().shows_all_lines());
-        assert_eq!(model.cursor_line(), Some(4));
-        model.type_keys("tn");
-        assert_eq!(model.cursor_line(), Some(4));
-        assert_eq!(model.tabs.active_tab().log_view_state().cursor_row(), 1);
-    }
-
-    #[test]
-    fn given_all_tab_when_ta_is_pressed_then_the_cursor_and_scroll_stay() {
-        let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("2j");
-        let top_row = model.tabs.active_tab().log_view_state().top_row();
-
-        model.type_keys("ta");
-
-        assert_eq!(model.cursor_line(), Some(2));
-        assert_eq!(model.tabs.active_tab().log_view_state().top_row(), top_row);
-    }
-
-    #[test]
-    fn given_grep_tab_without_lines_yet_when_ta_is_pressed_then_the_all_tab_is_active_and_its_cursor_stays()
-     {
-        let mut model = make_model_with_text(SEARCHED_TEXT);
-        model.type_keys("2j");
-        start_grep(&mut model, "ERROR");
-
-        model.type_keys("ta");
-
-        assert!(model.tabs.active_tab().shows_all_lines());
-        assert_eq!(model.cursor_line(), Some(2));
-    }
-
-    #[test]
     fn given_cursors_moved_in_two_tabs_when_switching_between_them_then_each_keeps_its_cursor() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         model.type_keys("G");
         grep(&mut model, "ERROR");
         model.type_keys("j");
 
-        model.type_keys("tp");
+        model.type_keys("H");
         assert_eq!(model.cursor_line(), Some(5));
 
-        model.type_keys("tn");
+        model.type_keys("L");
         assert_eq!(model.cursor_line(), Some(4));
     }
 
@@ -278,7 +240,7 @@ mod tests {
         grep(&mut model, "ERROR");
         resize_log_view(&mut model, Size::new(20, 12));
 
-        model.type_keys("tp");
+        model.type_keys("H");
         model.press_ctrl('d');
 
         assert_eq!(model.tabs.active_tab().log_view_state().top_row(), 5);
@@ -296,32 +258,32 @@ mod tests {
     }
 
     #[test]
-    fn given_cursor_in_a_grep_tab_when_bb_is_pressed_then_its_file_line_is_bookmarked() {
+    fn given_cursor_in_a_grep_tab_when_space_b_is_pressed_then_its_file_line_is_bookmarked() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         grep(&mut model, "ERROR");
         model.type_keys("j");
 
-        model.type_keys("bb");
+        model.type_keys(" b");
 
         assert!(model.bookmarks.contains(4));
     }
 
     #[test]
-    fn given_grep_tab_when_tc_is_pressed_then_it_closes_and_the_all_tab_is_active() {
+    fn given_grep_tab_when_space_x_is_pressed_then_it_closes_and_the_all_tab_is_active() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
         grep(&mut model, "ERROR");
 
-        model.type_keys("tc");
+        model.type_keys(" x");
 
         assert_eq!(tab_names(&model), ["all"]);
         assert!(model.tabs.active_tab().shows_all_lines());
     }
 
     #[test]
-    fn given_all_tab_active_when_tc_is_pressed_then_an_error_says_it_cannot_be_closed() {
+    fn given_all_tab_active_when_space_x_is_pressed_then_an_error_says_it_cannot_be_closed() {
         let mut model = make_model_with_text(SEARCHED_TEXT);
 
-        model.type_keys("tc");
+        model.type_keys(" x");
 
         assert_eq!(
             model.status_message,
@@ -336,12 +298,40 @@ mod tests {
         start_grep(&mut model, "ERROR");
         let late_job_notifications = model.job_board.run_scheduled_jobs();
 
-        model.type_keys("tc");
+        model.type_keys(" x");
         model.handle_job_notifications(late_job_notifications);
 
         assert!(model.job_board.is_empty());
         assert_eq!(tab_names(&model), ["all"]);
         assert_eq!(model.status_message, None);
+    }
+
+    #[test]
+    fn given_two_grep_tabs_when_space_capital_x_is_pressed_then_both_close_and_the_all_tab_is_active()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+        grep(&mut model, "WARN");
+
+        model.type_keys(" X");
+
+        assert_eq!(tab_names(&model), ["all"]);
+        assert!(model.tabs.active_tab().shows_all_lines());
+        assert_eq!(model.status_message, None);
+    }
+
+    #[test]
+    fn given_two_running_greps_when_space_capital_x_is_pressed_then_both_jobs_are_cancelled() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        start_grep(&mut model, "ERROR");
+        start_grep(&mut model, "WARN");
+        let late_job_notifications = model.job_board.run_scheduled_jobs();
+
+        model.type_keys(" X");
+        model.handle_job_notifications(late_job_notifications);
+
+        assert!(model.job_board.is_empty());
+        assert_eq!(tab_names(&model), ["all"]);
     }
 
     #[test]

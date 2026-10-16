@@ -36,14 +36,8 @@ pub(super) fn dispatch_log_view(model: &mut Model, log_view_action: LogViewActio
         LogViewAction::ScrollHalfPageDown => log_view_state.scroll_half_page_down(row_count),
         LogViewAction::ScrollPageUp => log_view_state.scroll_page_up(row_count),
         LogViewAction::ScrollPageDown => log_view_state.scroll_page_down(row_count),
-        LogViewAction::ScrollLeft(columns_to_scroll) => {
-            log_view_state.scroll_left(columns_to_scroll)
-        }
-        LogViewAction::ScrollRight(columns_to_scroll) => {
-            log_view_state.scroll_right(columns_to_scroll)
-        }
-        LogViewAction::ScrollLeftWide => log_view_state.scroll_left_wide(),
-        LogViewAction::ScrollRightWide => log_view_state.scroll_right_wide(),
+        LogViewAction::ScrollLeftWide(steps) => log_view_state.scroll_left_wide(steps),
+        LogViewAction::ScrollRightWide(steps) => log_view_state.scroll_right_wide(steps),
         LogViewAction::ScrollToFirstColumn => log_view_state.scroll_to_first_column(),
     }
     Effect::Redraw
@@ -70,7 +64,7 @@ mod tests {
     #[test]
     fn given_open_command_line_when_terminal_is_resized_then_it_stays_open_with_its_text() {
         let mut model = make_model();
-        model.type_keys(":5");
+        model.type_keys("/5");
 
         resize_log_view(&mut model, Size::new(40, 10));
 
@@ -166,25 +160,25 @@ mod tests {
     }
 
     #[test]
-    fn given_count_when_l_then_h_are_pressed_then_view_scrolls_right_then_left() {
-        let mut model = make_model();
-        model.type_keys("3");
-        model.type_keys("l");
-
-        model.type_keys("h");
-
-        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 2);
-    }
-
-    #[test]
-    fn given_terminal_resized_to_100_columns_when_capital_l_is_pressed_then_view_scrolls_20_columns()
-     {
+    fn given_terminal_resized_to_100_columns_when_l_is_pressed_then_view_scrolls_20_columns() {
         let mut model = make_model();
         resize_log_view(&mut model, Size::new(100, 10));
 
-        model.type_keys("L");
+        model.type_keys("l");
 
         assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 20);
+    }
+
+    #[test]
+    fn given_100_columns_and_count_when_l_then_h_are_pressed_then_view_scrolls_three_steps_right_then_one_left()
+     {
+        let mut model = make_model();
+        resize_log_view(&mut model, Size::new(100, 10));
+        model.type_keys("3l");
+
+        model.type_keys("h");
+
+        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 40);
     }
 
     #[test]

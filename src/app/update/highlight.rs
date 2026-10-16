@@ -1,50 +1,42 @@
-use super::{Effect, app::show_error};
-use crate::{action::HighlightAction, app::Model, domain::search::SearchError};
+use super::{Effect, app::show_info};
+use crate::{action::HighlightAction, app::Model};
 
 pub(super) fn dispatch_highlight(model: &mut Model, highlight_action: HighlightAction) -> Effect {
     match highlight_action {
-        HighlightAction::Add(phrase) => add_highlight(model, phrase),
-        HighlightAction::AddSearchPhrase => add_search_phrase_highlight(model),
-        HighlightAction::Remove(phrase) => remove_highlight(model, &phrase),
+        HighlightAction::Toggle(phrase) => toggle_highlight(model, phrase),
         HighlightAction::RemoveAll => model.highlights.remove_all(),
     }
     Effect::Redraw
 }
 
-fn add_highlight(model: &mut Model, phrase: String) {
-    if let Err(highlight_error) = model.highlights.add(phrase) {
-        show_error(model, highlight_error.to_string());
-    }
-}
-
-fn add_search_phrase_highlight(model: &mut Model) {
-    let search_query = model.tabs.active_tab().search_state().query();
-    let Some(search_phrase) = search_query.map(|search_query| search_query.phrase.clone()) else {
-        show_error(model, SearchError::NoPreviousSearch.to_string());
-        return;
+fn toggle_highlight(model: &mut Model, phrase: String) {
+    let info_text = if model.highlights.contains(&phrase) {
+        format!("Highlight removed: {phrase}")
+    } else {
+        format!("Highlighted: {phrase}")
     };
 
-    add_highlight(model, search_phrase);
-}
-
-fn remove_highlight(model: &mut Model, phrase: &str) {
-    if let Err(highlight_error) = model.highlights.remove(phrase) {
-        show_error(model, highlight_error.to_string());
-    }
+    model.highlights.toggle(phrase);
+    show_info(model, info_text);
 }
 
 #[cfg(test)]
 mod tests {
+    use ratatui::crossterm::event::KeyCode;
+
     use super::*;
-    use crate::{
-        app::update::test_helpers::{
-            SEARCHED_TEXT, error_message, grep, make_model_with_text, run_command, search,
-        },
-        domain::highlights::HighlightError,
+    use crate::app::{
+        StatusMessage,
+        update::test_helpers::{SEARCHED_TEXT, make_model_with_text},
     };
 
     fn make_model() -> Model {
         make_model_with_text(SEARCHED_TEXT)
+    }
+
+    fn submit_highlight_line(model: &mut Model, phrase: &str) -> Effect {
+        model.type_keys(&format!(" h{phrase}"));
+        model.press(KeyCode::Enter)
     }
 
     fn highlighted_phrases(model: &Model) -> Vec<&str> {
@@ -56,98 +48,52 @@ mod tests {
     }
 
     #[test]
-    fn given_no_highlights_when_hl_is_run_with_a_phrase_then_the_phrase_is_highlighted() {
+    fn given_no_highlights_when_a_phrase_is_toggled_then_it_is_highlighted() {
         let mut model = make_model();
 
-        let effect = run_command(&mut model, "hl ERROR");
+        let effect = submit_highlight_line(&mut model, "ERROR");
 
         assert_eq!(effect, Effect::Redraw);
         assert_eq!(highlighted_phrases(&model), ["ERROR"]);
-        assert_eq!(model.status_message, None);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Info("Highlighted: ERROR".to_owned()))
+        );
     }
 
     #[test]
-    fn given_highlighted_phrase_when_hl_is_run_with_it_again_then_an_error_says_so() {
+    fn given_two_highlights_when_one_is_toggled_again_then_only_that_one_is_removed() {
         let mut model = make_model();
-        run_command(&mut model, "hl ERROR");
+        submit_highlight_line(&mut model, "ERROR");
+        submit_highlight_line(&mut model, "WARN");
 
-        run_command(&mut model, "hl ERROR");
+        submit_highlight_line(&mut model, "ERROR");
+
+        assert_eq!(highlighted_phrases(&model), ["WARN"]);
+        assert_eq!(
+            model.status_message,
+            Some(StatusMessage::Info("Highlight removed: ERROR".to_owned()))
+        );
+    }
+
+    #[test]
+    fn given_highlight_when_nothing_is_typed_on_the_highlight_line_then_it_is_kept() {
+        let mut model = make_model();
+        submit_highlight_line(&mut model, "ERROR");
+
+        submit_highlight_line(&mut model, "");
 
         assert_eq!(highlighted_phrases(&model), ["ERROR"]);
-        assert_eq!(
-            model.status_message,
-            error_message(HighlightError::AlreadyHighlighted("ERROR".to_owned()))
-        );
     }
 
     #[test]
-    fn given_search_when_hl_is_run_alone_then_the_search_phrase_is_highlighted() {
+    fn given_two_highlights_when_space_capital_h_is_pressed_then_both_are_removed() {
         let mut model = make_model();
-        search(&mut model, "/WARN");
+        submit_highlight_line(&mut model, "ERROR");
+        submit_highlight_line(&mut model, "WARN");
 
-        run_command(&mut model, "hl");
-
-        assert_eq!(highlighted_phrases(&model), ["WARN"]);
-    }
-
-    #[test]
-    fn given_no_search_when_hl_is_run_alone_then_an_error_says_so() {
-        let mut model = make_model();
-
-        run_command(&mut model, "hl");
+        model.type_keys(" H");
 
         assert!(highlighted_phrases(&model).is_empty());
-        assert_eq!(
-            model.status_message,
-            error_message(SearchError::NoPreviousSearch)
-        );
-    }
-
-    #[test]
-    fn given_searches_in_two_tabs_when_hl_is_run_alone_then_the_active_tabs_search_phrase_is_highlighted()
-     {
-        let mut model = make_model();
-        search(&mut model, "/WARN");
-        grep(&mut model, "ERROR");
-        search(&mut model, "/three");
-
-        run_command(&mut model, "hl");
-
-        assert_eq!(highlighted_phrases(&model), ["three"]);
-    }
-
-    #[test]
-    fn given_two_highlights_when_unhl_is_run_with_one_then_only_that_one_is_removed() {
-        let mut model = make_model();
-        run_command(&mut model, "hl ERROR");
-        run_command(&mut model, "hl WARN");
-
-        run_command(&mut model, "unhl ERROR");
-
-        assert_eq!(highlighted_phrases(&model), ["WARN"]);
-    }
-
-    #[test]
-    fn given_phrase_that_is_not_highlighted_when_unhl_is_run_with_it_then_an_error_says_so() {
-        let mut model = make_model();
-
-        run_command(&mut model, "unhl ERROR");
-
-        assert_eq!(
-            model.status_message,
-            error_message(HighlightError::NotHighlighted("ERROR".to_owned()))
-        );
-    }
-
-    #[test]
-    fn given_two_highlights_when_unhl_is_run_alone_then_both_are_removed() {
-        let mut model = make_model();
-        run_command(&mut model, "hl ERROR");
-        run_command(&mut model, "hl WARN");
-
-        run_command(&mut model, "unhl");
-
-        assert!(highlighted_phrases(&model).is_empty());
-        assert_eq!(model.status_message, None);
     }
 }

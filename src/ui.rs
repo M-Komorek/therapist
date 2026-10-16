@@ -120,7 +120,7 @@ mod tests {
     fn given_open_command_line_when_rendering_then_it_replaces_the_status_bar() {
         let mut model = make_model();
 
-        model.type_keys(":12");
+        model.type_keys(" g12");
 
         assert_eq!(
             render_model(&model),
@@ -128,7 +128,7 @@ mod tests {
                 " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
                 "  1 │ first",
                 "  2 │ second",
-                ":12"
+                "&12"
             ]
         );
     }
@@ -146,7 +146,7 @@ mod tests {
     fn given_wide_characters_on_the_command_line_when_rendering_then_the_cursor_is_at_the_editing_position()
      {
         let mut model = make_model();
-        model.type_keys(":漢x");
+        model.type_keys(" g漢x");
 
         model.press(KeyCode::Left);
 
@@ -154,14 +154,10 @@ mod tests {
     }
 
     #[test]
-    fn given_command_failed_when_rendering_then_the_error_shows_until_the_next_key() {
+    fn given_failed_key_when_rendering_then_the_error_shows_until_the_next_key() {
         let mut model = make_model();
-        model.type_keys(":abc");
-        model.press(KeyCode::Enter);
-        assert_eq!(
-            render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}Not a command: abc \u{1fb60}\u{1fb57} 1/2 (50%)"
-        );
+        model.type_keys("n");
+        assert!(render_model(&model)[3].contains("No previous search"));
 
         model.press(KeyCode::Esc);
 
@@ -273,13 +269,13 @@ mod tests {
             buffer[(6, 2)].bg == palette::YELLOW
         };
 
-        model.type_keys("&s");
+        model.type_keys(" gs");
         model.press(KeyCode::Enter);
         model.finish_scheduled_jobs();
 
         assert!(!render_model(&model)[3].contains("/sec"));
         assert!(!is_highlighted(&model));
-        model.type_keys("tn");
+        model.type_keys("L");
         assert!(render_model(&model)[3].contains("/sec [1/1]"));
         assert!(is_highlighted(&model));
     }
@@ -292,15 +288,15 @@ mod tests {
             let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
             buffer[(column, row)].bg
         };
-        model.type_keys("&sec");
+        model.type_keys(" gsec");
         model.press(KeyCode::Enter);
         model.finish_scheduled_jobs();
 
-        model.type_keys(":hl sec");
+        model.type_keys(" hsec");
         model.press(KeyCode::Enter);
         assert_eq!(background_at(&model, 6, 1), highlight_color);
 
-        model.type_keys("tn");
+        model.type_keys("L");
         assert_eq!(background_at(&model, 6, 2), highlight_color);
     }
 

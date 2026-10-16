@@ -112,10 +112,6 @@ impl Tabs {
         self.active_position = (self.active_position + tab_count - 1) % tab_count;
     }
 
-    pub fn switch_to_all_lines_tab(&mut self) {
-        self.active_position = 0;
-    }
-
     pub fn set_log_view_size(&mut self, height: usize, width: usize, file_line_count: usize) {
         for tab_state in &mut self.tab_states {
             let row_count = tab_state.row_count(file_line_count);
@@ -308,16 +304,6 @@ mod tests {
         tabs.switch_to_previous();
 
         assert_eq!(tabs.active_tab().name(), "WARN");
-    }
-
-    #[test]
-    fn given_grep_tab_active_when_switching_to_the_all_lines_tab_then_the_first_tab_is_active() {
-        let mut tabs = make_tabs_with_grep_tabs(&["ERROR", "WARN"]);
-
-        tabs.switch_to_all_lines_tab();
-
-        assert_eq!(tabs.active_position(), 0);
-        assert!(tabs.active_tab().shows_all_lines());
     }
 
     #[test]

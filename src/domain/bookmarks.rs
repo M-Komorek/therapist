@@ -26,6 +26,10 @@ impl Bookmarks {
         }
     }
 
+    pub fn remove_all(&mut self) {
+        self.bookmarked_lines.clear();
+    }
+
     pub fn contains(&self, line: usize) -> bool {
         self.bookmarked_lines.contains(&line)
     }

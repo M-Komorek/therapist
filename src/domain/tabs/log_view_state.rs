@@ -68,20 +68,16 @@ impl LogViewState {
         self.scroll_down_with_cursor(self.full_page(), row_count);
     }
 
-    pub fn scroll_left(&mut self, columns_to_scroll: usize) {
-        self.left_column = self.left_column.saturating_sub(columns_to_scroll);
-    }
-
     pub fn scroll_right(&mut self, columns_to_scroll: usize) {
         self.left_column = self.left_column.saturating_add(columns_to_scroll);
     }
 
-    pub fn scroll_left_wide(&mut self) {
-        self.scroll_left(self.wide_scroll());
+    pub fn scroll_left_wide(&mut self, steps: usize) {
+        self.scroll_left(self.wide_scroll().saturating_mul(steps));
     }
 
-    pub fn scroll_right_wide(&mut self) {
-        self.scroll_right(self.wide_scroll());
+    pub fn scroll_right_wide(&mut self, steps: usize) {
+        self.scroll_right(self.wide_scroll().saturating_mul(steps));
     }
 
     pub fn scroll_to_first_column(&mut self) {
@@ -177,6 +173,10 @@ impl LogViewState {
         CURSOR_CONTEXT_ROWS.min(self.height.saturating_sub(1) / 2)
     }
 
+    fn scroll_left(&mut self, columns_to_scroll: usize) {
+        self.left_column = self.left_column.saturating_sub(columns_to_scroll);
+    }
+
     fn wide_scroll(&self) -> usize {
         (self.width * WIDE_SCROLL_PERCENT / 100).max(1)
     }
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(sized_like_it.left_column(), 0);
         sized_like_it.scroll_page_down(100);
         assert_eq!(sized_like_it.top_row(), 10);
-        sized_like_it.scroll_right_wide();
+        sized_like_it.scroll_right_wide(1);
         assert_eq!(sized_like_it.left_column(), 16);
     }
 
@@ -585,10 +585,32 @@ mod tests {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.set_width(80);
 
-        log_view_state.scroll_right_wide();
+        log_view_state.scroll_right_wide(1);
         assert_eq!(log_view_state.left_column(), 16);
 
-        log_view_state.scroll_left_wide();
+        log_view_state.scroll_left_wide(1);
+        assert_eq!(log_view_state.left_column(), 0);
+    }
+
+    #[test]
+    fn given_80_column_viewport_when_scrolling_wide_three_steps_then_view_moves_48_columns() {
+        let mut log_view_state = make_log_view_state(10);
+        log_view_state.set_width(80);
+
+        log_view_state.scroll_right_wide(3);
+
+        assert_eq!(log_view_state.left_column(), 48);
+    }
+
+    #[test]
+    fn given_huge_step_count_when_scrolling_wide_then_columns_saturate_instead_of_overflowing() {
+        let mut log_view_state = make_log_view_state(10);
+        log_view_state.set_width(80);
+
+        log_view_state.scroll_right_wide(usize::MAX);
+        assert_eq!(log_view_state.left_column(), usize::MAX);
+
+        log_view_state.scroll_left_wide(usize::MAX);
         assert_eq!(log_view_state.left_column(), 0);
     }
 
@@ -597,7 +619,7 @@ mod tests {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.set_width(4);
 
-        log_view_state.scroll_right_wide();
+        log_view_state.scroll_right_wide(1);
 
         assert_eq!(log_view_state.left_column(), 1);
     }

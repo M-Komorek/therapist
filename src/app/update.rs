@@ -125,13 +125,8 @@ mod test_helpers {
         }
     }
 
-    pub(super) fn run_command(model: &mut Model, command_text: &str) -> Effect {
-        model.type_keys(&format!(":{command_text}"));
-        model.press(KeyCode::Enter)
-    }
-
     pub(super) fn start_grep(model: &mut Model, phrase: &str) {
-        model.type_keys(&format!("&{phrase}"));
+        model.type_keys(&format!(" g{phrase}"));
         model.press(KeyCode::Enter);
     }
 
@@ -155,15 +150,12 @@ mod test_helpers {
 mod tests {
     use ratatui::crossterm::event::KeyCode;
 
-    use super::{
-        Effect,
-        test_helpers::{make_model, run_command},
-    };
+    use super::{Effect, test_helpers::make_model};
 
     #[test]
     fn given_error_message_when_esc_is_pressed_then_it_is_cleared_and_redrawn() {
         let mut model = make_model();
-        run_command(&mut model, "abc");
+        model.type_keys("n");
 
         let effect = model.press(KeyCode::Esc);
 
@@ -174,7 +166,7 @@ mod tests {
     #[test]
     fn given_error_message_when_a_motion_key_is_pressed_then_it_is_cleared_and_the_motion_runs() {
         let mut model = make_model();
-        run_command(&mut model, "abc");
+        model.type_keys("n");
 
         model.type_keys("j");
 

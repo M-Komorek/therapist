@@ -1,14 +1,9 @@
-mod parser;
-
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
-    action::{Action, AppAction, CommandLineKind, SearchAction, TabAction},
+    action::{Action, CommandLineKind, HighlightAction, SearchAction, TabAction},
     domain::search::{SearchDirection, SearchQuery},
 };
-
-pub use parser::COMMAND_DESCRIPTIONS;
-use parser::parse_command;
 
 #[derive(Debug, PartialEq)]
 pub(super) enum CommandLineOutcome {
@@ -46,9 +41,9 @@ impl CommandLine {
 
     pub fn prefix(&self) -> char {
         match self.command_line_kind {
-            CommandLineKind::Command => ':',
             CommandLineKind::Search(direction) => direction.prefix(),
             CommandLineKind::Grep => '&',
+            CommandLineKind::Highlight => '*',
         }
     }
 
@@ -62,9 +57,9 @@ impl CommandLine {
 
     fn submission_outcome(&self) -> CommandLineOutcome {
         match self.command_line_kind {
-            CommandLineKind::Command => command_submission_outcome(&self.text),
             CommandLineKind::Search(direction) => search_submission_outcome(&self.text, direction),
             CommandLineKind::Grep => grep_submission_outcome(&self.text),
+            CommandLineKind::Highlight => highlight_submission_outcome(&self.text),
         }
     }
 
@@ -102,16 +97,6 @@ impl CommandLine {
     }
 }
 
-fn command_submission_outcome(command_text: &str) -> CommandLineOutcome {
-    match parse_command(command_text) {
-        Ok(Some(action)) => CommandLineOutcome::Submitted(action),
-        Ok(None) => CommandLineOutcome::Closed,
-        Err(error) => {
-            CommandLineOutcome::Submitted(Action::App(AppAction::ShowError(error.to_string())))
-        }
-    }
-}
-
 fn search_submission_outcome(phrase: &str, direction: SearchDirection) -> CommandLineOutcome {
     if phrase.is_empty() {
         let repeat_last_search = SearchAction::RepeatLast(direction);
@@ -133,6 +118,15 @@ fn grep_submission_outcome(phrase: &str) -> CommandLineOutcome {
     CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(phrase.to_owned())))
 }
 
+fn highlight_submission_outcome(phrase: &str) -> CommandLineOutcome {
+    if phrase.trim().is_empty() {
+        return CommandLineOutcome::Closed;
+    }
+
+    let toggle_highlight = HighlightAction::Toggle(phrase.to_owned());
+    CommandLineOutcome::Submitted(Action::Highlight(toggle_highlight))
+}
+
 fn is_text_input(modifiers: KeyModifiers) -> bool {
     !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
@@ -140,7 +134,6 @@ fn is_text_input(modifiers: KeyModifiers) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::action::HighlightAction;
 
     fn type_text(command_line: &mut CommandLine, typed: &str) {
         for character in typed.chars() {
@@ -153,7 +146,7 @@ mod tests {
     }
 
     fn make_command_line(typed: &str) -> CommandLine {
-        make_command_line_of_kind(CommandLineKind::Command, typed)
+        make_command_line_of_kind(CommandLineKind::Grep, typed)
     }
 
     fn make_command_line_of_kind(command_line_kind: CommandLineKind, typed: &str) -> CommandLine {
@@ -252,44 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn given_command_when_enter_is_pressed_then_its_action_is_submitted() {
-        let mut command_line = make_command_line("hl ERROR");
-
-        let outcome = press(&mut command_line, KeyCode::Enter);
-
-        assert_eq!(
-            outcome,
-            CommandLineOutcome::Submitted(Action::Highlight(HighlightAction::Add(
-                "ERROR".to_owned()
-            )))
-        );
-    }
-
-    #[test]
-    fn given_garbage_when_enter_is_pressed_then_showing_the_error_is_submitted() {
-        let mut command_line = make_command_line("abc");
-
-        let outcome = press(&mut command_line, KeyCode::Enter);
-
-        assert_eq!(
-            outcome,
-            CommandLineOutcome::Submitted(Action::App(AppAction::ShowError(
-                "Not a command: abc".to_owned()
-            )))
-        );
-    }
-
-    #[test]
-    fn given_blank_text_when_enter_is_pressed_then_the_command_line_closes() {
-        let mut command_line = make_command_line("  ");
-
-        assert_eq!(
-            press(&mut command_line, KeyCode::Enter),
-            CommandLineOutcome::Closed
-        );
-    }
-
-    #[test]
     fn given_text_when_esc_is_pressed_then_the_command_line_closes() {
         let mut command_line = make_command_line("50");
 
@@ -300,10 +255,9 @@ mod tests {
     }
 
     #[test]
-    fn given_each_kind_when_asking_for_the_prefix_then_it_is_the_key_that_opens_it() {
+    fn given_each_kind_when_asking_for_the_prefix_then_each_has_its_own_character() {
         let prefix_of = |command_line_kind| CommandLine::new(command_line_kind).prefix();
 
-        assert_eq!(prefix_of(CommandLineKind::Command), ':');
         assert_eq!(
             prefix_of(CommandLineKind::Search(SearchDirection::Forward)),
             '/'
@@ -313,6 +267,7 @@ mod tests {
             '?'
         );
         assert_eq!(prefix_of(CommandLineKind::Grep), '&');
+        assert_eq!(prefix_of(CommandLineKind::Highlight), '*');
     }
 
     #[test]
@@ -363,6 +318,31 @@ mod tests {
             press(&mut command_line, KeyCode::Enter),
             CommandLineOutcome::Closed
         );
+    }
+
+    #[test]
+    fn given_phrase_on_a_highlight_line_when_enter_is_pressed_then_toggling_it_is_submitted_as_typed()
+     {
+        let mut command_line = make_command_line_of_kind(CommandLineKind::Highlight, " ERROR ");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Submitted(Action::Highlight(HighlightAction::Toggle(
+                " ERROR ".to_owned()
+            )))
+        );
+    }
+
+    #[test]
+    fn given_empty_or_blank_highlight_line_when_enter_is_pressed_then_it_closes() {
+        for typed in ["", "   "] {
+            let mut command_line = make_command_line_of_kind(CommandLineKind::Highlight, typed);
+
+            assert_eq!(
+                press(&mut command_line, KeyCode::Enter),
+                CommandLineOutcome::Closed
+            );
+        }
     }
 
     #[test]

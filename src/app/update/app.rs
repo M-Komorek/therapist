@@ -16,10 +16,6 @@ pub(super) fn dispatch_app(model: &mut Model, app_action: AppAction) -> Effect {
             model.input_controller.open_help();
             Effect::Redraw
         }
-        AppAction::ShowError(error_text) => {
-            show_error(model, error_text);
-            Effect::Redraw
-        }
         #[cfg(debug_assertions)]
         AppAction::DebugPanic => panic!("Debug panic key pressed"),
     }
@@ -39,22 +35,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        app::update::test_helpers::{command_line_text, make_model, run_command},
+        app::update::test_helpers::{command_line_text, make_model},
         control::Mode,
     };
 
     fn is_help_open(model: &Model) -> bool {
         matches!(model.input_controller.mode(), Mode::Help)
-    }
-
-    #[test]
-    fn given_app_when_colon_is_pressed_then_the_command_line_opens_empty() {
-        let mut model = make_model();
-
-        let effect = model.type_keys(":");
-
-        assert_eq!(effect, Effect::Redraw);
-        assert_eq!(command_line_text(&model), Some(""));
     }
 
     #[test]
@@ -68,13 +54,13 @@ mod tests {
     }
 
     #[test]
-    fn given_grep_tab_when_a_search_or_grep_line_is_opened_then_it_opens() {
+    fn given_grep_tab_when_a_search_grep_or_highlight_line_is_opened_then_it_opens() {
         let mut model = make_model();
-        model.type_keys("&first");
+        model.type_keys(" gfirst");
         model.press(KeyCode::Enter);
 
-        for opening_key in ["/", "?", "&", ":"] {
-            model.type_keys(opening_key);
+        for opening_keys in ["/", "?", " g", " h"] {
+            model.type_keys(opening_keys);
 
             assert_eq!(command_line_text(&model), Some(""));
             model.press(KeyCode::Esc);
@@ -85,24 +71,11 @@ mod tests {
     fn given_open_command_line_when_motion_and_quit_keys_are_typed_then_they_go_to_it() {
         let mut model = make_model();
 
-        let effect = model.type_keys(":jq");
+        let effect = model.type_keys("/jq");
 
         assert_eq!(effect, Effect::Redraw);
         assert_eq!(command_line_text(&model), Some("jq"));
         assert_eq!(model.cursor_line(), Some(0));
-    }
-
-    #[test]
-    fn given_garbage_when_submitted_then_an_error_message_is_set_and_the_command_line_closes() {
-        let mut model = make_model();
-
-        run_command(&mut model, "abc");
-
-        assert_eq!(
-            model.status_message.as_ref(),
-            Some(&StatusMessage::Error("Not a command: abc".to_owned()))
-        );
-        assert_eq!(command_line_text(&model), None);
     }
 
     #[test]
@@ -116,25 +89,26 @@ mod tests {
     }
 
     #[test]
-    fn given_app_when_help_command_is_run_then_the_help_opens() {
-        let mut model = make_model();
-
-        let effect = run_command(&mut model, "help");
-
-        assert_eq!(effect, Effect::Redraw);
-        assert!(is_help_open(&model));
-    }
-
-    #[test]
-    fn given_open_help_when_j_and_q_are_typed_then_it_closes_without_moving_or_quitting() {
+    fn given_open_help_when_j_and_q_are_typed_then_it_stays_open_without_moving_or_quitting() {
         let mut model = make_model();
         model.press(KeyCode::F(1));
 
         let effect = model.type_keys("jq");
 
+        assert_ne!(effect, Effect::Quit);
+        assert!(is_help_open(&model));
+        assert_eq!(model.cursor_line(), Some(0));
+    }
+
+    #[test]
+    fn given_open_help_when_esc_is_pressed_then_it_closes() {
+        let mut model = make_model();
+        model.press(KeyCode::F(1));
+
+        let effect = model.press(KeyCode::Esc);
+
         assert_eq!(effect, Effect::Redraw);
         assert!(!is_help_open(&model));
-        assert_eq!(model.cursor_line(), Some(0));
     }
 
     #[test]
