@@ -9,7 +9,7 @@ use super::{BAR_STYLE, palette, slanted_edge};
 use crate::{
     app::{Model, StatusMessage},
     domain::{
-        log_file::IndexingStatus,
+        log_file::{IndexingStatus, LogFile},
         tabs::{GrepState, SearchState},
     },
     jobs::JobSlot,
@@ -28,51 +28,23 @@ const FILE_SIZE_SEGMENT_STYLE: Style = Style::new()
 const FILE_SIZE_UNITS: [&str; 4] = ["kB", "MB", "GB", "TB"];
 
 pub fn render(frame: &mut Frame, area: Rect, model: &Model) {
-    let log_file = &model.log_file;
-    let line_count = log_file.line_count();
-    let active_tab = model.tabs.active_tab();
-    let cursor_row = active_tab.log_view_state().cursor_row();
-    let cursor_line = active_tab.cursor_line(line_count).unwrap_or_default();
-    let is_grepping = model
-        .job_board
-        .has_job(JobSlot::Grepping(active_tab.tab_id()));
-    let is_row_count_final = if active_tab.shows_all_lines() {
-        log_file.indexing_status() == IndexingStatus::Done
-    } else {
-        !is_grepping
-    };
     let last_keys = model.input_controller.last_keys_text();
-    let message_span = message_span(
-        model.status_message.as_ref(),
-        log_file.indexing_status(),
-        log_file.percent_indexed(),
+    let right_line = right_line(
+        right_segments(&last_keys, model),
+        active_tab_position_text(model),
     );
-    let search_span = search_span(
-        active_tab.search_state(),
-        cursor_line,
-        model
-            .job_board
-            .has_job(JobSlot::Searching(active_tab.tab_id())),
-    );
-    let percent_grepped = active_tab.grep_state().map(GrepState::percent_grepped);
-    let grepping_span = grepping_span(percent_grepped, is_grepping);
-    let row_position_text = row_position_text(
-        cursor_row,
-        active_tab.row_count(line_count),
-        is_row_count_final,
-    );
-    let position_text = position_text(row_position_text, active_tab.log_view_state().left_column());
-    let right_segments = right_segments(&last_keys, message_span, search_span, grepping_span);
-    let right_line = right_line(right_segments, position_text);
-    let left_line = left_line(&log_file.file_name(), file_size_text(log_file.file_size()));
-    let left_line = with_help_hint_if_it_fits(left_line, right_line.width(), area.width);
+    let left_line =
+        with_help_hint_if_it_fits(left_line(&model.log_file), right_line.width(), area.width);
 
     frame.buffer_mut().set_style(area, BAR_STYLE);
     frame.render_widget(left_line, area);
     frame.render_widget(right_line, area);
 }
 
-fn left_line(file_name: &str, file_size_text: String) -> Line<'static> {
+fn left_line(log_file: &LogFile) -> Line<'static> {
+    let file_name = log_file.file_name();
+    let file_size_text = file_size_text(log_file.file_size());
+
     Line::from(vec![
         Span::styled(format!(" {file_name} "), ACCENT_SEGMENT_STYLE),
         slanted_edge(palette::YELLOW, palette::BACKGROUND_HIGHLIGHT),
@@ -93,20 +65,59 @@ fn with_help_hint_if_it_fits(
     left_line
 }
 
-fn right_segments<'a>(
-    last_keys: &'a str,
-    message_span: Option<Span<'a>>,
-    search_span: Option<Span<'a>>,
-    grepping_span: Option<Span<'a>>,
-) -> Vec<Span<'a>> {
+fn right_segments<'a>(last_keys: &'a str, model: &'a Model) -> Vec<Span<'a>> {
+    let log_file = &model.log_file;
+    let active_tab = model.tabs.active_tab();
+    let cursor_line = active_tab
+        .cursor_line(log_file.line_count())
+        .unwrap_or_default();
+    let is_searching = model
+        .job_board
+        .has_job(JobSlot::Searching(active_tab.tab_id()));
+    let percent_grepped = active_tab.grep_state().map(GrepState::percent_grepped);
     let mut segments = Vec::new();
+
     if !last_keys.is_empty() {
         segments.push(last_keys.fg(palette::PURPLE));
     }
-    segments.extend(message_span);
-    segments.extend(search_span);
-    segments.extend(grepping_span);
+    segments.extend(message_span(
+        model.status_message.as_ref(),
+        log_file.indexing_status(),
+        log_file.percent_indexed(),
+    ));
+    segments.extend(search_span(
+        active_tab.search_state(),
+        cursor_line,
+        is_searching,
+    ));
+    segments.extend(grepping_span(
+        percent_grepped,
+        is_active_tab_grepping(model),
+    ));
     segments
+}
+
+fn active_tab_position_text(model: &Model) -> String {
+    let line_count = model.log_file.line_count();
+    let active_tab = model.tabs.active_tab();
+    let log_view_state = active_tab.log_view_state();
+    let is_row_count_final = if active_tab.shows_all_lines() {
+        model.log_file.indexing_status() == IndexingStatus::Done
+    } else {
+        !is_active_tab_grepping(model)
+    };
+    let row_position_text = row_position_text(
+        log_view_state.cursor_row(),
+        active_tab.row_count(line_count),
+        is_row_count_final,
+    );
+
+    position_text(row_position_text, log_view_state.left_column())
+}
+
+fn is_active_tab_grepping(model: &Model) -> bool {
+    let active_tab_id = model.tabs.active_tab().tab_id();
+    model.job_board.has_job(JobSlot::Grepping(active_tab_id))
 }
 
 fn right_line(segments: Vec<Span<'_>>, position_text: String) -> Line<'_> {

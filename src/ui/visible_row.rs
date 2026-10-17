@@ -35,9 +35,7 @@ pub(super) fn visible_row(
     let has_matches = match_layers
         .iter()
         .any(|match_layer| !match_layer.match_ranges.is_empty());
-    let bytes_through_visible_end =
-        &text.as_bytes()[..visible_columns.end.saturating_add(1).min(text.len())];
-    if !has_matches && is_printable_ascii(bytes_through_visible_end) {
+    if !has_matches && is_printable_ascii_through(text, visible_columns.end) {
         return ascii_visible_row(text, visible_columns);
     }
     let mut row_builder = VisibleRowBuilder::new(visible_columns, match_layers);
@@ -60,8 +58,11 @@ pub(super) fn visible_row(
     row_builder.visible_row
 }
 
-fn is_printable_ascii(bytes: &[u8]) -> bool {
-    bytes.iter().all(|byte| matches!(byte, b' '..=b'~'))
+fn is_printable_ascii_through(text: &str, last_byte_offset: usize) -> bool {
+    let bytes_through_last = &text.as_bytes()[..last_byte_offset.saturating_add(1).min(text.len())];
+    bytes_through_last
+        .iter()
+        .all(|byte| matches!(byte, b' '..=b'~'))
 }
 
 fn ascii_visible_row(text: &str, visible_columns: Range<usize>) -> VisibleRow {
