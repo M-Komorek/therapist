@@ -45,12 +45,13 @@ Press `F1` in the app for the list of keys.
 
 ### Key bindings
 
-The keys follow one idea:
-- Plain keys move.
-- `Space` + a letter acts on one thing.
-- `Space` + the capital letter acts on all of them.
+Moving needs no prefix. Changing something starts with `Space`:
+- Plain keys move: through lines, matches, bookmarks and tabs.
+- `Space` + a letter adds or removes one thing: a bookmark, a grep tab, a highlight.
+- `Space` + the capital letter removes all of them.
 
 So <kbd>Space</kbd> <kbd>b</kbd> toggles one bookmark and <kbd>Space</kbd> <kbd>B</kbd> removes them all.
+
 
 | Key | Action |
 |---|---|
