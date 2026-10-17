@@ -160,13 +160,13 @@ mod tests {
     }
 
     #[test]
-    fn given_terminal_resized_to_100_columns_when_l_is_pressed_then_view_scrolls_20_columns() {
+    fn given_terminal_resized_to_100_columns_when_l_is_pressed_then_view_scrolls_10_columns() {
         let mut model = make_model();
         resize_log_view(&mut model, Size::new(100, 10));
 
         model.type_keys("l");
 
-        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 20);
+        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 10);
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod tests {
 
         model.type_keys("h");
 
-        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 40);
+        assert_eq!(model.tabs.active_tab().log_view_state().left_column(), 20);
     }
 
     #[test]

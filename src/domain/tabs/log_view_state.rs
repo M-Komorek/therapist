@@ -218,7 +218,7 @@ mod tests {
         sized_like_it.scroll_page_down(100);
         assert_eq!(sized_like_it.top_row(), 10);
         sized_like_it.scroll_right_wide(1);
-        assert_eq!(sized_like_it.left_column(), 16);
+        assert_eq!(sized_like_it.left_column(), 8);
     }
 
     #[test]
@@ -581,25 +581,25 @@ mod tests {
     }
 
     #[test]
-    fn given_80_column_viewport_when_scrolling_wide_then_view_moves_16_columns() {
+    fn given_80_column_viewport_when_scrolling_wide_then_view_moves_8_columns() {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.set_width(80);
 
         log_view_state.scroll_right_wide(1);
-        assert_eq!(log_view_state.left_column(), 16);
+        assert_eq!(log_view_state.left_column(), 8);
 
         log_view_state.scroll_left_wide(1);
         assert_eq!(log_view_state.left_column(), 0);
     }
 
     #[test]
-    fn given_80_column_viewport_when_scrolling_wide_three_steps_then_view_moves_48_columns() {
+    fn given_80_column_viewport_when_scrolling_wide_three_steps_then_view_moves_24_columns() {
         let mut log_view_state = make_log_view_state(10);
         log_view_state.set_width(80);
 
         log_view_state.scroll_right_wide(3);
 
-        assert_eq!(log_view_state.left_column(), 48);
+        assert_eq!(log_view_state.left_column(), 24);
     }
 
     #[test]
@@ -615,9 +615,9 @@ mod tests {
     }
 
     #[test]
-    fn given_viewport_narrower_than_five_columns_when_scrolling_wide_then_view_moves_one_column() {
+    fn given_viewport_narrower_than_ten_columns_when_scrolling_wide_then_view_moves_one_column() {
         let mut log_view_state = make_log_view_state(10);
-        log_view_state.set_width(4);
+        log_view_state.set_width(9);
 
         log_view_state.scroll_right_wide(1);
 
