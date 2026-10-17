@@ -3,14 +3,14 @@ use std::ops::RangeInclusive;
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
-use super::{BAR_STYLE, palette, slanted_edge};
+use super::{BAR_STYLE, palette};
 use crate::domain::tabs::Tabs;
 
-const WORDMARK: &str = " therapist ";
+const WORDMARK: &str = " therapist ~ ";
 const WORDMARK_STYLE: Style = Style::new()
     .fg(palette::BACKGROUND_DARK)
     .bg(palette::YELLOW)
@@ -48,29 +48,18 @@ fn visible_tab_positions(tabs: &Tabs, width: usize) -> RangeInclusive<usize> {
 
 fn tab_bar_line(tabs: &Tabs, visible_positions: RangeInclusive<usize>) -> Line<'static> {
     let mut tab_bar_line = Line::from(Span::styled(WORDMARK, WORDMARK_STYLE));
-    let mut left_background = palette::YELLOW;
     if *visible_positions.start() > 0 {
-        tab_bar_line.extend(edge_between(left_background, palette::BACKGROUND_DARK));
         tab_bar_line.push_span(Span::styled(
             LEFT_HIDDEN_TABS_MARKER,
             HIDDEN_TABS_MARKER_STYLE,
         ));
-        left_background = palette::BACKGROUND_DARK;
     }
     let tab_states = &tabs.tab_states()[visible_positions.clone()];
     for (position, tab_state) in visible_positions.clone().zip(tab_states) {
         let is_active = position == tabs.active_position();
-        let tab_background = if is_active {
-            palette::BACKGROUND_HIGHLIGHT
-        } else {
-            palette::BACKGROUND_DARK
-        };
-        tab_bar_line.extend(edge_between(left_background, tab_background));
         tab_bar_line.extend(tab_label(&tab_state.name(), is_active));
-        left_background = tab_background;
     }
 
-    tab_bar_line.extend(edge_between(left_background, palette::BACKGROUND_DARK));
     if *visible_positions.end() < tabs.tab_states().len() - 1 {
         tab_bar_line.push_span(Span::styled(
             RIGHT_HIDDEN_TABS_MARKER,
@@ -78,10 +67,6 @@ fn tab_bar_line(tabs: &Tabs, visible_positions: RangeInclusive<usize>) -> Line<'
         ));
     }
     tab_bar_line
-}
-
-fn edge_between(left_background: Color, right_background: Color) -> Option<Span<'static>> {
-    (left_background != right_background).then(|| slanted_edge(left_background, right_background))
 }
 
 fn tab_label(name: &str, is_active: bool) -> [Span<'static>; 3] {
@@ -111,17 +96,16 @@ mod tests {
     #[test]
     fn given_only_the_all_tab_when_rendering_then_the_wordmark_leads_and_the_tab_sits_on_the_highlight_background()
      {
-        let buffer = render_tab_bar(&Tabs::default(), 24);
+        let buffer = render_tab_bar(&Tabs::default(), 22);
 
-        assert_eq!(
-            rendered_rows(&buffer),
-            [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}"]
-        );
+        assert_eq!(rendered_rows(&buffer), [" therapist ~  [all]"]);
         assert_eq!(buffer[(1, 0)].bg, palette::YELLOW);
-        assert_eq!(buffer[(11, 0)].fg, palette::YELLOW);
-        assert_eq!(buffer[(11, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
+        assert_eq!(buffer[(11, 0)].symbol(), "~");
+        assert_eq!(buffer[(11, 0)].bg, palette::YELLOW);
+        assert_eq!(buffer[(13, 0)].fg, palette::YELLOW);
         assert_eq!(buffer[(13, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
-        assert_eq!(buffer[(21, 0)].bg, palette::BACKGROUND_DARK);
+        assert_eq!(buffer[(15, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
+        assert_eq!(buffer[(20, 0)].bg, palette::BACKGROUND_DARK);
     }
 
     #[test]
@@ -130,34 +114,16 @@ mod tests {
         let mut tabs = Tabs::default();
         tabs.open_grep_tab(vec!["ERROR".to_owned()]);
 
-        let buffer = render_tab_bar(&tabs, 40);
+        let buffer = render_tab_bar(&tabs, 33);
 
-        assert_eq!(
-            rendered_rows(&buffer),
-            [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57} [ERROR] \u{1fb60}\u{1fb57}"]
-        );
+        assert_eq!(rendered_rows(&buffer), [" therapist ~  [all]  [ERROR]"]);
         assert_eq!(buffer[(14, 0)].fg, palette::FOREGROUND_FAINT);
         assert_eq!(buffer[(15, 0)].fg, palette::FOREGROUND_DARK);
         assert_eq!(buffer[(15, 0)].bg, palette::BACKGROUND_DARK);
-        assert_eq!(buffer[(23, 0)].fg, palette::YELLOW);
-        assert_eq!(buffer[(24, 0)].fg, palette::YELLOW);
-        assert_eq!(buffer[(24, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
-        assert!(buffer[(24, 0)].modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn given_inactive_tabs_next_to_each_other_when_rendering_then_no_edge_separates_them() {
-        let mut tabs = Tabs::default();
-        tabs.open_grep_tab(vec!["ERROR".to_owned()]);
-        tabs.open_grep_tab(vec!["WARN".to_owned()]);
-
-        tabs.switch_to_next();
-
-        let buffer = render_tab_bar(&tabs, 40);
-        assert_eq!(
-            rendered_rows(&buffer),
-            [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57} [ERROR]  [WARN]"]
-        );
+        assert_eq!(buffer[(21, 0)].fg, palette::YELLOW);
+        assert_eq!(buffer[(22, 0)].fg, palette::YELLOW);
+        assert_eq!(buffer[(22, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
+        assert!(buffer[(22, 0)].modifier.contains(Modifier::BOLD));
     }
 
     fn make_four_tabs() -> Tabs {
@@ -173,13 +139,10 @@ mod tests {
      {
         let tabs = make_four_tabs();
 
-        let buffer = render_tab_bar(&tabs, 30);
+        let buffer = render_tab_bar(&tabs, 26);
 
-        assert_eq!(
-            rendered_rows(&buffer),
-            [" therapist \u{1fb60}\u{1fb57} < \u{1fb60}\u{1fb57} [INFO] \u{1fb60}\u{1fb57}"]
-        );
-        assert_eq!(buffer[(14, 0)].fg, palette::FOREGROUND_FAINT);
+        assert_eq!(rendered_rows(&buffer), [" therapist ~  <  [INFO]"]);
+        assert_eq!(buffer[(13, 0)].fg, palette::FOREGROUND_FAINT);
     }
 
     #[test]
@@ -188,12 +151,9 @@ mod tests {
         let mut tabs = make_four_tabs();
         tabs.switch_to_next();
 
-        let buffer = render_tab_bar(&tabs, 30);
+        let buffer = render_tab_bar(&tabs, 26);
 
-        assert_eq!(
-            rendered_rows(&buffer),
-            [" therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57} >"]
-        );
+        assert_eq!(rendered_rows(&buffer), [" therapist ~  [all]  >"]);
     }
 
     #[test]
@@ -202,13 +162,11 @@ mod tests {
         let mut tabs = make_four_tabs();
         tabs.switch_to_previous();
 
-        let buffer = render_tab_bar(&tabs, 40);
+        let buffer = render_tab_bar(&tabs, 36);
 
         assert_eq!(
             rendered_rows(&buffer),
-            [
-                " therapist \u{1fb60}\u{1fb57} <  [ERROR] \u{1fb60}\u{1fb57} [WARN] \u{1fb60}\u{1fb57} >"
-            ]
+            [" therapist ~  <  [ERROR]  [WARN]  >"]
         );
     }
 

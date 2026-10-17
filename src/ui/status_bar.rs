@@ -5,7 +5,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::{BAR_STYLE, palette, slanted_edge};
+use super::{BAR_STYLE, palette};
 use crate::{
     app::{Model, StatusMessage},
     domain::{
@@ -47,9 +47,7 @@ fn left_line(log_file: &LogFile) -> Line<'static> {
 
     Line::from(vec![
         Span::styled(format!(" {file_name} "), ACCENT_SEGMENT_STYLE),
-        slanted_edge(palette::YELLOW, palette::BACKGROUND_HIGHLIGHT),
         Span::styled(format!(" {file_size_text} "), FILE_SIZE_SEGMENT_STYLE),
-        slanted_edge(palette::BACKGROUND_HIGHLIGHT, palette::BACKGROUND_DARK),
     ])
 }
 
@@ -130,7 +128,6 @@ fn right_line(segments: Vec<Span<'_>>, position_text: String) -> Line<'_> {
     }
 
     right_line.push_span(" ");
-    right_line.push_span(slanted_edge(palette::BACKGROUND_DARK, palette::YELLOW));
     right_line.push_span(Span::styled(
         format!(" {position_text} "),
         ACCENT_SEGMENT_STYLE,
@@ -258,10 +255,7 @@ mod tests {
             phrase_matching::MatchingLinesBatch,
             search::{SearchDirection, SearchQuery},
         },
-        ui::{
-            SLANTED_EDGE,
-            tests::{render_to_buffer, rendered_rows},
-        },
+        ui::tests::{render_to_buffer, rendered_rows},
     };
 
     fn make_model(text: &str) -> Model {
@@ -271,11 +265,11 @@ mod tests {
     }
 
     fn make_unindexed_model(text: &str) -> Model {
-        Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(50, 3))
+        Model::with_screen_size(LogFile::unindexed_from_text(text), Size::new(44, 3))
     }
 
     fn render_status_buffer(model: &Model) -> Buffer {
-        render_to_buffer(50, 1, |frame| render(frame, frame.area(), model))
+        render_to_buffer(44, 1, |frame| render(frame, frame.area(), model))
     }
 
     fn render_status(model: &Model) -> String {
@@ -359,13 +353,11 @@ mod tests {
 
         assert_eq!(
             rendered_rows(&buffer),
-            [
-                " app.log \u{1fb60}\u{1fb57} 4 B \u{1fb60}\u{1fb57}  Not a command: x \u{1fb60}\u{1fb57} 1/2 (50%)"
-            ]
+            [" app.log  4 B   Not a command: x  1/2 (50%)"]
         );
-        assert_eq!(buffer[(21, 0)].fg, palette::RED);
+        assert_eq!(buffer[(17, 0)].fg, palette::RED);
         assert_ne!(buffer[(1, 0)].fg, palette::RED);
-        assert_ne!(buffer[(48, 0)].fg, palette::RED);
+        assert_ne!(buffer[(42, 0)].fg, palette::RED);
     }
 
     #[test]
@@ -377,11 +369,9 @@ mod tests {
 
         assert_eq!(
             rendered_rows(&buffer),
-            [
-                " app.log \u{1fb60}\u{1fb57} 4 B \u{1fb60}\u{1fb57} search hit BOTTOM \u{1fb60}\u{1fb57} 1/2 (50%)"
-            ]
+            [" app.log  4 B  search hit BOTTOM  1/2 (50%)"]
         );
-        assert_eq!(buffer[(20, 0)].fg, palette::FOREGROUND_DARK);
+        assert_eq!(buffer[(16, 0)].fg, palette::FOREGROUND_DARK);
     }
 
     #[test]
@@ -391,7 +381,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 4 B \u{1fb60}\u{1fb57}       Not a command: x \u{1fb60}\u{1fb57} 0/0+"
+            " app.log  4 B        Not a command: x  0/0+"
         );
     }
 
@@ -407,7 +397,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57} F1 help           \u{1fb60}\u{1fb57} 2/4 (50%)"
+            " app.log  8 B  F1 help            2/4 (50%)"
         );
     }
 
@@ -417,16 +407,15 @@ mod tests {
         let buffer = render_status_buffer(&make_model("a\nb\nc\nd\n"));
 
         let background_at = |column| buffer[(column, 0)].bg;
-        let edge_at =
-            |column| buffer[(column, 0)].symbol().to_owned() + buffer[(column + 1, 0)].symbol();
         assert_eq!(background_at(1), palette::YELLOW);
         assert!(buffer[(1, 0)].modifier.contains(Modifier::BOLD));
-        assert_eq!(edge_at(9), SLANTED_EDGE);
-        assert_eq!(background_at(11), palette::BACKGROUND_HIGHLIGHT);
-        assert_eq!(background_at(20), palette::BACKGROUND_DARK);
-        assert_eq!(edge_at(37), SLANTED_EDGE);
-        assert_eq!(background_at(40), palette::YELLOW);
-        assert_eq!(background_at(49), palette::YELLOW);
+        assert_eq!(background_at(8), palette::YELLOW);
+        assert_eq!(background_at(9), palette::BACKGROUND_HIGHLIGHT);
+        assert_eq!(background_at(13), palette::BACKGROUND_HIGHLIGHT);
+        assert_eq!(background_at(14), palette::BACKGROUND_DARK);
+        assert_eq!(background_at(32), palette::BACKGROUND_DARK);
+        assert_eq!(background_at(33), palette::YELLOW);
+        assert_eq!(background_at(43), palette::YELLOW);
     }
 
     #[test]
@@ -440,20 +429,18 @@ mod tests {
 
         assert_eq!(
             rendered_rows(&buffer),
-            [
-                " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57}        2j · hello \u{1fb60}\u{1fb57} 3/4 (75%)"
-            ]
+            [" app.log  8 B         2j · hello  3/4 (75%)"]
         );
-        assert_eq!(buffer[(27, 0)].fg, palette::PURPLE);
-        assert_eq!(buffer[(30, 0)].fg, palette::FOREGROUND_FAINT);
-        assert_eq!(buffer[(32, 0)].fg, palette::FOREGROUND_DARK);
+        assert_eq!(buffer[(23, 0)].fg, palette::PURPLE);
+        assert_eq!(buffer[(26, 0)].fg, palette::FOREGROUND_FAINT);
+        assert_eq!(buffer[(28, 0)].fg, palette::FOREGROUND_DARK);
     }
 
     #[test]
     fn given_empty_file_when_rendering_then_position_is_zero_of_zero() {
         assert_eq!(
             render_status(&make_model("")),
-            " app.log \u{1fb60}\u{1fb57} 0 B \u{1fb60}\u{1fb57} F1 help                 \u{1fb60}\u{1fb57} 0/0"
+            " app.log  0 B  F1 help                  0/0"
         );
     }
 
@@ -465,7 +452,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57} F1 help        2j \u{1fb60}\u{1fb57} 3/4 (75%)"
+            " app.log  8 B  F1 help        2j  3/4 (75%)"
         );
     }
 
@@ -478,7 +465,7 @@ mod tests {
     fn given_file_still_indexing_when_rendering_then_progress_comes_before_the_total_with_a_plus() {
         assert_eq!(
             render_status(&make_unindexed_model("a\nb\n")),
-            " app.log \u{1fb60}\u{1fb57} 4 B \u{1fb60}\u{1fb57} indexing ────────── 0% \u{1fb60}\u{1fb57} 0/0+"
+            " app.log  4 B  indexing ────────── 0%  0/0+"
         );
     }
 
@@ -489,7 +476,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 8 B \u{1fb60}\u{1fb57}        indexing failed \u{1fb60}\u{1fb57} 1/4+"
+            " app.log  8 B         indexing failed  1/4+"
         );
     }
 
@@ -527,9 +514,9 @@ mod tests {
     fn given_room_on_the_bar_when_rendering_then_the_help_hint_follows_the_file_size_faintly() {
         let buffer = render_status_buffer(&make_model("a\nb\n"));
 
-        assert!(rendered_rows(&buffer)[0].contains("\u{1fb60}\u{1fb57} F1 help "));
-        assert_eq!(buffer[(19, 0)].symbol(), "F");
-        assert_eq!(buffer[(19, 0)].fg, palette::FOREGROUND_FAINT);
+        assert!(rendered_rows(&buffer)[0].contains(" F1 help "));
+        assert_eq!(buffer[(15, 0)].symbol(), "F");
+        assert_eq!(buffer[(15, 0)].fg, palette::FOREGROUND_FAINT);
     }
 
     #[test]
@@ -578,7 +565,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 22 B grepping ━━━━━━━━━━ 100% \u{1fb60}\u{1fb57} 1/2+"
+            " app.log  22 grepping ━━━━━━━━━━ 100%  1/2+"
         );
     }
 
@@ -592,7 +579,7 @@ mod tests {
 
         assert_eq!(
             render_status(&model),
-            " app.log \u{1fb60}\u{1fb57} 22 B \u{1fb60}\u{1fb57} F1 help       j \u{1fb60}\u{1fb57} 2/2 (100%)"
+            " app.log  22 B  F1 help       j  2/2 (100%)"
         );
     }
 

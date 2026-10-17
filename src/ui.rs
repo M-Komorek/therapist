@@ -9,7 +9,6 @@ mod visible_row;
 use ratatui::{
     Frame,
     style::{Color, Style},
-    text::Span,
 };
 
 use crate::{
@@ -20,7 +19,6 @@ use crate::{
 const BAR_STYLE: Style = Style::new()
     .fg(palette::FOREGROUND_DARK)
     .bg(palette::BACKGROUND_DARK);
-const SLANTED_EDGE: &str = "\u{1fb60}\u{1fb57}";
 
 pub const TERMINAL_BACKGROUND: Color = palette::BACKGROUND;
 
@@ -54,10 +52,6 @@ pub fn render(frame: &mut Frame, model: &Model) {
             help::render(frame, screen_areas.log_view);
         }
     }
-}
-
-fn slanted_edge(left_color: Color, right_color: Color) -> Span<'static> {
-    Span::styled(SLANTED_EDGE, Style::new().fg(left_color).bg(right_color))
 }
 
 #[cfg(test)]
@@ -96,7 +90,7 @@ mod tests {
 
     fn make_model() -> Model {
         let mut model =
-            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(50, 4));
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(44, 4));
         model.finish_scheduled_jobs();
         model
     }
@@ -107,7 +101,7 @@ mod tests {
     }
 
     fn render_model(model: &Model) -> Vec<String> {
-        rendered_rows(&render_to_buffer(50, 4, |frame| render(frame, model)))
+        rendered_rows(&render_to_buffer(44, 4, |frame| render(frame, model)))
     }
 
     fn cursor_position_after_render(model: &Model) -> Position {
@@ -124,12 +118,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model),
-            [
-                " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
-                "  1 │ first",
-                "  2 │ second",
-                "&12"
-            ]
+            [" therapist ~  [all]", "  1 │ first", "  2 │ second", "&12"]
         );
     }
 
@@ -163,7 +152,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help    <Esc> \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log  13 B  F1 help    <Esc>  1/2 (50%)"
         );
     }
 
@@ -174,10 +163,10 @@ mod tests {
         assert_eq!(
             render_model(&model),
             [
-                " therapist \u{1fb60}\u{1fb57} [all] \u{1fb60}\u{1fb57}",
+                " therapist ~  [all]",
                 "  1 │ first",
                 "  2 │ second",
-                " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help          \u{1fb60}\u{1fb57} 1/2 (50%)"
+                " app.log  13 B  F1 help           1/2 (50%)"
             ]
         );
     }
@@ -185,10 +174,10 @@ mod tests {
     #[test]
     fn given_open_help_when_rendering_then_it_covers_the_log_view_and_the_status_bar_stays() {
         let mut model =
-            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(40, 8));
+            Model::with_screen_size(LogFile::from_text("first\nsecond\n"), Size::new(34, 8));
         model.finish_scheduled_jobs();
         let render_rows =
-            |model: &Model| rendered_rows(&render_to_buffer(40, 8, |frame| render(frame, model)));
+            |model: &Model| rendered_rows(&render_to_buffer(34, 8, |frame| render(frame, model)));
         let rows_before_help = render_rows(&model);
 
         model.press(KeyCode::F(1));
@@ -207,7 +196,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 1searching ────────── 0% \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log searching ────────── 0%  1/2 (50%)"
         );
     }
 
@@ -220,7 +209,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57}      /sec [1/1] \u{1fb60}\u{1fb57} 2/2 (100%)"
+            " app.log  13 B       /sec [1/1]  2/2 (100%)"
         );
     }
 
@@ -233,7 +222,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 Pattern not found: zz \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log  1Pattern not found: zz  1/2 (50%)"
         );
     }
 
@@ -244,7 +233,7 @@ mod tests {
         submit_search(&mut model, "/sec");
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
-            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            let buffer = render_to_buffer(44, 4, |frame| render(frame, model));
             buffer[(6, 2)].bg == palette::YELLOW
         };
         assert!(is_highlighted(&model));
@@ -253,7 +242,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help   <Esc> \u{1fb60}\u{1fb57} 2/2 (100%)"
+            " app.log  13 B  F1 help   <Esc>  2/2 (100%)"
         );
         assert!(!is_highlighted(&model));
     }
@@ -265,7 +254,7 @@ mod tests {
         submit_search(&mut model, "/sec");
         model.finish_scheduled_jobs();
         let is_highlighted = |model: &Model| {
-            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            let buffer = render_to_buffer(44, 4, |frame| render(frame, model));
             buffer[(6, 2)].bg == palette::YELLOW
         };
 
@@ -285,7 +274,7 @@ mod tests {
         let mut model = make_model();
         let highlight_color = palette::CORAL;
         let background_at = |model: &Model, column, row| {
-            let buffer = render_to_buffer(50, 4, |frame| render(frame, model));
+            let buffer = render_to_buffer(44, 4, |frame| render(frame, model));
             buffer[(column, row)].bg
         };
         model.type_keys(" gsec");
@@ -308,7 +297,7 @@ mod tests {
 
         assert_eq!(
             render_model(&model)[3],
-            " app.log \u{1fb60}\u{1fb57} 13 B \u{1fb60}\u{1fb57} F1 help        5 \u{1fb60}\u{1fb57} 1/2 (50%)"
+            " app.log  13 B  F1 help        5  1/2 (50%)"
         );
     }
 }
