@@ -74,7 +74,11 @@ impl LogFile {
             return Err(LogFileError::StillIndexing);
         }
 
-        Ok(LineScanner::new(self.path.clone(), Arc::clone(&self.file)))
+        Ok(LineScanner::new(
+            self.path.clone(),
+            Arc::clone(&self.file),
+            self.file_size,
+        ))
     }
 
     pub fn set_line_index(&mut self, line_index: LineIndex) {
@@ -122,7 +126,7 @@ impl LogFile {
         let mut line_collector = LineCollector::new(lines_to_skip, range_end - range.start);
         read_chunks(
             &self.file,
-            checkpoint.byte_offset,
+            checkpoint.byte_offset..self.file_size,
             READ_LINES_CHUNK_SIZE,
             |chunk| line_collector.add_chunk(chunk),
         )
@@ -136,18 +140,26 @@ impl LogFile {
 
 fn read_chunks(
     file: &File,
-    mut byte_offset: u64,
+    byte_range: Range<u64>,
     chunk_size: usize,
     mut on_chunk: impl FnMut(&[u8]) -> ControlFlow<()>,
 ) -> io::Result<()> {
     let mut buffer = vec![0; chunk_size];
-    loop {
-        let bytes_read = file.read_at(&mut buffer, byte_offset)?;
+    let mut byte_offset = byte_range.start;
+
+    while byte_offset < byte_range.end {
+        let bytes_wanted = chunk_size.min(bytes_left(byte_offset, byte_range.end));
+        let bytes_read = file.read_at(&mut buffer[..bytes_wanted], byte_offset)?;
         if bytes_read == 0 || on_chunk(&buffer[..bytes_read]).is_break() {
             return Ok(());
         }
         byte_offset += bytes_read as u64;
     }
+    Ok(())
+}
+
+fn bytes_left(byte_offset: u64, read_end: u64) -> usize {
+    usize::try_from(read_end.saturating_sub(byte_offset)).unwrap_or(usize::MAX)
 }
 
 #[cfg(test)]
@@ -309,6 +321,18 @@ mod tests {
             lines,
             [format!("50 {line_body}"), format!("51 {line_body}")]
         );
+    }
+
+    #[test]
+    fn given_file_grown_after_opening_when_indexing_and_reading_then_only_the_opened_size_is_read()
+    {
+        let (mut temp_file, mut log_file) = open_unindexed_with(b"a\nb");
+
+        temp_file.write_all(b"c\nd\n").unwrap();
+        log_file.index_synchronously().unwrap();
+
+        assert_eq!(log_file.line_count(), 2);
+        assert_eq!(log_file.read_lines(0..5).unwrap(), ["a", "b"]);
     }
 
     #[test]

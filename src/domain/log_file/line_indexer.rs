@@ -38,7 +38,7 @@ impl LineIndexer {
         let mut reported_percent = None;
         let mut progress_flow = ControlFlow::Continue(());
 
-        read_chunks(&self.file, 0, chunk_size, |chunk| {
+        read_chunks(&self.file, 0..self.file_size, chunk_size, |chunk| {
             line_index.add_chunk(chunk);
             let percent = line_index.percent_indexed(self.file_size);
             if reported_percent != Some(percent) {
@@ -164,7 +164,7 @@ mod tests {
         let line_indexer = LineIndexer {
             path: temp_file.path().to_path_buf(),
             file: Arc::new(File::create(temp_file.path()).unwrap()),
-            file_size: 0,
+            file_size: 1,
         };
 
         let result = line_indexer.run(|_line_index| ControlFlow::Continue(()));

@@ -1,6 +1,6 @@
 use std::{fs::File, io, ops::ControlFlow, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 
-use super::LogFileError;
+use super::{LogFileError, bytes_left};
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 
@@ -9,6 +9,7 @@ const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 pub struct LineScanner {
     path: PathBuf,
     file: Arc<File>,
+    file_size: u64,
 }
 
 struct LineBuffer {
@@ -17,8 +18,12 @@ struct LineBuffer {
 }
 
 impl LineScanner {
-    pub(super) fn new(path: PathBuf, file: Arc<File>) -> Self {
-        Self { path, file }
+    pub(super) fn new(path: PathBuf, file: Arc<File>, file_size: u64) -> Self {
+        Self {
+            path,
+            file,
+            file_size,
+        }
     }
 
     pub fn scan(
@@ -42,7 +47,7 @@ impl LineScanner {
         let mut chunk_first_line = 0;
 
         loop {
-            let bytes_read = line_buffer.read_more(&self.file, byte_offset)?;
+            let bytes_read = line_buffer.read_more(&self.file, byte_offset, self.file_size)?;
             if bytes_read == 0 {
                 let last_line = line_buffer.filled_bytes();
                 if !last_line.is_empty() {
@@ -72,11 +77,14 @@ impl LineBuffer {
         }
     }
 
-    fn read_more(&mut self, file: &File, byte_offset: u64) -> io::Result<usize> {
+    fn read_more(&mut self, file: &File, byte_offset: u64, read_end: u64) -> io::Result<usize> {
         if self.filled == self.bytes.len() {
             self.bytes.resize(self.bytes.len() * 2, 0);
         }
-        let bytes_read = file.read_at(&mut self.bytes[self.filled..], byte_offset)?;
+        let room_left = self.bytes.len() - self.filled;
+        let bytes_wanted = room_left.min(bytes_left(byte_offset, read_end));
+        let read_buffer = &mut self.bytes[self.filled..self.filled + bytes_wanted];
+        let bytes_read = file.read_at(read_buffer, byte_offset)?;
         self.filled += bytes_read;
         Ok(bytes_read)
     }
@@ -101,11 +109,17 @@ fn count_newlines(text: &[u8]) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
-    use crate::domain::log_file::tests::open_with;
+    use crate::domain::log_file::{LogFile, tests::open_with};
 
     fn chunks_of(content: &[u8], chunk_size: usize) -> Vec<(String, usize)> {
         let (_temp_file, log_file) = open_with(content);
+        scanned_chunks(&log_file, chunk_size)
+    }
+
+    fn scanned_chunks(log_file: &LogFile, chunk_size: usize) -> Vec<(String, usize)> {
         let mut chunks = Vec::new();
         log_file
             .line_scanner()
@@ -154,6 +168,18 @@ mod tests {
     #[test]
     fn given_empty_file_when_scanning_then_there_are_no_chunks() {
         assert!(chunks_of(b"", 8).is_empty());
+    }
+
+    #[test]
+    fn given_file_grown_after_opening_when_scanning_then_only_the_opened_size_is_scanned() {
+        let (mut temp_file, log_file) = open_with(b"a\nb");
+
+        temp_file.write_all(b"c\nERROR\n").unwrap();
+
+        assert_eq!(
+            scanned_chunks(&log_file, 64),
+            [("a\n".to_owned(), 0), ("b".to_owned(), 1)]
+        );
     }
 
     #[test]
