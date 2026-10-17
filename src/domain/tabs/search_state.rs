@@ -1,5 +1,7 @@
-use super::{SearchDirection, SearchQuery};
-use crate::domain::phrase_matching::MatchingLinesBatch;
+use crate::domain::{
+    phrase_matching::MatchingLinesBatch,
+    search::{SearchDirection, SearchQuery},
+};
 
 #[derive(Debug, PartialEq)]
 pub struct MatchJump {

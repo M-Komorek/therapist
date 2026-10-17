@@ -8,7 +8,10 @@ use ratatui::{
 use super::{BAR_STYLE, palette, slanted_edge};
 use crate::{
     app::{Model, StatusMessage},
-    domain::{log_file::IndexingStatus, search::SearchState, tabs::GrepState},
+    domain::{
+        log_file::IndexingStatus,
+        tabs::{GrepState, SearchState},
+    },
     jobs::JobSlot,
 };
 

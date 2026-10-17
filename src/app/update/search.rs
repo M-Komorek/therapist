@@ -7,8 +7,8 @@ use crate::{
     action::SearchAction,
     app::Model,
     domain::{
-        search::{MatchJump, SearchDirection, SearchError, SearchQuery},
-        tabs::TabId,
+        search::{SearchDirection, SearchQuery},
+        tabs::{MatchJump, SearchError, TabId},
     },
     jobs::{self, JobSlot},
 };
@@ -134,7 +134,7 @@ mod tests {
         domain::{
             log_file::{LogFile, LogFileError},
             phrase_matching::MatchingLinesBatch,
-            search::SearchState,
+            tabs::SearchState,
         },
         jobs::{JobId, JobNotification, JobStatus},
     };

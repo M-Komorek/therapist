@@ -1,10 +1,7 @@
 use std::ops::Range;
 
-use super::{GrepState, LogViewState, TabId};
-use crate::domain::{
-    log_file::{LogFile, LogFileError},
-    search::SearchState,
-};
+use super::{GrepState, LogViewState, SearchState, TabId};
+use crate::domain::log_file::{LogFile, LogFileError};
 
 const ALL_LINES_TAB_NAME: &str = "all";
 const PHRASE_SEPARATOR: &str = " › ";

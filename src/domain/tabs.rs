@@ -1,12 +1,14 @@
 mod grep_state;
 mod log_view_state;
+mod search_state;
 mod tab_state;
 
 pub use grep_state::{GrepError, GrepState};
 pub use log_view_state::LogViewState;
+pub use search_state::{MatchJump, SearchError, SearchState};
 pub use tab_state::TabState;
 
-use crate::domain::{phrase_matching::MatchingLinesBatch, search::SearchState};
+use crate::domain::phrase_matching::MatchingLinesBatch;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabId(u64);

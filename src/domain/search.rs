@@ -1,7 +1,3 @@
-mod state;
-
-pub use state::{MatchJump, SearchError, SearchState};
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SearchDirection {
     Forward,
