@@ -1,5 +1,5 @@
 use crate::domain::{
-    phrase_matching::MatchingLinesBatch,
+    phrase_matching::{MatchingLines, MatchingLinesBatch},
     search::{SearchDirection, SearchQuery},
 };
 
@@ -18,18 +18,16 @@ pub enum SearchError {
     StillGrepping,
 }
 
-/// The last search, the lines that match it and how much of the file the search has read. The lines
-/// are positions counted from 0 like the cursor line, in file order. A new query or clearing empties
-/// them, so they always belong to the query. Jumps between them use a binary search. A search starts
-/// from the cursor line and makes its first jump only while the cursor is still there. The lines
-/// arrive in file order, so a forward search's first match below its start is settled as soon as it
-/// arrives; any other first jump is known only when the search is done.
+/// The last search and the lines that match it. A new query or clearing empties them, so they always
+/// belong to the query. A search starts from the cursor line and makes its first jump only while the
+/// cursor is still there. The lines arrive in file order, so a forward search's first match below its
+/// start is settled as soon as it arrives; any other first jump is known only when the search is
+/// done.
 #[derive(Default)]
 pub struct SearchState {
     query: Option<SearchQuery>,
     start_line: usize,
-    matching_lines: Vec<usize>,
-    percent_searched: u64,
+    matching_lines: MatchingLines,
 }
 
 impl SearchState {
@@ -40,8 +38,7 @@ impl SearchState {
     pub fn replace_query(&mut self, query: SearchQuery, start_line: usize) {
         self.query = Some(query);
         self.start_line = start_line;
-        self.matching_lines.clear();
-        self.percent_searched = 0;
+        self.matching_lines = MatchingLines::default();
     }
 
     pub fn clear(&mut self) {
@@ -55,13 +52,11 @@ impl SearchState {
     }
 
     pub fn add_batch(&mut self, matching_lines_batch: MatchingLinesBatch) {
-        self.matching_lines
-            .extend(matching_lines_batch.matching_lines);
-        self.percent_searched = matching_lines_batch.percent_scanned;
+        self.matching_lines.add_batch(matching_lines_batch);
     }
 
     pub fn percent_searched(&self) -> u64 {
-        self.percent_searched
+        self.matching_lines.percent_scanned()
     }
 
     pub fn next_match_from(&self, line: usize) -> Result<Option<MatchJump>, SearchError> {
@@ -84,7 +79,7 @@ impl SearchState {
             return None;
         }
 
-        let first_match_below = *self.matches_below(cursor_line).first()?;
+        let first_match_below = self.first_match_below(cursor_line)?;
         Some(MatchJump {
             line: first_match_below,
             direction: SearchDirection::Forward,
@@ -93,42 +88,35 @@ impl SearchState {
     }
 
     pub fn match_count(&self) -> usize {
-        self.matching_lines.len()
+        self.matching_lines.count()
     }
 
     pub fn match_count_at_or_above(&self, line: usize) -> usize {
-        self.matching_lines
-            .partition_point(|&matching_line| matching_line <= line)
+        self.matching_lines.count_at_or_above(line)
     }
 
     fn jump_from(&self, line: usize, direction: SearchDirection) -> Option<MatchJump> {
         let (next_match, wrap_target) = match direction {
-            SearchDirection::Forward => (
-                self.matches_below(line).first(),
-                self.matching_lines.first(),
-            ),
-            SearchDirection::Backward => {
-                (self.matches_above(line).last(), self.matching_lines.last())
-            }
+            SearchDirection::Forward => (self.first_match_below(line), self.matching_lines.get(0)),
+            SearchDirection::Backward => (self.last_match_above(line), self.matching_lines.last()),
         };
         let wrapped = next_match.is_none();
 
-        next_match.or(wrap_target).map(|&matching_line| MatchJump {
+        next_match.or(wrap_target).map(|matching_line| MatchJump {
             line: matching_line,
             direction,
             wrapped,
         })
     }
 
-    fn matches_below(&self, line: usize) -> &[usize] {
-        &self.matching_lines[self.match_count_at_or_above(line)..]
+    fn first_match_below(&self, line: usize) -> Option<usize> {
+        self.matching_lines
+            .get(self.matching_lines.count_at_or_above(line))
     }
 
-    fn matches_above(&self, line: usize) -> &[usize] {
-        let match_count_above = self
-            .matching_lines
-            .partition_point(|&matching_line| matching_line < line);
-        &self.matching_lines[..match_count_above]
+    fn last_match_above(&self, line: usize) -> Option<usize> {
+        let match_count_above = self.matching_lines.count_above(line);
+        self.matching_lines.get(match_count_above.checked_sub(1)?)
     }
 
     fn direction(&self) -> Result<SearchDirection, SearchError> {
@@ -401,17 +389,6 @@ mod tests {
         assert!(!search_state.started_from(0));
         assert!(!SearchState::default().started_from(0));
         assert_eq!(search_state.settled_first_jump(0), None);
-    }
-
-    #[test]
-    fn given_cursor_anywhere_when_counting_matches_at_or_above_then_a_match_on_the_cursor_counts() {
-        let search_state = make_matches(&[3, 7, 12]);
-
-        assert_eq!(search_state.match_count_at_or_above(0), 0);
-        assert_eq!(search_state.match_count_at_or_above(3), 1);
-        assert_eq!(search_state.match_count_at_or_above(8), 2);
-        assert_eq!(search_state.match_count_at_or_above(12), 3);
-        assert_eq!(search_state.match_count_at_or_above(99), 3);
     }
 
     #[test]

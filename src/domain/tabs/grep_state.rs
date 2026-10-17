@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::domain::phrase_matching::MatchingLinesBatch;
+use crate::domain::phrase_matching::{MatchingLines, MatchingLinesBatch};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum GrepError {
@@ -8,21 +8,17 @@ pub enum GrepError {
     PatternNotFound(String),
 }
 
-/// A grep's phrases and the lines that contain all of them, found so far: positions counted from 0,
-/// in file order, because the grep reads the file from the start. Finding a line among them uses a
-/// binary search.
+/// A grep's phrases and the lines found so far that contain all of them.
 pub struct GrepState {
     phrases: Vec<String>,
-    matching_lines: Vec<usize>,
-    percent_grepped: u64,
+    matching_lines: MatchingLines,
 }
 
 impl GrepState {
     pub(super) fn new(phrases: Vec<String>) -> Self {
         Self {
             phrases,
-            matching_lines: Vec::new(),
-            percent_grepped: 0,
+            matching_lines: MatchingLines::default(),
         }
     }
 
@@ -31,36 +27,31 @@ impl GrepState {
     }
 
     pub fn percent_grepped(&self) -> u64 {
-        self.percent_grepped
+        self.matching_lines.percent_scanned()
     }
 
     pub fn match_count(&self) -> usize {
-        self.matching_lines.len()
+        self.matching_lines.count()
     }
 
     pub fn add_batch(&mut self, matching_lines_batch: MatchingLinesBatch) {
-        self.matching_lines
-            .extend(matching_lines_batch.matching_lines);
-        self.percent_grepped = matching_lines_batch.percent_scanned;
+        self.matching_lines.add_batch(matching_lines_batch);
     }
 
     pub(super) fn matching_line(&self, position: usize) -> Option<usize> {
-        self.matching_lines.get(position).copied()
+        self.matching_lines.get(position)
     }
 
     pub(super) fn match_count_above(&self, line: usize) -> usize {
-        self.matching_lines
-            .partition_point(|&matching_line| matching_line < line)
+        self.matching_lines.count_above(line)
     }
 
     pub(super) fn contains(&self, line: usize) -> bool {
-        self.matching_lines.binary_search(&line).is_ok()
+        self.matching_lines.contains(line)
     }
 
     pub(super) fn matching_lines_in(&self, positions: Range<usize>) -> &[usize] {
-        let positions_end = positions.end.min(self.matching_lines.len());
-        let positions_start = positions.start.min(positions_end);
-        &self.matching_lines[positions_start..positions_end]
+        self.matching_lines.in_positions(positions)
     }
 }
 
@@ -73,12 +64,6 @@ mod tests {
             matching_lines: matching_lines.to_vec(),
             percent_scanned,
         }
-    }
-
-    fn make_grep_state(matching_lines: &[usize]) -> GrepState {
-        let mut grep_state = GrepState::new(vec!["ERROR".to_owned()]);
-        grep_state.add_batch(batch(matching_lines, 100));
-        grep_state
     }
 
     #[test]
@@ -102,33 +87,6 @@ mod tests {
         assert_eq!(grep_state.matching_line(2), Some(12));
         assert_eq!(grep_state.matching_line(3), None);
         assert_eq!(grep_state.percent_grepped(), 62);
-    }
-
-    #[test]
-    fn given_matching_lines_when_counting_the_matches_above_a_line_then_a_match_on_the_line_is_not_counted()
-     {
-        let grep_state = make_grep_state(&[3, 7, 12]);
-
-        assert_eq!(grep_state.match_count_above(0), 0);
-        assert_eq!(grep_state.match_count_above(3), 0);
-        assert_eq!(grep_state.match_count_above(8), 2);
-        assert_eq!(grep_state.match_count_above(99), 3);
-    }
-
-    #[test]
-    fn given_matching_lines_when_asking_whether_lines_match_then_only_those_lines_do() {
-        let grep_state = make_grep_state(&[3, 7]);
-
-        assert!(grep_state.contains(3) && grep_state.contains(7));
-        assert!(!grep_state.contains(4));
-    }
-
-    #[test]
-    fn given_positions_past_the_last_match_when_taking_matching_lines_then_they_stop_at_the_last() {
-        let grep_state = make_grep_state(&[3, 7, 12]);
-
-        assert_eq!(grep_state.matching_lines_in(1..10), [7, 12]);
-        assert!(grep_state.matching_lines_in(5..10).is_empty());
     }
 
     #[test]
