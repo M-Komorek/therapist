@@ -1,11 +1,14 @@
 use std::{fs::File, io, ops::ControlFlow, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 
-use super::{LogFileError, bytes_left};
+use super::{LogFileError, bytes_left, read_chunks};
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
+const SKIP_CHUNK_SIZE: usize = 64 * 1024;
 
 /// Reads the file in chunks of whole lines, each with the number of its first line. A line cut by
-/// a read waits for the next one, so nothing that looks at a chunk sees half a line.
+/// a read waits for the next one, so nothing that looks at a chunk sees half a line. The one
+/// exception is a line longer than the read buffer (1 MiB): its start comes alone as a chunk without
+/// a newline, and the rest of it is skipped, so memory stays bounded.
 pub struct LineScanner {
     path: PathBuf,
     file: Arc<File>,
@@ -47,6 +50,13 @@ impl LineScanner {
         let mut chunk_first_line = 0;
 
         loop {
+            if line_buffer.is_full() {
+                if on_chunk(line_buffer.filled_bytes(), chunk_first_line).is_break() {
+                    return Ok(());
+                }
+                byte_offset = self.next_newline_offset(byte_offset)?;
+                line_buffer.clear();
+            }
             let bytes_read = line_buffer.read_more(&self.file, byte_offset, self.file_size)?;
             if bytes_read == 0 {
                 let last_line = line_buffer.filled_bytes();
@@ -67,6 +77,28 @@ impl LineScanner {
             line_buffer.remove_whole_lines(whole_lines_length);
         }
     }
+
+    fn next_newline_offset(&self, byte_offset: u64) -> io::Result<u64> {
+        let mut chunk_offset = byte_offset;
+        let mut newline_offset = self.file_size;
+
+        read_chunks(
+            &self.file,
+            byte_offset..self.file_size,
+            SKIP_CHUNK_SIZE,
+            |chunk| match memchr::memchr(b'\n', chunk) {
+                Some(newline_position) => {
+                    newline_offset = chunk_offset + newline_position as u64;
+                    ControlFlow::Break(())
+                }
+                None => {
+                    chunk_offset += chunk.len() as u64;
+                    ControlFlow::Continue(())
+                }
+            },
+        )?;
+        Ok(newline_offset)
+    }
 }
 
 impl LineBuffer {
@@ -77,10 +109,15 @@ impl LineBuffer {
         }
     }
 
+    fn is_full(&self) -> bool {
+        self.filled == self.bytes.len()
+    }
+
+    fn clear(&mut self) {
+        self.filled = 0;
+    }
+
     fn read_more(&mut self, file: &File, byte_offset: u64, read_end: u64) -> io::Result<usize> {
-        if self.filled == self.bytes.len() {
-            self.bytes.resize(self.bytes.len() * 2, 0);
-        }
         let room_left = self.bytes.len() - self.filled;
         let bytes_wanted = room_left.min(bytes_left(byte_offset, read_end));
         let read_buffer = &mut self.bytes[self.filled..self.filled + bytes_wanted];
@@ -150,12 +187,40 @@ mod tests {
     }
 
     #[test]
-    fn given_line_longer_than_a_read_when_scanning_then_it_comes_whole_in_one_chunk() {
+    fn given_line_that_fits_the_buffer_only_after_a_read_when_scanning_then_it_comes_whole() {
+        let chunks = chunks_of(b"a\nlong\nb\n", 6);
+
+        assert_eq!(
+            chunks,
+            [
+                ("a\n".to_owned(), 0),
+                ("long\n".to_owned(), 1),
+                ("b\n".to_owned(), 2)
+            ]
+        );
+    }
+
+    #[test]
+    fn given_line_longer_than_the_buffer_when_scanning_then_only_its_start_comes_and_the_numbering_holds()
+     {
         let chunks = chunks_of(b"a\nlong line here\nb\n", 4);
 
-        let chunk_texts: Vec<&str> = chunks.iter().map(|(text, _)| text.as_str()).collect();
-        assert_eq!(chunk_texts.concat(), "a\nlong line here\nb\n");
-        assert!(chunks.contains(&("long line here\n".to_owned(), 1)));
+        assert_eq!(
+            chunks,
+            [
+                ("a\n".to_owned(), 0),
+                ("long".to_owned(), 1),
+                ("\nb\n".to_owned(), 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn given_last_line_longer_than_the_buffer_without_newline_when_scanning_then_only_its_start_comes()
+     {
+        let chunks = chunks_of(b"a\nlong line here", 4);
+
+        assert_eq!(chunks, [("a\n".to_owned(), 0), ("long".to_owned(), 1)]);
     }
 
     #[test]
