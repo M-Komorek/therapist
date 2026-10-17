@@ -25,6 +25,7 @@ pub fn run(terminal: &mut Terminal, mut model: Model) -> io::Result<()> {
             Effect::Redraw => draw(terminal, &model)?,
             Effect::Suspend => {
                 terminal.suspend()?;
+                app::resize_log_view(&mut model, terminal.size()?);
                 draw(terminal, &model)?;
             }
             Effect::Quit => return Ok(()),
