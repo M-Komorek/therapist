@@ -1,6 +1,7 @@
 # therapist
 
 [![CI](https://github.com/M-Komorek/therapist/workflows/CI/badge.svg)](https://github.com/M-Komorek/therapist/actions)
+[![crates.io](https://img.shields.io/crates/v/therapist.svg)](https://crates.io/crates/therapist)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Sometimes your system needs a little **therapy**. So here it is: a **BLAZINGLY FAST** terminal log viewer. Open a multi-GB log at once, move with vim keys, and narrow it down with grep tabs, search, bookmarks and highlights. Just hope that after the session you're not the one who needs **therapy**.
@@ -22,6 +23,12 @@ Sometimes your system needs a little **therapy**. So here it is: a **BLAZINGLY F
 therapist runs on Linux and macOS. It needs Rust 1.91 or newer.
 
 ```bash
+cargo install therapist
+```
+
+Or the latest from GitHub:
+
+```bash
 cargo install --git https://github.com/M-Komorek/therapist
 ```
 
@@ -33,7 +40,7 @@ cd therapist
 cargo install --path .
 ```
 
-Both install the command `thr`.
+Each way installs the command `thr`.
 
 ## Usage
 
