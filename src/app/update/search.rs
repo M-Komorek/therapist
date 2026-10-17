@@ -48,7 +48,7 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
 
     let start_line = cursor_line(model).unwrap_or_default();
     let active_tab = model.tabs.active_tab_mut();
-    let phrases = active_tab.grep_phrases_with(search_query.phrase.clone());
+    let phrases = active_tab.scan_phrases_with(search_query.phrase.clone());
     let searching_work =
         jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), phrases);
     model

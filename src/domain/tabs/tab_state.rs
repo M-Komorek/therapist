@@ -64,7 +64,7 @@ impl TabState {
         }
     }
 
-    pub fn grep_phrases_with(&self, phrase: String) -> Vec<String> {
+    pub fn scan_phrases_with(&self, phrase: String) -> Vec<String> {
         let mut phrases = match &self.tab_lines {
             TabLines::All => Vec::new(),
             TabLines::Grepped(grep_state) => grep_state.phrases().to_vec(),
@@ -350,16 +350,16 @@ mod tests {
 
         assert_eq!(tab_state.name(), "ERROR › user=42");
         assert_eq!(
-            tab_state.grep_phrases_with("took=5".to_owned()),
+            tab_state.scan_phrases_with("took=5".to_owned()),
             ["ERROR", "user=42", "took=5"]
         );
     }
 
     #[test]
-    fn given_all_lines_tab_when_adding_a_phrase_to_its_grep_phrases_then_it_is_the_only_one() {
+    fn given_all_lines_tab_when_adding_a_phrase_to_its_scan_phrases_then_it_is_the_only_one() {
         let tab_state = make_all_lines_tab(10);
 
         assert_eq!(tab_state.name(), "all");
-        assert_eq!(tab_state.grep_phrases_with("WARN".to_owned()), ["WARN"]);
+        assert_eq!(tab_state.scan_phrases_with("WARN".to_owned()), ["WARN"]);
     }
 }

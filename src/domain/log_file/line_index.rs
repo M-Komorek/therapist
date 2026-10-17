@@ -1,3 +1,5 @@
+use super::percent_of_file;
+
 const LINES_PER_CHECKPOINT: usize = 1000;
 const BYTES_PER_CHECKPOINT: u64 = 64 * 1024;
 
@@ -59,10 +61,7 @@ impl LineIndex {
     }
 
     pub fn percent_indexed(&self, file_size: u64) -> u64 {
-        if file_size == 0 {
-            return 100;
-        }
-        (self.bytes_indexed * 100 / file_size).min(100)
+        percent_of_file(self.bytes_indexed, file_size)
     }
 
     pub fn line_count(&self) -> usize {

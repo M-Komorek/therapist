@@ -1,5 +1,7 @@
 use memchr::memmem;
 
+use crate::domain::log_file::count_newlines;
+
 #[derive(Debug, PartialEq)]
 pub struct MatchingLinesBatch {
     pub matching_lines: Vec<usize>,
@@ -40,10 +42,6 @@ fn find_lines_containing(chunk: &[u8], chunk_first_line: usize, phrase: &str) ->
         }
     }
     lines_with_phrase
-}
-
-fn count_newlines(text: &[u8]) -> usize {
-    memchr::memchr_iter(b'\n', text).count()
 }
 
 #[cfg(test)]

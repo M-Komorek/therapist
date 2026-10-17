@@ -162,6 +162,17 @@ fn bytes_left(byte_offset: u64, read_end: u64) -> usize {
     usize::try_from(read_end.saturating_sub(byte_offset)).unwrap_or(usize::MAX)
 }
 
+pub fn count_newlines(text: &[u8]) -> usize {
+    memchr::memchr_iter(b'\n', text).count()
+}
+
+pub fn percent_of_file(byte_count: u64, file_size: u64) -> u64 {
+    if file_size == 0 {
+        return 100;
+    }
+    (byte_count * 100 / file_size).min(100)
+}
+
 #[cfg(test)]
 impl LogFile {
     pub fn from_text(text: &str) -> Self {
@@ -239,6 +250,22 @@ mod tests {
         log_file.mark_indexing_failed();
 
         assert!(log_file.line_scanner().is_ok());
+    }
+
+    #[test]
+    fn given_byte_counts_when_computing_the_percent_of_the_file_then_it_is_rounded_down_and_stops_at_100()
+     {
+        assert_eq!(percent_of_file(0, 0), 100);
+        assert_eq!(percent_of_file(62, 100), 62);
+        assert_eq!(percent_of_file(999, 1000), 99);
+        assert_eq!(percent_of_file(150, 100), 100);
+    }
+
+    #[test]
+    fn given_text_with_and_without_newlines_when_counting_them_then_each_newline_counts_once() {
+        assert_eq!(count_newlines(b""), 0);
+        assert_eq!(count_newlines(b"no newline"), 0);
+        assert_eq!(count_newlines(b"a\r\n\nb\n"), 3);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use std::{fs::File, io, ops::ControlFlow, os::unix::fs::FileExt, path::PathBuf, sync::Arc};
 
-use super::{LogFileError, bytes_left, read_chunks};
+use super::{LogFileError, bytes_left, count_newlines, read_chunks};
 
 const SCAN_CHUNK_SIZE: usize = 1024 * 1024;
 const SKIP_CHUNK_SIZE: usize = 64 * 1024;
@@ -138,10 +138,6 @@ impl LineBuffer {
     fn filled_bytes(&self) -> &[u8] {
         &self.bytes[..self.filled]
     }
-}
-
-fn count_newlines(text: &[u8]) -> usize {
-    memchr::memchr_iter(b'\n', text).count()
 }
 
 #[cfg(test)]

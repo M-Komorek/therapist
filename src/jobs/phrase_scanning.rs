@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 
 use super::{JobContext, JobStatus, JobWork};
 use crate::domain::{
-    log_file::LineScanner,
+    log_file::{LineScanner, percent_of_file},
     phrase_matching::{MatchingLinesBatch, find_matching_lines},
 };
 
@@ -17,7 +17,7 @@ pub fn phrase_scanning_work(
             bytes_scanned += chunk.len() as u64;
             job_context.notify(JobStatus::PhraseScanning(MatchingLinesBatch {
                 matching_lines: find_matching_lines(chunk, chunk_first_line, &phrases),
-                percent_scanned: percent_scanned(bytes_scanned, file_size),
+                percent_scanned: percent_of_file(bytes_scanned, file_size),
             }));
             if job_context.is_cancelled() {
                 ControlFlow::Break(())
@@ -27,13 +27,6 @@ pub fn phrase_scanning_work(
         })?;
         Ok(())
     })
-}
-
-fn percent_scanned(bytes_scanned: u64, file_size: u64) -> u64 {
-    if file_size == 0 {
-        return 100;
-    }
-    (bytes_scanned * 100 / file_size).min(100)
 }
 
 #[cfg(test)]
@@ -90,13 +83,5 @@ mod tests {
                 JobStatus::Done
             ] if matching_lines.is_empty()
         ));
-    }
-
-    #[test]
-    fn given_bytes_scanned_when_computing_the_percent_then_it_is_rounded_down_and_stops_at_100() {
-        assert_eq!(percent_scanned(0, 0), 100);
-        assert_eq!(percent_scanned(62, 100), 62);
-        assert_eq!(percent_scanned(999, 1000), 99);
-        assert_eq!(percent_scanned(150, 100), 100);
     }
 }
