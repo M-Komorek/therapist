@@ -6,7 +6,7 @@
 
 Sometimes your system needs a little **therapy**. So here it is: a **BLAZINGLY FAST** terminal log viewer. Open a multi-GB log at once, move with vim keys, and narrow it down with grep tabs, search, bookmarks and highlights. Just hope that after the session you're not the one who needs **therapy**.
 
-![therapist showing its payments grep tab, a search for order_id=48225 and highlighted phrases](assets/therapist.png)
+![therapist opening demo.log, grepping it for payments, searching for order_id=48225, grepping the tab again for that order and highlighting phrases](assets/demo.gif)
 
 ## Features
 
@@ -128,6 +128,8 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 ```
+
+The demo at the top is recorded with [VHS](https://github.com/charmbracelet/vhs) from `../test_data/demo.log`: `cargo build --release && python3 assets/demo.py`.
 
 `Ctrl-p` panics on purpose in debug builds, to check that the terminal is restored.
 
