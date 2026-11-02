@@ -16,7 +16,6 @@ Sometimes your system needs a little **therapy**. So here it is: a **BLAZINGLY F
 - **Cascading grep tabs.** Grep for `ERROR` to open a tab with only those lines, then grep that tab for `user=42` to get `[ERROR › user=42]`. A tab fills while its grep runs, keeps its own cursor and search, and shows the file's original line numbers.
 - **Bookmarks.** Bookmark a line, see the mark in every tab that shows that line, and jump from one bookmark to the next.
 - **Highlights.** Give phrases their own colors, shown in every tab. There are 12 colors, reused after that.
-- **Messy lines.** Invalid UTF-8, CRLF line endings, tabs and ANSI color codes don't break the view: tabs line up and color codes are hidden.
 
 ## Installation
 
