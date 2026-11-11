@@ -13,9 +13,16 @@ const POPUP_MARGIN: Margin = Margin::new(2, 1);
 const POPUP_PADDING: Padding = Padding::symmetric(2, 1);
 const BORDER_THICKNESS: u16 = 1;
 const COLUMN_GAP: u16 = 4;
+const NOTES_GAP: u16 = 1;
 const ENTRY_INDENT: &str = " ";
 const TYPED_TEXT_GAP: usize = 2;
 const ELLIPSIS: char = '…';
+const RULE_SYMBOL: &str = "─";
+const NOTES_TITLE: &str = "Good to know";
+const NOTES: [&str; 2] = [
+    "Search, grep and highlights match plain text, case-sensitively.",
+    "Bookmarks and highlights are shared by all tabs.",
+];
 const POPUP_STYLE: Style = Style::new()
     .fg(palette::FOREGROUND)
     .bg(palette::BACKGROUND_DARK);
@@ -25,6 +32,7 @@ const TITLE_STYLE: Style = Style::new()
     .add_modifier(Modifier::BOLD);
 const TYPED_TEXT_STYLE: Style = Style::new().fg(palette::PURPLE);
 const CLOSING_HINT_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
+const RULE_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
 
 struct HelpGroup {
     title: &'static str,
@@ -46,18 +54,25 @@ pub fn render(frame: &mut Frame, log_view_area: Rect) {
     frame.render_widget(Clear, popup_area);
     frame.render_widget(popup_block, popup_area);
 
-    let [left_column, right_column] = Layout::horizontal([Constraint::Fill(1); 2])
-        .spacing(COLUMN_GAP)
-        .areas(content_area);
-    render_column(frame, left_column, left_groups);
-    render_column(frame, right_column, right_groups);
+    render_key_columns(frame, content_area, left_groups, right_groups);
+    render_notes(frame, notes_area(content_area, left_groups, right_groups));
+}
+
+fn notes_area(content_area: Rect, left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> Rect {
+    let notes_offset = cell_count(key_row_count(left_groups, right_groups)) + NOTES_GAP;
+    Rect {
+        y: content_area.y.saturating_add(notes_offset),
+        height: content_area.height.saturating_sub(notes_offset),
+        ..content_area
+    }
 }
 
 fn popup_area(log_view_area: Rect, left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> Rect {
     let column_width = column_width(left_groups).max(column_width(right_groups));
-    let content_width = 2 * cell_count(column_width) + COLUMN_GAP;
-    let content_height =
-        cell_count(column_row_count(left_groups).max(column_row_count(right_groups)));
+    let content_width = (2 * cell_count(column_width) + COLUMN_GAP).max(cell_count(notes_width()));
+    let content_height = cell_count(key_row_count(left_groups, right_groups))
+        + NOTES_GAP
+        + cell_count(notes_row_count());
     let popup_width =
         content_width + 2 * BORDER_THICKNESS + POPUP_PADDING.left + POPUP_PADDING.right;
     let popup_height =
@@ -138,6 +153,23 @@ fn column_width(help_groups: &[HelpGroup]) -> usize {
     title_widths.chain(entry_widths).max().unwrap_or(0)
 }
 
+fn key_row_count(left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> usize {
+    column_row_count(left_groups).max(column_row_count(right_groups))
+}
+
+fn render_key_columns(
+    frame: &mut Frame,
+    key_area: Rect,
+    left_groups: &[HelpGroup],
+    right_groups: &[HelpGroup],
+) {
+    let [left_column, right_column] = Layout::horizontal([Constraint::Fill(1); 2])
+        .spacing(COLUMN_GAP)
+        .areas(key_area);
+    render_column(frame, left_column, left_groups);
+    render_column(frame, right_column, right_groups);
+}
+
 fn render_column(frame: &mut Frame, column_area: Rect, help_groups: &[HelpGroup]) {
     let lines = column_lines(help_groups, usize::from(column_area.width));
     frame.render_widget(Paragraph::new(lines), column_area);
@@ -160,6 +192,39 @@ fn column_lines(help_groups: &[HelpGroup], column_width: usize) -> Vec<Line<'sta
                 .map(|help_entry| entry_line(help_entry, typed_text_width, description_width)),
         );
     }
+    lines
+}
+
+fn notes_row_count() -> usize {
+    2 + NOTES.len()
+}
+
+fn notes_width() -> usize {
+    NOTES
+        .iter()
+        .map(|note| ENTRY_INDENT.len() + note.chars().count())
+        .chain([NOTES_TITLE.chars().count()])
+        .max()
+        .unwrap_or(0)
+}
+
+fn render_notes(frame: &mut Frame, notes_area: Rect) {
+    let lines = notes_lines(usize::from(notes_area.width));
+    frame.render_widget(Paragraph::new(lines), notes_area);
+}
+
+fn notes_lines(notes_area_width: usize) -> Vec<Line<'static>> {
+    let note_width = notes_area_width.saturating_sub(ENTRY_INDENT.len());
+    let mut lines = vec![
+        Line::styled(RULE_SYMBOL.repeat(notes_area_width), RULE_STYLE),
+        Line::styled(NOTES_TITLE, TITLE_STYLE),
+    ];
+    lines.extend(NOTES.iter().map(|note| {
+        Line::from(vec![
+            Span::raw(ENTRY_INDENT),
+            Span::raw(text_fitted_to_width(note, note_width)),
+        ])
+    }));
     lines
 }
 
@@ -296,14 +361,63 @@ mod tests {
      {
         let rows = render_help(160, 40);
 
-        let popup_rows = 7..=32;
+        let popup_rows = 5..=35;
         let popup_left_edge = " ".repeat(22);
-        assert!(rows[7].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
-        assert!(rows[32].ends_with("─ Esc close ╯"));
-        assert_eq!(rows[32].chars().count(), 22 + 116);
+        assert!(rows[5].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
+        assert!(rows[35].ends_with("─ Esc close ╯"));
+        assert_eq!(rows[35].chars().count(), 22 + 116);
         for (row_index, row) in rows.iter().enumerate() {
             assert_eq!(row.is_empty(), !popup_rows.contains(&row_index));
         }
+    }
+
+    #[test]
+    fn given_area_tall_enough_when_rendering_then_the_notes_sit_below_the_keys_after_a_rule() {
+        let rows = render_help(100, 34);
+
+        let notes_title_row = rows
+            .iter()
+            .position(|row| row.contains("  Good to know "))
+            .expect("the notes title is shown");
+        assert!(rows[notes_title_row - 3].contains("debug builds"));
+        assert_eq!(rows[notes_title_row - 2].trim_matches(['│', ' ']), "");
+        assert_eq!(rows[notes_title_row - 1].trim_matches(['│', ' ', '─']), "");
+        assert!(rows[notes_title_row - 1].contains("────"));
+        assert!(
+            rows[notes_title_row + 1].contains("   Search, grep and highlights match plain text")
+        );
+        assert!(
+            rows[notes_title_row + 2]
+                .contains("   Bookmarks and highlights are shared by all tabs.")
+        );
+        assert!(rows[notes_title_row + 4].ends_with("─ Esc close ╯"));
+    }
+
+    #[test]
+    fn given_area_too_short_for_the_notes_when_rendering_then_the_keys_stay_whole() {
+        let rows = render_help(100, 28);
+
+        assert!(
+            rows.iter()
+                .any(|row| row.contains("Panic on purpose (debug builds)"))
+        );
+        assert!(!rows.iter().any(|row| row.contains("Good to know")));
+    }
+
+    #[test]
+    fn given_notes_when_measuring_their_width_then_it_fits_the_longest_note() {
+        assert_eq!(notes_width(), ENTRY_INDENT.len() + NOTES[0].chars().count());
+    }
+
+    #[test]
+    fn given_narrow_notes_area_when_building_the_notes_lines_then_the_rule_fills_it_and_long_notes_end_with_an_ellipsis()
+     {
+        let lines = notes_lines(20);
+
+        assert_eq!(lines[0].to_string(), "─".repeat(20));
+        assert_eq!(lines[1].to_string(), NOTES_TITLE);
+        assert_eq!(lines[2].to_string(), " Search, grep and h…");
+        assert_eq!(lines.len(), notes_row_count());
     }
 
     #[test]

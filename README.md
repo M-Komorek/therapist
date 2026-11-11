@@ -4,7 +4,7 @@
 [![crates.io](https://img.shields.io/crates/v/therapist.svg)](https://crates.io/crates/therapist)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Sometimes your system needs a little **therapy**. So here it is: a **BLAZINGLY FAST** terminal log viewer. Open a multi-GB log at once, move with vim keys, and narrow it down with grep tabs, search, bookmarks and highlights. Just hope that after the session you're not the one who needs **therapy**.
+Sometimes your system needs a little therapy, so here it is: a BLAZINGLY FAST terminal log viewer. Open multi-GB logs instantly and narrow them down with grep tabs, bookmarks and highlights. Just hope that after the session you're not the one who needs **therapy**.
 
 ![therapist opening demo.log, grepping it for payments, searching for order_id=48225, grepping the tab again for that order and highlighting phrases](assets/demo.gif)
 
@@ -91,11 +91,6 @@ So <kbd>Space</kbd> <kbd>b</kbd> toggles one bookmark and <kbd>Space</kbd> <kbd>
 | <kbd>Ctrl</kbd>+<kbd>z</kbd> | Suspend to the shell |
 | <kbd>q</kbd> | Quit |
 
-
-### Matching
-
-Search, grep and highlights match plain text, case-sensitively. There are no regular expressions: `user=42` finds exactly `user=42`.
-
 ### therapist's own log
 
 therapist writes its own log to `$XDG_STATE_HOME/therapist/therapist.log`, which is `~/.local/state/therapist/therapist.log` by default. Move it with `--therapist-log PATH`, and set the level with `THERAPIST_LOG` (default `info`):
@@ -110,6 +105,7 @@ If the app crashes, it says where this log is.
 
 These were design decisions (for real, lol), and everyone is calm about it:
 
+- Search, grep and highlights match plain text, case-sensitively. No regular expressions: `user=42` finds exactly `user=42`, and nothing else.
 - Bookmarks and highlights are gone when you quit. What happens in the session stays in the session.
 - therapist reads files, not pipes or stdin. Save the output first: `kubectl logs my-pod > app.log`.
 
@@ -127,10 +123,6 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 ```
-
-The demo at the top is recorded with [VHS](https://github.com/charmbracelet/vhs) from `../test_data/demo.log`: `cargo build --release && python3 assets/demo.py`.
-
-`Ctrl-p` panics on purpose in debug builds, to check that the terminal is restored.
 
 ## License
 
