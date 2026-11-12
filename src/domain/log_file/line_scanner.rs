@@ -54,7 +54,8 @@ impl LineScanner {
                 if on_chunk(line_buffer.filled_bytes(), chunk_first_line).is_break() {
                     return Ok(());
                 }
-                byte_offset = self.next_newline_offset(byte_offset)?;
+                byte_offset = self.next_line_offset(byte_offset)?;
+                chunk_first_line += 1;
                 line_buffer.clear();
             }
             let bytes_read = line_buffer.read_more(&self.file, byte_offset, self.file_size)?;
@@ -78,9 +79,9 @@ impl LineScanner {
         }
     }
 
-    fn next_newline_offset(&self, byte_offset: u64) -> io::Result<u64> {
+    fn next_line_offset(&self, byte_offset: u64) -> io::Result<u64> {
         let mut chunk_offset = byte_offset;
-        let mut newline_offset = self.file_size;
+        let mut next_line_offset = self.file_size;
 
         read_chunks(
             &self.file,
@@ -88,7 +89,7 @@ impl LineScanner {
             SKIP_CHUNK_SIZE,
             |chunk| match memchr::memchr(b'\n', chunk) {
                 Some(newline_position) => {
-                    newline_offset = chunk_offset + newline_position as u64;
+                    next_line_offset = chunk_offset + newline_position as u64 + 1;
                     ControlFlow::Break(())
                 }
                 None => {
@@ -97,7 +98,7 @@ impl LineScanner {
                 }
             },
         )?;
-        Ok(newline_offset)
+        Ok(next_line_offset)
     }
 }
 
@@ -206,7 +207,22 @@ mod tests {
             [
                 ("a\n".to_owned(), 0),
                 ("long".to_owned(), 1),
-                ("\nb\n".to_owned(), 1)
+                ("b\n".to_owned(), 2)
+            ]
+        );
+    }
+
+    #[test]
+    fn given_two_lines_longer_than_the_buffer_in_a_row_when_scanning_then_each_start_comes_with_its_own_number()
+     {
+        let chunks = chunks_of(b"long one\nlong two\nb\n", 4);
+
+        assert_eq!(
+            chunks,
+            [
+                ("long".to_owned(), 0),
+                ("long".to_owned(), 1),
+                ("b\n".to_owned(), 2)
             ]
         );
     }
