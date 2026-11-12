@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Clear, Padding, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph},
 };
 
 use super::palette;
@@ -12,27 +12,29 @@ use crate::control::{KEY_BINDING_GROUPS, KeyBinding, KeyBindingGroup, key_sequen
 const POPUP_MARGIN: Margin = Margin::new(2, 1);
 const POPUP_PADDING: Padding = Padding::symmetric(2, 1);
 const BORDER_THICKNESS: u16 = 1;
-const COLUMN_GAP: u16 = 4;
-const NOTES_GAP: u16 = 1;
+const COLUMN_GAP: u16 = 5;
 const ENTRY_INDENT: &str = " ";
 const TYPED_TEXT_GAP: usize = 2;
 const ELLIPSIS: char = '…';
 const RULE_SYMBOL: &str = "─";
-const NOTES_TITLE: &str = "Good to know";
-const NOTES: [&str; 2] = [
-    "Search, grep and highlights match plain text, case-sensitively.",
-    "Bookmarks and highlights are shared by all tabs.",
-];
+const COUNT_PLACEHOLDER: &str = "[count]";
+const POPUP_TITLE: &str = " Keys ";
 const POPUP_STYLE: Style = Style::new()
     .fg(palette::FOREGROUND)
     .bg(palette::BACKGROUND_DARK);
-const BORDER_STYLE: Style = Style::new().fg(palette::YELLOW);
+const BORDER_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
+const POPUP_TITLE_STYLE: Style = Style::new()
+    .fg(palette::BACKGROUND_DARK)
+    .bg(palette::YELLOW)
+    .add_modifier(Modifier::BOLD);
 const TITLE_STYLE: Style = Style::new()
     .fg(palette::YELLOW)
     .add_modifier(Modifier::BOLD);
 const TYPED_TEXT_STYLE: Style = Style::new().fg(palette::PURPLE);
+const KEY_NAME_BRACKET_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
+const COUNT_PLACEHOLDER_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
 const CLOSING_HINT_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
-const RULE_STYLE: Style = Style::new().fg(palette::FOREGROUND_MUTED);
+const RULE_STYLE: Style = Style::new().fg(palette::FOREGROUND_FAINT);
 
 struct HelpGroup {
     title: &'static str,
@@ -40,8 +42,17 @@ struct HelpGroup {
 }
 
 struct HelpEntry {
-    typed_text: String,
+    key_names: Vec<String>,
     description: &'static str,
+}
+
+impl HelpEntry {
+    fn key_names_width(&self) -> usize {
+        self.key_names
+            .iter()
+            .map(|key_name| key_name.chars().count())
+            .sum()
+    }
 }
 
 pub fn render(frame: &mut Frame, log_view_area: Rect) {
@@ -55,24 +66,12 @@ pub fn render(frame: &mut Frame, log_view_area: Rect) {
     frame.render_widget(popup_block, popup_area);
 
     render_key_columns(frame, content_area, left_groups, right_groups);
-    render_notes(frame, notes_area(content_area, left_groups, right_groups));
-}
-
-fn notes_area(content_area: Rect, left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> Rect {
-    let notes_offset = cell_count(key_row_count(left_groups, right_groups)) + NOTES_GAP;
-    Rect {
-        y: content_area.y.saturating_add(notes_offset),
-        height: content_area.height.saturating_sub(notes_offset),
-        ..content_area
-    }
 }
 
 fn popup_area(log_view_area: Rect, left_groups: &[HelpGroup], right_groups: &[HelpGroup]) -> Rect {
     let column_width = column_width(left_groups).max(column_width(right_groups));
-    let content_width = (2 * cell_count(column_width) + COLUMN_GAP).max(cell_count(notes_width()));
-    let content_height = cell_count(key_row_count(left_groups, right_groups))
-        + NOTES_GAP
-        + cell_count(notes_row_count());
+    let content_width = 2 * cell_count(column_width) + COLUMN_GAP;
+    let content_height = cell_count(key_row_count(left_groups, right_groups));
     let popup_width =
         content_width + 2 * BORDER_THICKNESS + POPUP_PADDING.left + POPUP_PADDING.right;
     let popup_height =
@@ -93,7 +92,7 @@ fn popup_block() -> Block<'static> {
         .border_style(BORDER_STYLE)
         .style(POPUP_STYLE)
         .padding(POPUP_PADDING)
-        .title_top(Line::styled(" Keys ", TITLE_STYLE))
+        .title_top(Line::styled(POPUP_TITLE, POPUP_TITLE_STYLE))
         .title_bottom(Line::styled(" Esc close ", CLOSING_HINT_STYLE).right_aligned())
 }
 
@@ -117,7 +116,11 @@ fn key_binding_help_group(key_binding_group: &KeyBindingGroup) -> HelpGroup {
 
 fn key_binding_help_entry(key_binding: &KeyBinding) -> HelpEntry {
     HelpEntry {
-        typed_text: key_sequence_text(key_binding.key_sequence),
+        key_names: key_binding
+            .key_sequence
+            .iter()
+            .map(|key| key_sequence_text(std::slice::from_ref(key)))
+            .collect(),
         description: key_binding.description,
     }
 }
@@ -168,6 +171,30 @@ fn render_key_columns(
         .areas(key_area);
     render_column(frame, left_column, left_groups);
     render_column(frame, right_column, right_groups);
+    render_column_divider(
+        frame,
+        column_divider_area(key_area, left_column, left_groups, right_groups),
+    );
+}
+
+fn column_divider_area(
+    key_area: Rect,
+    left_column: Rect,
+    left_groups: &[HelpGroup],
+    right_groups: &[HelpGroup],
+) -> Rect {
+    Rect {
+        x: left_column.right().saturating_add(COLUMN_GAP / 2),
+        width: 1,
+        height: cell_count(key_row_count(left_groups, right_groups)),
+        ..key_area
+    }
+    .intersection(key_area)
+}
+
+fn render_column_divider(frame: &mut Frame, divider_area: Rect) {
+    let divider = Block::new().borders(Borders::LEFT).border_style(RULE_STYLE);
+    frame.render_widget(divider, divider_area);
 }
 
 fn render_column(frame: &mut Frame, column_area: Rect, help_groups: &[HelpGroup]) {
@@ -184,7 +211,7 @@ fn column_lines(help_groups: &[HelpGroup], column_width: usize) -> Vec<Line<'sta
         if position > 0 {
             lines.push(Line::default());
         }
-        lines.push(Line::styled(help_group.title, TITLE_STYLE));
+        lines.push(group_title_line(help_group.title, column_width));
         lines.extend(
             help_group
                 .entries
@@ -195,44 +222,20 @@ fn column_lines(help_groups: &[HelpGroup], column_width: usize) -> Vec<Line<'sta
     lines
 }
 
-fn notes_row_count() -> usize {
-    2 + NOTES.len()
-}
-
-fn notes_width() -> usize {
-    NOTES
-        .iter()
-        .map(|note| ENTRY_INDENT.len() + note.chars().count())
-        .chain([NOTES_TITLE.chars().count()])
-        .max()
-        .unwrap_or(0)
-}
-
-fn render_notes(frame: &mut Frame, notes_area: Rect) {
-    let lines = notes_lines(usize::from(notes_area.width));
-    frame.render_widget(Paragraph::new(lines), notes_area);
-}
-
-fn notes_lines(notes_area_width: usize) -> Vec<Line<'static>> {
-    let note_width = notes_area_width.saturating_sub(ENTRY_INDENT.len());
-    let mut lines = vec![
-        Line::styled(RULE_SYMBOL.repeat(notes_area_width), RULE_STYLE),
-        Line::styled(NOTES_TITLE, TITLE_STYLE),
-    ];
-    lines.extend(NOTES.iter().map(|note| {
-        Line::from(vec![
-            Span::raw(ENTRY_INDENT),
-            Span::raw(text_fitted_to_width(note, note_width)),
-        ])
-    }));
-    lines
+fn group_title_line(title: &'static str, line_width: usize) -> Line<'static> {
+    let rule_width = line_width.saturating_sub(title.chars().count() + 1);
+    Line::from(vec![
+        Span::styled(title, TITLE_STYLE),
+        Span::raw(" "),
+        Span::styled(RULE_SYMBOL.repeat(rule_width), RULE_STYLE),
+    ])
 }
 
 fn typed_text_width(help_groups: &[HelpGroup]) -> usize {
     let longest_typed_text_width = help_groups
         .iter()
         .flat_map(|help_group| &help_group.entries)
-        .map(|help_entry| help_entry.typed_text.chars().count())
+        .map(HelpEntry::key_names_width)
         .max()
         .unwrap_or(0);
     longest_typed_text_width + TYPED_TEXT_GAP
@@ -243,17 +246,45 @@ fn entry_line(
     typed_text_width: usize,
     description_width: usize,
 ) -> Line<'static> {
-    Line::from(vec![
-        Span::raw(ENTRY_INDENT),
-        Span::styled(
-            format!("{:<typed_text_width$}", help_entry.typed_text),
-            TYPED_TEXT_STYLE,
-        ),
-        Span::raw(text_fitted_to_width(
-            help_entry.description,
-            description_width,
-        )),
-    ])
+    let padding_width = typed_text_width.saturating_sub(help_entry.key_names_width());
+    let mut spans = vec![Span::raw(ENTRY_INDENT)];
+    spans.extend(
+        help_entry
+            .key_names
+            .iter()
+            .flat_map(|key_name| key_name_spans(key_name)),
+    );
+    spans.push(Span::raw(" ".repeat(padding_width)));
+    spans.extend(description_spans(&text_fitted_to_width(
+        help_entry.description,
+        description_width,
+    )));
+    Line::from(spans)
+}
+
+fn key_name_spans(key_name: &str) -> Vec<Span<'static>> {
+    match key_name
+        .strip_prefix('<')
+        .and_then(|bracketed_name| bracketed_name.strip_suffix('>'))
+    {
+        Some(bare_key_name) => vec![
+            Span::styled("<", KEY_NAME_BRACKET_STYLE),
+            Span::styled(bare_key_name.to_owned(), TYPED_TEXT_STYLE),
+            Span::styled(">", KEY_NAME_BRACKET_STYLE),
+        ],
+        None => vec![Span::styled(key_name.to_owned(), TYPED_TEXT_STYLE)],
+    }
+}
+
+fn description_spans(description: &str) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (position, description_part) in description.split(COUNT_PLACEHOLDER).enumerate() {
+        if position > 0 {
+            spans.push(Span::styled(COUNT_PLACEHOLDER, COUNT_PLACEHOLDER_STYLE));
+        }
+        spans.push(Span::raw(description_part.to_owned()));
+    }
+    spans
 }
 
 fn text_fitted_to_width(text: &str, width: usize) -> String {
@@ -277,7 +308,7 @@ mod tests {
             title: "Group",
             entries: (0..entry_count)
                 .map(|_| HelpEntry {
-                    typed_text: "x".to_owned(),
+                    key_names: vec!["x".to_owned()],
                     description: "does x",
                 })
                 .collect(),
@@ -361,63 +392,14 @@ mod tests {
      {
         let rows = render_help(160, 40);
 
-        let popup_rows = 5..=35;
+        let popup_rows = 7..=32;
         let popup_left_edge = " ".repeat(22);
-        assert!(rows[5].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
-        assert!(rows[35].ends_with("─ Esc close ╯"));
-        assert_eq!(rows[35].chars().count(), 22 + 116);
+        assert!(rows[7].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
+        assert!(rows[32].ends_with("─ Esc close ╯"));
+        assert_eq!(rows[32].chars().count(), 22 + 117);
         for (row_index, row) in rows.iter().enumerate() {
             assert_eq!(row.is_empty(), !popup_rows.contains(&row_index));
         }
-    }
-
-    #[test]
-    fn given_area_tall_enough_when_rendering_then_the_notes_sit_below_the_keys_after_a_rule() {
-        let rows = render_help(100, 34);
-
-        let notes_title_row = rows
-            .iter()
-            .position(|row| row.contains("  Good to know "))
-            .expect("the notes title is shown");
-        assert!(rows[notes_title_row - 3].contains("debug builds"));
-        assert_eq!(rows[notes_title_row - 2].trim_matches(['│', ' ']), "");
-        assert_eq!(rows[notes_title_row - 1].trim_matches(['│', ' ', '─']), "");
-        assert!(rows[notes_title_row - 1].contains("────"));
-        assert!(
-            rows[notes_title_row + 1].contains("   Search, grep and highlights match plain text")
-        );
-        assert!(
-            rows[notes_title_row + 2]
-                .contains("   Bookmarks and highlights are shared by all tabs.")
-        );
-        assert!(rows[notes_title_row + 4].ends_with("─ Esc close ╯"));
-    }
-
-    #[test]
-    fn given_area_too_short_for_the_notes_when_rendering_then_the_keys_stay_whole() {
-        let rows = render_help(100, 28);
-
-        assert!(
-            rows.iter()
-                .any(|row| row.contains("Panic on purpose (debug builds)"))
-        );
-        assert!(!rows.iter().any(|row| row.contains("Good to know")));
-    }
-
-    #[test]
-    fn given_notes_when_measuring_their_width_then_it_fits_the_longest_note() {
-        assert_eq!(notes_width(), ENTRY_INDENT.len() + NOTES[0].chars().count());
-    }
-
-    #[test]
-    fn given_narrow_notes_area_when_building_the_notes_lines_then_the_rule_fills_it_and_long_notes_end_with_an_ellipsis()
-     {
-        let lines = notes_lines(20);
-
-        assert_eq!(lines[0].to_string(), "─".repeat(20));
-        assert_eq!(lines[1].to_string(), NOTES_TITLE);
-        assert_eq!(lines[2].to_string(), " Search, grep and h…");
-        assert_eq!(lines.len(), notes_row_count());
     }
 
     #[test]
@@ -433,6 +415,76 @@ mod tests {
                 .trim_end_matches(['│', ' '])
                 .ends_with(ELLIPSIS)
         );
+    }
+
+    #[test]
+    fn given_wide_area_when_rendering_then_a_divider_runs_between_the_columns_beside_the_keys_only()
+    {
+        let rows = render_help(100, 28);
+
+        let divider_column = rows[3]
+            .char_indices()
+            .filter(|&(_, character)| character == '│')
+            .map(|(byte_position, _)| rows[3][..byte_position].chars().count())
+            .nth(1)
+            .expect("the divider is shown");
+        let character_at_divider = |row: &String| row.chars().nth(divider_column);
+        assert!(
+            rows[3..=24]
+                .iter()
+                .all(|row| character_at_divider(row) == Some('│'))
+        );
+        assert_ne!(character_at_divider(&rows[25]), Some('│'));
+    }
+
+    #[test]
+    fn given_title_shorter_than_the_line_when_building_the_title_line_then_a_rule_fills_the_rest() {
+        assert_eq!(group_title_line("Tabs", 10).to_string(), "Tabs ─────");
+        assert_eq!(group_title_line("Tabs", 5).to_string(), "Tabs ");
+        assert_eq!(group_title_line("Tabs", 2).to_string(), "Tabs ");
+    }
+
+    #[test]
+    fn given_named_key_when_building_its_spans_then_the_brackets_are_dimmed() {
+        let spans = key_name_spans("<Ctrl-d>");
+
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].style, KEY_NAME_BRACKET_STYLE);
+        assert_eq!(spans[1].content, "Ctrl-d");
+        assert_eq!(spans[1].style, TYPED_TEXT_STYLE);
+        assert_eq!(spans[2].style, KEY_NAME_BRACKET_STYLE);
+    }
+
+    #[test]
+    fn given_character_key_when_building_its_spans_then_it_is_one_key_colored_span() {
+        for key_name in ["gg", "<", ">"] {
+            let spans = key_name_spans(key_name);
+
+            assert_eq!(spans.len(), 1);
+            assert_eq!(spans[0].content, key_name);
+            assert_eq!(spans[0].style, TYPED_TEXT_STYLE);
+        }
+    }
+
+    #[test]
+    fn given_description_with_a_count_when_building_its_spans_then_only_the_count_is_muted() {
+        let spans = description_spans("Move down [count] lines");
+
+        let muted_spans: Vec<_> = spans
+            .iter()
+            .filter(|span| span.style == COUNT_PLACEHOLDER_STYLE)
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(muted_spans, [COUNT_PLACEHOLDER]);
+        assert_eq!(Line::from(spans).to_string(), "Move down [count] lines");
+    }
+
+    #[test]
+    fn given_description_without_a_count_when_building_its_spans_then_it_is_plain() {
+        let spans = description_spans("Quit");
+
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].style, Style::default());
     }
 
     #[test]
