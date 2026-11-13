@@ -7,6 +7,7 @@ use crate::{
     action::SearchAction,
     app::Model,
     domain::{
+        phrase_matching::LineFilter,
         search::{SearchDirection, SearchQuery},
         tabs::{MatchJump, SearchError, TabId},
     },
@@ -48,9 +49,10 @@ fn schedule_search(model: &mut Model, search_query: SearchQuery) {
 
     let start_line = cursor_line(model).unwrap_or_default();
     let active_tab = model.tabs.active_tab_mut();
-    let phrases = active_tab.scan_phrases_with(search_query.phrase.clone());
+    let line_filters =
+        active_tab.scan_filters_with(LineFilter::Containing(search_query.phrase.clone()));
     let searching_work =
-        jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), phrases);
+        jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), line_filters);
     model
         .job_board
         .schedule(JobSlot::Searching(active_tab_id), searching_work);

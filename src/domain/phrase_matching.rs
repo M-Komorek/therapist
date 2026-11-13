@@ -4,6 +4,11 @@ use memchr::memmem;
 
 use crate::domain::log_file::count_newlines;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineFilter {
+    Containing(String),
+}
+
 #[derive(Debug, PartialEq)]
 pub struct MatchingLinesBatch {
     pub matching_lines: Vec<usize>,
@@ -17,6 +22,14 @@ pub struct MatchingLinesBatch {
 pub struct MatchingLines {
     lines: Vec<usize>,
     percent_scanned: u64,
+}
+
+impl LineFilter {
+    pub fn phrase(&self) -> &str {
+        match self {
+            Self::Containing(phrase) => phrase,
+        }
+    }
 }
 
 impl MatchingLines {
@@ -65,15 +78,16 @@ impl MatchingLines {
 pub fn find_matching_lines(
     chunk: &[u8],
     chunk_first_line: usize,
-    phrases: &[String],
+    line_filters: &[LineFilter],
 ) -> Vec<usize> {
-    let Some((first_phrase, other_phrases)) = phrases.split_first() else {
+    let Some((first_filter, other_filters)) = line_filters.split_first() else {
         return Vec::new();
     };
 
-    let mut matching_lines = find_lines_containing(chunk, chunk_first_line, first_phrase);
-    for phrase in other_phrases {
-        let lines_with_phrase = find_lines_containing(chunk, chunk_first_line, phrase);
+    let mut matching_lines = find_lines_containing(chunk, chunk_first_line, first_filter.phrase());
+    for line_filter in other_filters {
+        let lines_with_phrase =
+            find_lines_containing(chunk, chunk_first_line, line_filter.phrase());
         matching_lines.retain(|line| lines_with_phrase.binary_search(line).is_ok());
     }
     matching_lines
@@ -111,10 +125,10 @@ mod tests {
         matching_lines
     }
 
-    fn phrases(phrase_texts: &[&str]) -> Vec<String> {
-        phrase_texts
+    fn containing(phrases: &[&str]) -> Vec<LineFilter> {
+        phrases
             .iter()
-            .map(|phrase| (*phrase).to_owned())
+            .map(|phrase| LineFilter::Containing((*phrase).to_owned()))
             .collect()
     }
 
@@ -165,7 +179,7 @@ mod tests {
         let chunk = b"ERROR user=42\nERROR user=7\nINFO user=42\nuser=42 ERROR\n";
 
         assert_eq!(
-            find_matching_lines(chunk, 0, &phrases(&["ERROR", "user=42"])),
+            find_matching_lines(chunk, 0, &containing(&["ERROR", "user=42"])),
             [0, 3]
         );
     }
@@ -175,15 +189,16 @@ mod tests {
         let chunk = b"ERROR user=42\nERROR user=7\nINFO user=42\n";
 
         assert_eq!(
-            find_matching_lines(chunk, 0, &phrases(&["user=42", "ERROR"])),
-            find_matching_lines(chunk, 0, &phrases(&["ERROR", "user=42"]))
+            find_matching_lines(chunk, 0, &containing(&["user=42", "ERROR"])),
+            find_matching_lines(chunk, 0, &containing(&["ERROR", "user=42"]))
         );
     }
 
     #[test]
     fn given_phrases_on_different_lines_only_when_finding_matching_lines_then_no_line_matches() {
         assert!(
-            find_matching_lines(b"ERROR\nuser=42\n", 0, &phrases(&["ERROR", "user=42"])).is_empty()
+            find_matching_lines(b"ERROR\nuser=42\n", 0, &containing(&["ERROR", "user=42"]))
+                .is_empty()
         );
     }
 
@@ -199,7 +214,7 @@ mod tests {
             find_matching_lines(
                 b"ERROR\nERROR user=42\n",
                 100,
-                &phrases(&["ERROR", "user=42"])
+                &containing(&["ERROR", "user=42"])
             ),
             [101]
         );

@@ -1,4 +1,7 @@
-use crate::domain::search::{SearchDirection, SearchQuery};
+use crate::domain::{
+    phrase_matching::LineFilter,
+    search::{SearchDirection, SearchQuery},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -61,7 +64,7 @@ pub enum BookmarkAction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TabAction {
-    Grep(String),
+    Grep(LineFilter),
     SwitchToNext,
     SwitchToPrevious,
     CloseActive,

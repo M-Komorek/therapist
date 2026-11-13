@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use crate::{
         action::{LogViewAction, TabAction},
-        domain::search::SearchDirection,
+        domain::{phrase_matching::LineFilter, search::SearchDirection},
     };
 
     fn type_keys(input_controller: &mut InputController, typed: &str) -> Option<Action> {
@@ -177,7 +177,9 @@ mod tests {
 
         assert_eq!(
             resolution,
-            Some(Action::Tab(TabAction::Grep("ERROR".to_owned())))
+            Some(Action::Tab(TabAction::Grep(LineFilter::Containing(
+                "ERROR".to_owned()
+            ))))
         );
         assert_eq!(command_line_text(&input_controller), None);
     }

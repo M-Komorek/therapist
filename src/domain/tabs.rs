@@ -8,7 +8,7 @@ pub use log_view_state::LogViewState;
 pub use search_state::{MatchJump, SearchError, SearchState};
 pub use tab_state::TabState;
 
-use crate::domain::phrase_matching::MatchingLinesBatch;
+use crate::domain::phrase_matching::{LineFilter, MatchingLinesBatch};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabId(u64);
@@ -79,13 +79,13 @@ impl Tabs {
         self.active_position
     }
 
-    pub fn open_grep_tab(&mut self, phrases: Vec<String>) -> TabId {
+    pub fn open_grep_tab(&mut self, line_filters: Vec<LineFilter>) -> TabId {
         let tab_id = self.take_unused_tab_id();
         let log_view_state = LogViewState::with_size_of(self.active_tab().log_view_state());
         self.active_position += 1;
         self.tab_states.insert(
             self.active_position,
-            TabState::for_grep(tab_id, phrases, log_view_state),
+            TabState::for_grep(tab_id, line_filters, log_view_state),
         );
         tab_id
     }
@@ -140,10 +140,14 @@ impl Tabs {
 mod tests {
     use super::*;
 
+    fn containing(phrase: &str) -> LineFilter {
+        LineFilter::Containing(phrase.to_owned())
+    }
+
     fn make_tabs_with_grep_tabs(phrases: &[&str]) -> Tabs {
         let mut tabs = Tabs::default();
         for phrase in phrases {
-            tabs.open_grep_tab(vec![(*phrase).to_owned()]);
+            tabs.open_grep_tab(vec![containing(phrase)]);
         }
         tabs
     }
@@ -172,7 +176,7 @@ mod tests {
     fn given_last_tab_active_when_a_grep_tab_opens_then_it_is_added_at_the_end_and_active() {
         let mut tabs = make_tabs_with_grep_tabs(&["ERROR"]);
 
-        tabs.open_grep_tab(vec!["WARN".to_owned()]);
+        tabs.open_grep_tab(vec![containing("WARN")]);
 
         assert_eq!(tab_names(&tabs), ["all", "ERROR", "WARN"]);
         assert_eq!(tabs.active_position(), 2);
@@ -184,7 +188,7 @@ mod tests {
         let mut tabs = make_tabs_with_grep_tabs(&["ERROR", "WARN"]);
         tabs.switch_to_previous();
 
-        tabs.open_grep_tab(vec!["ERROR".to_owned(), "user=42".to_owned()]);
+        tabs.open_grep_tab(vec![containing("ERROR"), containing("user=42")]);
 
         assert_eq!(
             tab_names(&tabs),
@@ -196,10 +200,10 @@ mod tests {
     #[test]
     fn given_closed_tab_when_another_grep_tab_opens_then_its_id_is_new() {
         let mut tabs = Tabs::default();
-        let closed_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        let closed_tab_id = tabs.open_grep_tab(vec![containing("ERROR")]);
         tabs.close(closed_tab_id).unwrap();
 
-        let new_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        let new_tab_id = tabs.open_grep_tab(vec![containing("ERROR")]);
 
         assert_ne!(new_tab_id, closed_tab_id);
         assert!(tabs.grep_state(closed_tab_id).is_none());
@@ -209,7 +213,7 @@ mod tests {
     fn given_sized_tabs_when_a_grep_tab_opens_then_it_has_the_same_size() {
         let mut tabs = Tabs::default();
         tabs.set_log_view_size(10, 80, 0);
-        let grep_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        let grep_tab_id = tabs.open_grep_tab(vec![containing("ERROR")]);
         tabs.add_grep_batch(grep_tab_id, batch((0..100).collect()));
         let active_tab = tabs.active_tab_mut();
 
@@ -221,8 +225,8 @@ mod tests {
     #[test]
     fn given_grep_tabs_when_a_batch_arrives_for_one_then_only_its_grep_gets_it() {
         let mut tabs = Tabs::default();
-        let error_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
-        let warn_tab_id = tabs.open_grep_tab(vec!["WARN".to_owned()]);
+        let error_tab_id = tabs.open_grep_tab(vec![containing("ERROR")]);
+        let warn_tab_id = tabs.open_grep_tab(vec![containing("WARN")]);
 
         tabs.add_grep_batch(error_tab_id, batch(vec![3, 7]));
 
@@ -234,7 +238,7 @@ mod tests {
     #[test]
     fn given_closed_tab_when_a_batch_arrives_for_it_then_nothing_changes() {
         let mut tabs = Tabs::default();
-        let closed_tab_id = tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        let closed_tab_id = tabs.open_grep_tab(vec![containing("ERROR")]);
         tabs.close(closed_tab_id).unwrap();
 
         tabs.add_grep_batch(closed_tab_id, batch(vec![3]));

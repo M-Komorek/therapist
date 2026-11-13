@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::domain::phrase_matching::{MatchingLines, MatchingLinesBatch};
+use crate::domain::phrase_matching::{LineFilter, MatchingLines, MatchingLinesBatch};
 
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum GrepError {
@@ -8,22 +8,22 @@ pub enum GrepError {
     PatternNotFound(String),
 }
 
-/// A grep's phrases and the lines found so far that contain all of them.
+/// A grep's line filters and the lines found so far that pass all of them.
 pub struct GrepState {
-    phrases: Vec<String>,
+    line_filters: Vec<LineFilter>,
     matching_lines: MatchingLines,
 }
 
 impl GrepState {
-    pub(super) fn new(phrases: Vec<String>) -> Self {
+    pub(super) fn new(line_filters: Vec<LineFilter>) -> Self {
         Self {
-            phrases,
+            line_filters,
             matching_lines: MatchingLines::default(),
         }
     }
 
-    pub fn phrases(&self) -> &[String] {
-        &self.phrases
+    pub fn line_filters(&self) -> &[LineFilter] {
+        &self.line_filters
     }
 
     pub fn percent_grepped(&self) -> u64 {
@@ -59,6 +59,10 @@ impl GrepState {
 mod tests {
     use super::*;
 
+    fn containing(phrase: &str) -> LineFilter {
+        LineFilter::Containing(phrase.to_owned())
+    }
+
     fn batch(matching_lines: &[usize], percent_scanned: u64) -> MatchingLinesBatch {
         MatchingLinesBatch {
             matching_lines: matching_lines.to_vec(),
@@ -68,9 +72,9 @@ mod tests {
 
     #[test]
     fn given_new_grep_when_asking_for_its_matches_then_there_are_none_and_nothing_is_grepped() {
-        let grep_state = GrepState::new(vec!["ERROR".to_owned()]);
+        let grep_state = GrepState::new(vec![containing("ERROR")]);
 
-        assert_eq!(grep_state.phrases(), ["ERROR"]);
+        assert_eq!(grep_state.line_filters(), [containing("ERROR")]);
         assert_eq!(grep_state.match_count(), 0);
         assert_eq!(grep_state.percent_grepped(), 0);
     }
@@ -78,7 +82,7 @@ mod tests {
     #[test]
     fn given_two_batches_added_when_asking_for_the_matching_lines_then_they_are_one_list_in_order()
     {
-        let mut grep_state = GrepState::new(vec!["ERROR".to_owned()]);
+        let mut grep_state = GrepState::new(vec![containing("ERROR")]);
         grep_state.add_batch(batch(&[3, 7], 40));
 
         grep_state.add_batch(batch(&[12], 62));

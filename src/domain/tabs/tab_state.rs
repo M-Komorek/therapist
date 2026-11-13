@@ -1,7 +1,10 @@
 use std::ops::Range;
 
 use super::{GrepState, LogViewState, SearchState, TabId};
-use crate::domain::log_file::{LogFile, LogFileError};
+use crate::domain::{
+    log_file::{LogFile, LogFileError},
+    phrase_matching::LineFilter,
+};
 
 const ALL_LINES_TAB_NAME: &str = "all";
 const PHRASE_SEPARATOR: &str = " › ";
@@ -39,12 +42,12 @@ impl TabState {
 
     pub(super) fn for_grep(
         tab_id: TabId,
-        phrases: Vec<String>,
+        line_filters: Vec<LineFilter>,
         log_view_state: LogViewState,
     ) -> Self {
         Self {
             tab_id,
-            tab_lines: TabLines::Grepped(GrepState::new(phrases)),
+            tab_lines: TabLines::Grepped(GrepState::new(line_filters)),
             log_view_state,
             search_state: SearchState::default(),
         }
@@ -57,17 +60,22 @@ impl TabState {
     pub fn name(&self) -> String {
         match &self.tab_lines {
             TabLines::All => ALL_LINES_TAB_NAME.to_owned(),
-            TabLines::Grepped(grep_state) => grep_state.phrases().join(PHRASE_SEPARATOR),
+            TabLines::Grepped(grep_state) => grep_state
+                .line_filters()
+                .iter()
+                .map(LineFilter::phrase)
+                .collect::<Vec<_>>()
+                .join(PHRASE_SEPARATOR),
         }
     }
 
-    pub fn scan_phrases_with(&self, phrase: String) -> Vec<String> {
-        let mut phrases = match &self.tab_lines {
+    pub fn scan_filters_with(&self, line_filter: LineFilter) -> Vec<LineFilter> {
+        let mut line_filters = match &self.tab_lines {
             TabLines::All => Vec::new(),
-            TabLines::Grepped(grep_state) => grep_state.phrases().to_vec(),
+            TabLines::Grepped(grep_state) => grep_state.line_filters().to_vec(),
         };
-        phrases.push(phrase);
-        phrases
+        line_filters.push(line_filter);
+        line_filters
     }
 
     pub fn shows_all_lines(&self) -> bool {
@@ -197,7 +205,7 @@ mod tests {
     fn make_grep_tab(matching_lines: &[usize], height: usize) -> TabState {
         let mut log_view_state = LogViewState::default();
         log_view_state.set_height(height, 0);
-        let mut tab_state = TabState::for_grep(TabId(1), vec!["ERROR".to_owned()], log_view_state);
+        let mut tab_state = TabState::for_grep(TabId(1), vec![containing("ERROR")], log_view_state);
         if let Some(grep_state) = tab_state.grep_state_mut() {
             grep_state.add_batch(MatchingLinesBatch {
                 matching_lines: matching_lines.to_vec(),
@@ -205,6 +213,10 @@ mod tests {
             });
         }
         tab_state
+    }
+
+    fn containing(phrase: &str) -> LineFilter {
+        LineFilter::Containing(phrase.to_owned())
     }
 
     fn tab_row(line: usize, text: &str) -> TabRow {
@@ -335,28 +347,35 @@ mod tests {
         assert_eq!(
             make_grep_tab(&[1, 4], 10)
                 .grep_state()
-                .map(GrepState::phrases),
-            Some(["ERROR".to_owned()].as_slice())
+                .map(GrepState::line_filters),
+            Some([containing("ERROR")].as_slice())
         );
     }
 
     #[test]
     fn given_cascaded_grep_tab_when_asking_for_its_name_then_it_joins_the_phrases_in_order() {
-        let phrases = vec!["ERROR".to_owned(), "user=42".to_owned()];
-        let tab_state = TabState::for_grep(TabId(2), phrases, LogViewState::default());
+        let line_filters = vec![containing("ERROR"), containing("user=42")];
+        let tab_state = TabState::for_grep(TabId(2), line_filters, LogViewState::default());
 
         assert_eq!(tab_state.name(), "ERROR › user=42");
         assert_eq!(
-            tab_state.scan_phrases_with("took=5".to_owned()),
-            ["ERROR", "user=42", "took=5"]
+            tab_state.scan_filters_with(containing("took=5")),
+            [
+                containing("ERROR"),
+                containing("user=42"),
+                containing("took=5")
+            ]
         );
     }
 
     #[test]
-    fn given_all_lines_tab_when_adding_a_phrase_to_its_scan_phrases_then_it_is_the_only_one() {
+    fn given_all_lines_tab_when_adding_a_filter_to_its_scan_filters_then_it_is_the_only_one() {
         let tab_state = make_all_lines_tab(10);
 
         assert_eq!(tab_state.name(), "all");
-        assert_eq!(tab_state.scan_phrases_with("WARN".to_owned()), ["WARN"]);
+        assert_eq!(
+            tab_state.scan_filters_with(containing("WARN")),
+            [containing("WARN")]
+        );
     }
 }

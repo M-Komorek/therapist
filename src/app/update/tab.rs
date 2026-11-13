@@ -2,13 +2,13 @@ use super::{Effect, app::show_error};
 use crate::{
     action::TabAction,
     app::Model,
-    domain::tabs::TabId,
+    domain::{phrase_matching::LineFilter, tabs::TabId},
     jobs::{self, JobSlot},
 };
 
 pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
     match tab_action {
-        TabAction::Grep(phrase) => schedule_grep(model, phrase),
+        TabAction::Grep(line_filter) => schedule_grep(model, line_filter),
         TabAction::SwitchToNext => model.tabs.switch_to_next(),
         TabAction::SwitchToPrevious => model.tabs.switch_to_previous(),
         TabAction::CloseActive => close_active_tab(model),
@@ -17,7 +17,7 @@ pub(super) fn dispatch_tab(model: &mut Model, tab_action: TabAction) -> Effect {
     Effect::Redraw
 }
 
-fn schedule_grep(model: &mut Model, phrase: String) {
+fn schedule_grep(model: &mut Model, line_filter: LineFilter) {
     let line_scanner = match model.log_file.line_scanner() {
         Ok(line_scanner) => line_scanner,
         Err(log_file_error) => {
@@ -26,10 +26,13 @@ fn schedule_grep(model: &mut Model, phrase: String) {
         }
     };
 
-    let phrases = model.tabs.active_tab().scan_phrases_with(phrase);
-    let grepping_work =
-        jobs::phrase_scanning_work(line_scanner, model.log_file.file_size(), phrases.clone());
-    let tab_id = model.tabs.open_grep_tab(phrases);
+    let line_filters = model.tabs.active_tab().scan_filters_with(line_filter);
+    let grepping_work = jobs::phrase_scanning_work(
+        line_scanner,
+        model.log_file.file_size(),
+        line_filters.clone(),
+    );
+    let tab_id = model.tabs.open_grep_tab(line_filters);
     model
         .job_board
         .schedule(JobSlot::Grepping(tab_id), grepping_work);

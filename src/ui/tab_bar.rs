@@ -87,7 +87,10 @@ mod tests {
     use ratatui::buffer::Buffer;
 
     use super::*;
-    use crate::ui::tests::{render_to_buffer, rendered_rows};
+    use crate::{
+        domain::phrase_matching::LineFilter,
+        ui::tests::{render_to_buffer, rendered_rows},
+    };
 
     fn render_tab_bar(tabs: &Tabs, width: u16) -> Buffer {
         render_to_buffer(width, 1, |frame| render(frame, frame.area(), tabs))
@@ -112,7 +115,7 @@ mod tests {
     fn given_grep_tab_active_when_rendering_then_it_is_yellow_on_the_highlight_and_the_inactive_tab_is_on_the_bar()
      {
         let mut tabs = Tabs::default();
-        tabs.open_grep_tab(vec!["ERROR".to_owned()]);
+        tabs.open_grep_tab(vec![LineFilter::Containing("ERROR".to_owned())]);
 
         let buffer = render_tab_bar(&tabs, 33);
 
@@ -129,7 +132,7 @@ mod tests {
     fn make_four_tabs() -> Tabs {
         let mut tabs = Tabs::default();
         for phrase in ["ERROR", "WARN", "INFO"] {
-            tabs.open_grep_tab(vec![phrase.to_owned()]);
+            tabs.open_grep_tab(vec![LineFilter::Containing(phrase.to_owned())]);
         }
         tabs
     }

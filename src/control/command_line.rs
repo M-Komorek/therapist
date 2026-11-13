@@ -2,7 +2,10 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     action::{Action, CommandLineKind, HighlightAction, SearchAction, TabAction},
-    domain::search::{SearchDirection, SearchQuery},
+    domain::{
+        phrase_matching::LineFilter,
+        search::{SearchDirection, SearchQuery},
+    },
 };
 
 #[derive(Debug, PartialEq)]
@@ -58,7 +61,7 @@ impl CommandLine {
     fn submission_outcome(&self) -> CommandLineOutcome {
         match self.command_line_kind {
             CommandLineKind::Search(direction) => search_submission_outcome(&self.text, direction),
-            CommandLineKind::Grep => grep_submission_outcome(&self.text),
+            CommandLineKind::Grep => grep_submission_outcome(&self.text, LineFilter::Containing),
             CommandLineKind::Highlight => highlight_submission_outcome(&self.text),
         }
     }
@@ -110,12 +113,16 @@ fn search_submission_outcome(phrase: &str, direction: SearchDirection) -> Comman
     CommandLineOutcome::Submitted(Action::Search(SearchAction::Start(search_query)))
 }
 
-fn grep_submission_outcome(phrase: &str) -> CommandLineOutcome {
+fn grep_submission_outcome(
+    phrase: &str,
+    line_filter_of: fn(String) -> LineFilter,
+) -> CommandLineOutcome {
     if phrase.is_empty() {
         return CommandLineOutcome::Closed;
     }
 
-    CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(phrase.to_owned())))
+    let line_filter = line_filter_of(phrase.to_owned());
+    CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(line_filter)))
 }
 
 fn highlight_submission_outcome(phrase: &str) -> CommandLineOutcome {
@@ -306,7 +313,9 @@ mod tests {
 
         assert_eq!(
             press(&mut command_line, KeyCode::Enter),
-            CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(" ERROR ".to_owned())))
+            CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(LineFilter::Containing(
+                " ERROR ".to_owned()
+            ))))
         );
     }
 

@@ -3,20 +3,20 @@ use std::ops::ControlFlow;
 use super::{JobContext, JobStatus, JobWork};
 use crate::domain::{
     log_file::{LineScanner, percent_of_file},
-    phrase_matching::{MatchingLinesBatch, find_matching_lines},
+    phrase_matching::{LineFilter, MatchingLinesBatch, find_matching_lines},
 };
 
 pub fn phrase_scanning_work(
     line_scanner: LineScanner,
     file_size: u64,
-    phrases: Vec<String>,
+    line_filters: Vec<LineFilter>,
 ) -> JobWork {
     Box::new(move |job_context: &JobContext| {
         let mut bytes_scanned = 0;
         line_scanner.scan(|chunk, chunk_first_line| {
             bytes_scanned += chunk.len() as u64;
             job_context.notify(JobStatus::PhraseScanning(MatchingLinesBatch {
-                matching_lines: find_matching_lines(chunk, chunk_first_line, &phrases),
+                matching_lines: find_matching_lines(chunk, chunk_first_line, &line_filters),
                 percent_scanned: percent_of_file(bytes_scanned, file_size),
             }));
             if job_context.is_cancelled() {
@@ -37,7 +37,7 @@ mod tests {
         jobs::{JobBoard, JobSlot},
     };
 
-    fn phrase_scanning_statuses(text: &str, phrase: &str) -> Vec<JobStatus> {
+    fn phrase_scanning_statuses(text: &str, line_filter: LineFilter) -> Vec<JobStatus> {
         let log_file = LogFile::from_text(text);
         let tab_id = Tabs::default().active_tab().tab_id();
         let mut job_board = JobBoard::default();
@@ -46,7 +46,7 @@ mod tests {
             phrase_scanning_work(
                 log_file.line_scanner().unwrap(),
                 log_file.file_size(),
-                vec![phrase.to_owned()],
+                vec![line_filter],
             ),
         );
 
@@ -60,7 +60,10 @@ mod tests {
     #[test]
     fn given_phrase_in_the_file_when_its_phrase_scanning_work_runs_then_the_matching_lines_arrive_before_done()
      {
-        let job_statuses = phrase_scanning_statuses("ok\nERROR a\nok\nERROR b\n", "ERROR");
+        let job_statuses = phrase_scanning_statuses(
+            "ok\nERROR a\nok\nERROR b\n",
+            LineFilter::Containing("ERROR".to_owned()),
+        );
 
         assert!(matches!(
             job_statuses.as_slice(),
@@ -74,7 +77,8 @@ mod tests {
     #[test]
     fn given_phrase_not_in_the_file_when_its_phrase_scanning_work_runs_then_only_the_progress_arrives()
      {
-        let job_statuses = phrase_scanning_statuses("ok\nok\n", "ERROR");
+        let job_statuses =
+            phrase_scanning_statuses("ok\nok\n", LineFilter::Containing("ERROR".to_owned()));
 
         assert!(matches!(
             job_statuses.as_slice(),
