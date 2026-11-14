@@ -13,7 +13,7 @@ Sometimes your system needs a little therapy, so here it is: a BLAZINGLY FAST te
 - **Huge files.** A multi-GB file opens at once and is indexed in the background - you can move through the lines indexed so far. Memory stays small, because the index stores a checkpoint every 1,000 lines (or 64 KiB), not the position of every line.
 - **Vim motions.** Move with `j` `k` `gg` `G` `Ctrl-d` `Ctrl-u` `Ctrl-f` `Ctrl-b`, add a count (`20j`, `500G`), and scroll long lines sideways with `h` `l` `0`.
 - **Search.** `/` and `?` find a phrase, `n` and `N` jump between matches, and the status bar shows which match you're on (`[3/41]`).
-- **Cascading grep tabs.** Grep for `ERROR` to open a tab with only those lines, then grep that tab for `user=42` to get `[ERROR › user=42]`. A tab fills while its grep runs, keeps its own cursor and search, and shows the file's original line numbers.
+- **Cascading grep tabs.** Grep for `ERROR` to open a tab with only those lines, then grep that tab for `user=42` to get `[ERROR › user=42]`. An inverted grep keeps the lines *without* a phrase, crossed out in the tab bar: [ERROR › ~~user=42~~]. A tab fills while its grep runs, keeps its own cursor and search, and shows the file's original line numbers.
 - **Bookmarks.** Bookmark a line, see the mark in every tab that shows that line, and jump from one bookmark to the next.
 - **Highlights.** Give phrases their own colors, shown in every tab. There are 12 colors, reused after that.
 
@@ -80,6 +80,7 @@ So <kbd>Space</kbd> <kbd>b</kbd> toggles one bookmark and <kbd>Space</kbd> <kbd>
 | <kbd>]</kbd> <kbd>[</kbd> | Jump to the next / previous bookmark |
 | **Tabs** | |
 | <kbd>Space</kbd> <kbd>g</kbd> | Grep the active tab's lines into a new tab |
+| <kbd>Space</kbd> <kbd>v</kbd> | Grep lines without a phrase into a new tab |
 | <kbd>H</kbd> <kbd>L</kbd> | Switch to the previous / next tab |
 | <kbd>Space</kbd> <kbd>x</kbd> | Close the active tab |
 | <kbd>Space</kbd> <kbd>X</kbd> | Close every grep tab |
