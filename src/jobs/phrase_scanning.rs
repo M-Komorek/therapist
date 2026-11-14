@@ -88,4 +88,24 @@ mod tests {
             ] if matching_lines.is_empty()
         ));
     }
+
+    #[test]
+    fn given_line_longer_than_the_scan_buffer_with_the_phrase_when_keeping_lines_without_it_then_that_line_stays_out()
+     {
+        let long_line = "long ".repeat(300_000);
+        let text = format!("a\n{long_line}\nb\n");
+
+        let job_statuses =
+            phrase_scanning_statuses(&text, LineFilter::NotContaining("long".to_owned()));
+
+        let matching_lines: Vec<usize> = job_statuses
+            .iter()
+            .filter_map(|job_status| match job_status {
+                JobStatus::PhraseScanning(batch) => Some(batch.matching_lines.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(matching_lines, [0, 2]);
+    }
 }

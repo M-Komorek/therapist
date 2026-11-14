@@ -234,6 +234,16 @@ mod tests {
     }
 
     #[test]
+    fn given_space_v_when_resolving_then_an_inverted_grep_line_opens() {
+        assert_eq!(
+            resolve_fresh(" v"),
+            Some(app(AppAction::OpenCommandLine(
+                CommandLineKind::InvertedGrep
+            )))
+        );
+    }
+
+    #[test]
     fn given_capital_h_or_l_when_resolving_then_it_switches_to_the_previous_or_next_tab() {
         assert_eq!(resolve_fresh("H"), Some(tab(TabAction::SwitchToPrevious)));
         assert_eq!(resolve_fresh("L"), Some(tab(TabAction::SwitchToNext)));

@@ -46,6 +46,7 @@ impl CommandLine {
         match self.command_line_kind {
             CommandLineKind::Search(direction) => direction.prefix(),
             CommandLineKind::Grep => '&',
+            CommandLineKind::InvertedGrep => '!',
             CommandLineKind::Highlight => '*',
         }
     }
@@ -62,6 +63,9 @@ impl CommandLine {
         match self.command_line_kind {
             CommandLineKind::Search(direction) => search_submission_outcome(&self.text, direction),
             CommandLineKind::Grep => grep_submission_outcome(&self.text, LineFilter::Containing),
+            CommandLineKind::InvertedGrep => {
+                grep_submission_outcome(&self.text, LineFilter::NotContaining)
+            }
             CommandLineKind::Highlight => highlight_submission_outcome(&self.text),
         }
     }
@@ -274,6 +278,7 @@ mod tests {
             '?'
         );
         assert_eq!(prefix_of(CommandLineKind::Grep), '&');
+        assert_eq!(prefix_of(CommandLineKind::InvertedGrep), '!');
         assert_eq!(prefix_of(CommandLineKind::Highlight), '*');
     }
 
@@ -322,6 +327,29 @@ mod tests {
     #[test]
     fn given_empty_grep_line_when_enter_is_pressed_then_it_closes() {
         let mut command_line = make_command_line_of_kind(CommandLineKind::Grep, "");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Closed
+        );
+    }
+
+    #[test]
+    fn given_phrase_on_an_inverted_grep_line_when_enter_is_pressed_then_a_grep_for_lines_without_it_is_submitted()
+     {
+        let mut command_line = make_command_line_of_kind(CommandLineKind::InvertedGrep, "user=42");
+
+        assert_eq!(
+            press(&mut command_line, KeyCode::Enter),
+            CommandLineOutcome::Submitted(Action::Tab(TabAction::Grep(LineFilter::NotContaining(
+                "user=42".to_owned()
+            ))))
+        );
+    }
+
+    #[test]
+    fn given_empty_inverted_grep_line_when_enter_is_pressed_then_it_closes() {
+        let mut command_line = make_command_line_of_kind(CommandLineKind::InvertedGrep, "");
 
         assert_eq!(
             press(&mut command_line, KeyCode::Enter),

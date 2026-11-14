@@ -392,11 +392,11 @@ mod tests {
      {
         let rows = render_help(160, 40);
 
-        let popup_rows = 7..=32;
+        let popup_rows = 7..=33;
         let popup_left_edge = " ".repeat(22);
         assert!(rows[7].starts_with(&format!("{popup_left_edge}╭ Keys ─")));
-        assert!(rows[32].ends_with("─ Esc close ╯"));
-        assert_eq!(rows[32].chars().count(), 22 + 117);
+        assert!(rows[33].ends_with("─ Esc close ╯"));
+        assert_eq!(rows[33].chars().count(), 22 + 117);
         for (row_index, row) in rows.iter().enumerate() {
             assert_eq!(row.is_empty(), !popup_rows.contains(&row_index));
         }

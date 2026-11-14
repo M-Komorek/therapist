@@ -27,6 +27,7 @@ pub enum AppAction {
 pub enum CommandLineKind {
     Search(SearchDirection),
     Grep,
+    InvertedGrep,
     Highlight,
 }
 

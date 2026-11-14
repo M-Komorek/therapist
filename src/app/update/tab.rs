@@ -75,7 +75,10 @@ mod tests {
     use crate::{
         app::update::{
             handle_job_notification, resize_log_view,
-            test_helpers::{SEARCHED_TEXT, error_message, grep, make_model_with_text, start_grep},
+            test_helpers::{
+                SEARCHED_TEXT, error_message, grep, inverted_grep, make_model_with_text, search,
+                start_grep,
+            },
         },
         domain::{
             log_file::{LogFile, LogFileError},
@@ -349,6 +352,43 @@ mod tests {
             model.status_message,
             error_message(GrepError::PatternNotFound("zzz".to_owned()))
         );
+    }
+
+    #[test]
+    fn given_all_lines_tab_when_grepping_inverted_then_the_tab_shows_the_lines_without_the_phrase()
+    {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+
+        inverted_grep(&mut model, "ok");
+
+        assert_eq!(tab_names(&model), ["all", "ok"]);
+        assert_eq!(active_row_count(&model), 3);
+        assert_eq!(model.cursor_line(), Some(1));
+    }
+
+    #[test]
+    fn given_grep_tab_when_grepping_inverted_in_it_then_the_child_keeps_its_lines_without_the_phrase()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+
+        inverted_grep(&mut model, "one");
+
+        assert_eq!(tab_names(&model), ["all", "ERROR", "ERROR › one"]);
+        assert_eq!(active_row_count(&model), 1);
+        assert_eq!(model.cursor_line(), Some(4));
+    }
+
+    #[test]
+    fn given_inverted_grep_tab_when_searching_then_only_its_lines_match() {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        inverted_grep(&mut model, "ERROR");
+
+        search(&mut model, "/two");
+
+        let search_state = model.tabs.active_tab().search_state();
+        assert_eq!(search_state.match_count(), 1);
+        assert_eq!(model.cursor_line(), Some(3));
     }
 
     #[test]

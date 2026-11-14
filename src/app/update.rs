@@ -135,6 +135,12 @@ mod test_helpers {
         model.finish_scheduled_jobs();
     }
 
+    pub(super) fn inverted_grep(model: &mut Model, phrase: &str) {
+        model.type_keys(&format!(" v{phrase}"));
+        model.press(KeyCode::Enter);
+        model.finish_scheduled_jobs();
+    }
+
     pub(super) fn search(model: &mut Model, typed: &str) {
         model.type_keys(typed);
         model.press(KeyCode::Enter);

@@ -153,6 +153,11 @@ pub const KEY_BINDING_GROUPS: &[KeyBindingGroup] = &[
                 description: "Grep the active tab's lines into a new tab",
             },
             KeyBinding {
+                key_sequence: &[space(), char_key('v')],
+                action: app(AppAction::OpenCommandLine(CommandLineKind::InvertedGrep)),
+                description: "Grep lines without a phrase into a new tab",
+            },
+            KeyBinding {
                 key_sequence: &[char_key('H')],
                 action: tab(TabAction::SwitchToPrevious),
                 description: "Switch to the previous tab",
