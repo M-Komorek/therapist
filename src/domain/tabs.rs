@@ -6,7 +6,7 @@ mod tab_state;
 pub use grep_state::GrepState;
 pub use log_view_state::LogViewState;
 pub use search_state::{MatchJump, SearchError, SearchState};
-pub use tab_state::TabState;
+pub use tab_state::{PHRASE_SEPARATOR, TabState};
 
 use crate::domain::phrase_matching::{LineFilter, MatchingLinesBatch};
 

@@ -7,7 +7,7 @@ use crate::domain::{
 };
 
 const ALL_LINES_TAB_NAME: &str = "all";
-const PHRASE_SEPARATOR: &str = " › ";
+pub const PHRASE_SEPARATOR: &str = " › ";
 
 #[derive(Debug, PartialEq)]
 pub struct TabRow {

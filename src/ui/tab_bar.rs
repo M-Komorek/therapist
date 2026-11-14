@@ -8,7 +8,10 @@ use ratatui::{
 };
 
 use super::{BAR_STYLE, palette};
-use crate::domain::tabs::Tabs;
+use crate::domain::{
+    phrase_matching::LineFilter,
+    tabs::{PHRASE_SEPARATOR, TabState, Tabs},
+};
 
 const WORDMARK: &str = " therapist ~ ";
 const WORDMARK_STYLE: Style = Style::new()
@@ -57,7 +60,7 @@ fn tab_bar_line(tabs: &Tabs, visible_positions: RangeInclusive<usize>) -> Line<'
     let tab_states = &tabs.tab_states()[visible_positions.clone()];
     for (position, tab_state) in visible_positions.clone().zip(tab_states) {
         let is_active = position == tabs.active_position();
-        tab_bar_line.extend(tab_label(&tab_state.name(), is_active));
+        tab_bar_line.extend(tab_label(tab_state, is_active));
     }
 
     if *visible_positions.end() < tabs.tab_states().len() - 1 {
@@ -69,17 +72,36 @@ fn tab_bar_line(tabs: &Tabs, visible_positions: RangeInclusive<usize>) -> Line<'
     tab_bar_line
 }
 
-fn tab_label(name: &str, is_active: bool) -> [Span<'static>; 3] {
+fn tab_label(tab_state: &TabState, is_active: bool) -> Vec<Span<'static>> {
     let (name_style, bracket_style) = if is_active {
         (ACTIVE_TAB_NAME_STYLE, ACTIVE_TAB_BRACKET_STYLE)
     } else {
         (INACTIVE_TAB_NAME_STYLE, INACTIVE_TAB_BRACKET_STYLE)
     };
-    [
-        Span::styled(" [", bracket_style),
-        Span::styled(name.to_owned(), name_style),
-        Span::styled("] ", bracket_style),
-    ]
+
+    let mut label_spans = vec![Span::styled(" [", bracket_style)];
+    label_spans.extend(tab_name(tab_state, name_style));
+    label_spans.push(Span::styled("] ", bracket_style));
+    label_spans
+}
+
+fn tab_name(tab_state: &TabState, name_style: Style) -> Vec<Span<'static>> {
+    let Some(grep_state) = tab_state.grep_state() else {
+        return vec![Span::styled(tab_state.name(), name_style)];
+    };
+
+    let mut name_spans = Vec::new();
+    for (position, line_filter) in grep_state.line_filters().iter().enumerate() {
+        if position > 0 {
+            name_spans.push(Span::styled(PHRASE_SEPARATOR, name_style));
+        }
+        let phrase_style = match line_filter {
+            LineFilter::Containing(_) => name_style,
+            LineFilter::NotContaining(_) => name_style.add_modifier(Modifier::CROSSED_OUT),
+        };
+        name_spans.push(Span::styled(line_filter.phrase().to_owned(), phrase_style));
+    }
+    name_spans
 }
 
 #[cfg(test)]
@@ -87,10 +109,7 @@ mod tests {
     use ratatui::buffer::Buffer;
 
     use super::*;
-    use crate::{
-        domain::phrase_matching::LineFilter,
-        ui::tests::{render_to_buffer, rendered_rows},
-    };
+    use crate::ui::tests::{render_to_buffer, rendered_rows};
 
     fn render_tab_bar(tabs: &Tabs, width: u16) -> Buffer {
         render_to_buffer(width, 1, |frame| render(frame, frame.area(), tabs))
@@ -127,6 +146,43 @@ mod tests {
         assert_eq!(buffer[(22, 0)].fg, palette::YELLOW);
         assert_eq!(buffer[(22, 0)].bg, palette::BACKGROUND_HIGHLIGHT);
         assert!(buffer[(22, 0)].modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn given_tabs_with_a_not_containing_filter_when_rendering_then_only_its_phrase_is_crossed_out_in_the_tab_colors()
+     {
+        let mut tabs = Tabs::default();
+        tabs.open_grep_tab(vec![LineFilter::NotContaining("INFO".to_owned())]);
+        tabs.open_grep_tab(vec![
+            LineFilter::Containing("ERROR".to_owned()),
+            LineFilter::NotContaining("user=42".to_owned()),
+        ]);
+
+        let buffer = render_tab_bar(&tabs, 60);
+
+        assert_eq!(
+            rendered_rows(&buffer),
+            [" therapist ~  [all]  [INFO]  [ERROR › user=42]"]
+        );
+        let inactive_excluded_phrase = &buffer[(22, 0)];
+        assert!(
+            inactive_excluded_phrase
+                .modifier
+                .contains(Modifier::CROSSED_OUT)
+        );
+        assert_eq!(inactive_excluded_phrase.fg, palette::FOREGROUND_DARK);
+        assert_eq!(inactive_excluded_phrase.bg, palette::BACKGROUND_DARK);
+        assert!(!buffer[(30, 0)].modifier.contains(Modifier::CROSSED_OUT));
+        assert!(!buffer[(36, 0)].modifier.contains(Modifier::CROSSED_OUT));
+        let active_excluded_phrase = &buffer[(38, 0)];
+        assert!(
+            active_excluded_phrase
+                .modifier
+                .contains(Modifier::CROSSED_OUT | Modifier::BOLD)
+        );
+        assert_eq!(active_excluded_phrase.fg, palette::YELLOW);
+        assert_eq!(active_excluded_phrase.bg, palette::BACKGROUND_HIGHLIGHT);
+        assert!(!buffer[(45, 0)].modifier.contains(Modifier::CROSSED_OUT));
     }
 
     fn make_four_tabs() -> Tabs {
