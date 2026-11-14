@@ -82,7 +82,7 @@ mod tests {
         },
         domain::{
             log_file::{LogFile, LogFileError},
-            tabs::{GrepError, TabError, TabState},
+            tabs::{TabError, TabState},
         },
         jobs::{JobError, JobNotification, JobStatus},
     };
@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(tab_names(&model), ["all"]);
         assert_eq!(
             model.status_message,
-            error_message(GrepError::PatternNotFound("zzz".to_owned()))
+            error_message("Pattern not found: zzz")
         );
     }
 
@@ -389,6 +389,21 @@ mod tests {
         let search_state = model.tabs.active_tab().search_state();
         assert_eq!(search_state.match_count(), 1);
         assert_eq!(model.cursor_line(), Some(3));
+    }
+
+    #[test]
+    fn given_phrase_on_every_line_when_the_inverted_grep_is_done_then_its_tab_closes_and_an_error_says_so()
+     {
+        let mut model = make_model_with_text(SEARCHED_TEXT);
+        grep(&mut model, "ERROR");
+
+        inverted_grep(&mut model, "ERROR");
+
+        assert_eq!(tab_names(&model), ["all", "ERROR"]);
+        assert_eq!(
+            model.status_message,
+            error_message("Every line contains: ERROR")
+        );
     }
 
     #[test]

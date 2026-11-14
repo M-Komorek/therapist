@@ -6,10 +6,7 @@ use super::{
 };
 use crate::{
     app::Model,
-    domain::{
-        phrase_matching::{LineFilter, MatchingLinesBatch},
-        tabs::{GrepError, TabId},
-    },
+    domain::{phrase_matching::MatchingLinesBatch, tabs::TabId},
     jobs::{JobError, JobNotification, JobSlot, JobStatus},
 };
 
@@ -101,15 +98,9 @@ fn mark_grep_done(model: &mut Model, tab_id: TabId) {
 
     tracing::debug!(match_count = grep_state.match_count(), "grep done");
     if grep_state.match_count() == 0 {
-        let last_phrase = grep_state
-            .line_filters()
-            .last()
-            .map(LineFilter::phrase)
-            .unwrap_or_default()
-            .to_owned();
-        let pattern_not_found = GrepError::PatternNotFound(last_phrase);
+        let no_lines_error = grep_state.no_lines_error();
         close_tab(model, tab_id);
-        show_error(model, pattern_not_found.to_string());
+        show_error(model, no_lines_error.to_string());
     }
 }
 

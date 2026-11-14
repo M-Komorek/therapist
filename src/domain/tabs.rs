@@ -3,7 +3,7 @@ mod log_view_state;
 mod search_state;
 mod tab_state;
 
-pub use grep_state::{GrepError, GrepState};
+pub use grep_state::GrepState;
 pub use log_view_state::LogViewState;
 pub use search_state::{MatchJump, SearchError, SearchState};
 pub use tab_state::TabState;

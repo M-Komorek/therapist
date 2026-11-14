@@ -6,6 +6,8 @@ use crate::domain::phrase_matching::{LineFilter, MatchingLines, MatchingLinesBat
 pub enum GrepError {
     #[error("Pattern not found: {0}")]
     PatternNotFound(String),
+    #[error("Every line contains: {0}")]
+    PatternOnEveryLine(String),
 }
 
 /// A grep's line filters and the lines found so far that pass all of them.
@@ -32,6 +34,16 @@ impl GrepState {
 
     pub fn match_count(&self) -> usize {
         self.matching_lines.count()
+    }
+
+    pub fn no_lines_error(&self) -> GrepError {
+        match self.line_filters.last() {
+            Some(LineFilter::NotContaining(phrase)) => {
+                GrepError::PatternOnEveryLine(phrase.clone())
+            }
+            Some(LineFilter::Containing(phrase)) => GrepError::PatternNotFound(phrase.clone()),
+            None => GrepError::PatternNotFound(String::new()),
+        }
     }
 
     pub fn add_batch(&mut self, matching_lines_batch: MatchingLinesBatch) {
@@ -61,6 +73,10 @@ mod tests {
 
     fn containing(phrase: &str) -> LineFilter {
         LineFilter::Containing(phrase.to_owned())
+    }
+
+    fn not_containing(phrase: &str) -> LineFilter {
+        LineFilter::NotContaining(phrase.to_owned())
     }
 
     fn batch(matching_lines: &[usize], percent_scanned: u64) -> MatchingLinesBatch {
@@ -94,10 +110,31 @@ mod tests {
     }
 
     #[test]
+    fn given_grep_without_lines_when_asking_for_its_error_then_it_depends_on_the_last_filter() {
+        let grep_ending_with_not_containing =
+            GrepState::new(vec![containing("ERROR"), not_containing("user=42")]);
+        let grep_ending_with_containing =
+            GrepState::new(vec![not_containing("user=42"), containing("ERROR")]);
+
+        assert_eq!(
+            grep_ending_with_not_containing.no_lines_error(),
+            GrepError::PatternOnEveryLine("user=42".to_owned())
+        );
+        assert_eq!(
+            grep_ending_with_containing.no_lines_error(),
+            GrepError::PatternNotFound("ERROR".to_owned())
+        );
+    }
+
+    #[test]
     fn given_grep_error_when_displayed_then_it_names_the_phrase() {
         assert_eq!(
             GrepError::PatternNotFound("zzz".to_owned()).to_string(),
             "Pattern not found: zzz"
+        );
+        assert_eq!(
+            GrepError::PatternOnEveryLine("INFO".to_owned()).to_string(),
+            "Every line contains: INFO"
         );
     }
 }
