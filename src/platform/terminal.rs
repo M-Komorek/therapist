@@ -21,9 +21,15 @@ use ratatui::{
     style::Color,
 };
 use rustix::process::{Signal, kill_current_process_group};
+use signal_hook::{
+    consts::{SIGHUP, SIGINT, SIGTERM},
+    iterator::Signals,
+    low_level::emulate_default_handler,
+};
 
 const OUTPUT_BUFFER_SIZE: usize = 64 * 1024;
 const RESET_DEFAULT_BACKGROUND: &str = "\x1b]111\x1b\\";
+const TERMINATION_SIGNALS: [i32; 3] = [SIGTERM, SIGHUP, SIGINT];
 
 #[derive(Debug, PartialEq)]
 pub enum TerminalEvent {
@@ -121,6 +127,28 @@ pub fn install_panic_hook(panic_note: String) {
             eprintln!("{panic_note}");
         }
     }));
+}
+
+pub fn spawn_termination_signal_watcher() -> io::Result<()> {
+    let mut termination_signals = Signals::new(TERMINATION_SIGNALS)?;
+    thread::spawn(move || {
+        if let Some(signal) = termination_signals.forever().next() {
+            restore_and_terminate(signal);
+        }
+    });
+    Ok(())
+}
+
+fn restore_and_terminate(signal: i32) -> ! {
+    tracing::info!(signal, "terminated by a signal");
+    let _stdout_held_until_exit = stdout().lock();
+    if let Err(error) = leave_tui_mode() {
+        tracing::error!(%error, "restoring the terminal failed");
+    }
+    if let Err(error) = emulate_default_handler(signal) {
+        tracing::error!(%error, signal, "terminating by the signal failed");
+    }
+    std::process::exit(128 + signal)
 }
 
 fn to_terminal_event(crossterm_event: CrosstermEvent) -> Option<TerminalEvent> {

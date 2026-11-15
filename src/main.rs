@@ -48,6 +48,7 @@ fn run(cli: Cli) -> Result<(), RunError> {
         "therapist: crashed, details in {}",
         cli.therapist_log_path.display()
     ));
+    terminal::spawn_termination_signal_watcher()?;
     tracing::info!(browsed_file = %cli.browsed_file_path.display(), "starting");
 
     let log_file = LogFile::open(&cli.browsed_file_path)?;
