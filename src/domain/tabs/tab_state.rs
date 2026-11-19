@@ -148,7 +148,7 @@ impl TabState {
         match &self.tab_lines {
             TabLines::All => read_line_range(rows, log_file),
             TabLines::Grepped(grep_state) => {
-                read_each_line(grep_state.matching_lines_in(rows), log_file)
+                read_each_line(&grep_state.matching_lines_in(rows), log_file)
             }
         }
     }

@@ -62,7 +62,7 @@ impl GrepState {
         self.matching_lines.contains(line)
     }
 
-    pub(super) fn matching_lines_in(&self, positions: Range<usize>) -> &[usize] {
+    pub(super) fn matching_lines_in(&self, positions: Range<usize>) -> Vec<usize> {
         self.matching_lines.in_positions(positions)
     }
 }
